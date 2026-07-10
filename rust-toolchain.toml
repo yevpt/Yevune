@@ -1,0 +1,7 @@
+# 工具链版本的唯一真相源：开发者本机与 CI 均据此安装，保证稳定可复现编译。
+# 配合各 crate 已入库的 Cargo.lock（CI 用 --locked）实现工具链 + 依赖双重锁定。
+# 升级时改这里一处即可（edition2024 需 >= 1.85）。
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -19,19 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 版本与 components 由仓库根 rust-toolchain.toml 决定（单一真相源）；
+      # 该 action 会自动读取该文件并缓存构建产物。
       - name: 安装 Rust 工具链
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt, clippy
-
-      - name: 缓存 cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
+          cache-workspaces: server
 
       - name: 格式检查
         run: cargo fmt --check
