@@ -1,0 +1,42 @@
+# 一键部署骨架（T0）：server + garage 两服务。
+# FFmpeg 与 musl 静态构建的 Dockerfile 由后续任务（T10）补齐；
+# 本文件当前用于本地起 Garage 依赖，server 服务的 build 待 Dockerfile 就绪后可用。
+
+services:
+  # 兼容 S3 的对象存储，音频文件与转码缓存的唯一源。
+  garage:
+    image: dxflrs/garage:v1.0.1
+    restart: unless-stopped
+    volumes:
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+      - ./deploy/garage.toml:/etc/garage.toml:ro
+    ports:
+      - "3900:3900" # S3 API
+      - "3903:3903" # admin API
+
+  # Rust 音乐服务端。Dockerfile 由 T10 提供（musl 静态构建 + FFmpeg）。
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      - garage
+    ports:
+      - "4533:4533"
+    environment:
+      # 环境变量覆盖配置（前缀 MUSIC，分隔符 __）
+      MUSIC__SERVER__HOST: "0.0.0.0"
+      MUSIC__SERVER__PORT: "4533"
+      MUSIC__GARAGE__ENDPOINT: "http://garage:3900"
+      MUSIC__GARAGE__BUCKET: "music"
+      MUSIC__GARAGE__REGION: "garage"
+      MUSIC__DATABASE__PATH: "/data/music.sqlite"
+    volumes:
+      # SQLite 索引落服务器本地磁盘（红线：严禁放对象存储）
+      - server-data:/data
+
+volumes:
+  garage-meta:
+  garage-data:
+  server-data:
