@@ -32,9 +32,26 @@ object_store = { version = "0.14.0", features = ["aws"] }
 async-trait = "0.1.89"
 bytes = "1.12.1"
 futures = "0.3.32"
+# 认证密码学（纯 Rust RustCrypto）：
+# - aes-gcm：密码可逆加密存储（红线，支持 Subsonic token 校验，同 Navidrome 思路）
+# - md-5：OpenSubsonic token = md5(密码 + 盐)，协议要求
+# - hmac + sha2：自研 Bearer 会话令牌无状态签名（避免引入 Redis/会话表，红线）
+# - base64 / hex：密文与令牌的文本编码
+# - rand：AES-GCM 随机 nonce
+aes-gcm = "0.10"
+md-5 = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+rand = "0.8"
 
 [dev-dependencies]
 # 集成测试用 oneshot 驱动 Router，无需真实绑定端口
 tower = { version = "0.5", features = ["util"] }
 # 集成测试用临时 SQLite 文件
 tempfile = "3"
+# 集成测试内自行构造 Subsonic token = md5(密码 + 盐) 以验证认证
+md-5 = "0.10"
+hex = "0.4"
+http-body-util = "0.1"

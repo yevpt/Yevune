@@ -4,6 +4,7 @@
 //! HTTP 路由与业务逻辑随后续任务逐步填充；本 crate 仅承载 T0 的治理骨架。
 
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod index;
 pub mod storage;
