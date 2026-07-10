@@ -8,10 +8,14 @@ use std::path::Path;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
+pub mod repo_access;
+pub mod repo_annotation;
 pub mod repo_media;
 pub mod repo_playlist;
 pub mod repo_user;
 
+pub use repo_access::{AccessRepo, TrackScope};
+pub use repo_annotation::{Annotation, AnnotationRepo};
 pub use repo_media::{MediaRepo, NewTrack, SearchResults};
 pub use repo_playlist::PlaylistRepo;
 pub use repo_user::{RoleRepo, UserRepo};
@@ -67,5 +71,15 @@ impl Index {
     /// 歌单/文件夹仓储。
     pub fn playlists(&self) -> PlaylistRepo<'_> {
         PlaylistRepo::new(&self.pool)
+    }
+
+    /// 标注仓储。
+    pub fn annotations(&self) -> AnnotationRepo<'_> {
+        AnnotationRepo::new(&self.pool)
+    }
+
+    /// 访问控制仓储。
+    pub fn access(&self) -> AccessRepo<'_> {
+        AccessRepo::new(&self.pool)
     }
 }

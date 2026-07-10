@@ -443,3 +443,138 @@ async fn playlist_列举按_owner() {
     assert_eq!(pl.list_playlists(papa).await.unwrap().len(), 2);
     assert_eq!(pl.list_playlists(kid).await.unwrap().len(), 1);
 }
+
+// ─────────────────────────── Annotation ───────────────────────────
+
+#[tokio::test]
+async fn annotation_收藏评分与播放计数_按用户隔离() {
+    let (index, _dir) = temp_index().await;
+    let papa = seed_user(&index, "papa").await;
+    let kid = seed_user(&index, "kid").await;
+    let ann = index.annotations();
+
+    // papa 收藏 + 评分 + 两次播放曲目 1
+    ann.star(papa, "track", 1).await.unwrap();
+    ann.set_rating(papa, "track", 1, Some(5)).await.unwrap();
+    ann.scrobble(papa, "track", 1).await.unwrap();
+    ann.scrobble(papa, "track", 1).await.unwrap();
+
+    let a = ann.get(papa, "track", 1).await.unwrap().expect("应有标注");
+    assert!(a.starred_at.is_some());
+    assert_eq!(a.rating, Some(5));
+    assert_eq!(a.play_count, 2);
+    assert!(a.last_played.is_some());
+
+    // kid 对同一曲目无标注（按用户隔离）
+    assert!(ann.get(kid, "track", 1).await.unwrap().is_none());
+
+    // 取消收藏保留计数
+    ann.unstar(papa, "track", 1).await.unwrap();
+    let a2 = ann.get(papa, "track", 1).await.unwrap().unwrap();
+    assert!(a2.starred_at.is_none());
+    assert_eq!(a2.play_count, 2);
+}
+
+// ─────────────────────────── Access control ───────────────────────────
+
+use contract::{Principal, PrincipalType, ScopeType};
+use music_server::index::TrackScope;
+
+fn user_grant(id: i64) -> Principal {
+    Principal {
+        principal_type: PrincipalType::User,
+        id: id.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn access_规则_upsert_读取与删除() {
+    let (index, _dir) = temp_index().await;
+    let creator = seed_user(&index, "admin").await;
+    let acc = index.access();
+
+    let rid = acc
+        .set_rule(
+            ScopeType::Album,
+            "10",
+            Some(creator),
+            &[user_grant(1), user_grant(2)],
+        )
+        .await
+        .unwrap();
+    assert!(rid > 0);
+
+    let rule = acc
+        .get_rule(ScopeType::Album, "10")
+        .await
+        .unwrap()
+        .expect("应存在");
+    assert_eq!(rule.scope_type, ScopeType::Album);
+    assert_eq!(rule.scope_id, "10");
+    assert_eq!(rule.grants.len(), 2);
+
+    // upsert 覆盖名单
+    acc.set_rule(ScopeType::Album, "10", Some(1), &[user_grant(3)])
+        .await
+        .unwrap();
+    let rule2 = acc.get_rule(ScopeType::Album, "10").await.unwrap().unwrap();
+    assert_eq!(rule2.grants.len(), 1);
+    assert_eq!(rule2.grants[0].id, "3");
+
+    assert!(acc.delete_rule(ScopeType::Album, "10").await.unwrap());
+    assert!(acc
+        .get_rule(ScopeType::Album, "10")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn access_最具体作用域优先() {
+    let (index, _dir) = temp_index().await;
+    let acc = index.access();
+
+    // 艺人级限制给用户 1；专辑级限制给用户 2；曲目级限制给用户 3
+    acc.set_rule(ScopeType::Artist, "100", None, &[user_grant(1)])
+        .await
+        .unwrap();
+    acc.set_rule(ScopeType::Album, "10", None, &[user_grant(2)])
+        .await
+        .unwrap();
+    acc.set_rule(ScopeType::Track, "1", None, &[user_grant(3)])
+        .await
+        .unwrap();
+
+    let scope = TrackScope {
+        track_id: 1,
+        album_id: Some(10),
+        artist_id: Some(100),
+        genre: Some("Rock"),
+    };
+    let rule = acc
+        .effective_rule(&scope)
+        .await
+        .unwrap()
+        .expect("应命中规则");
+    // 曲目级最具体
+    assert_eq!(rule.scope_type, ScopeType::Track);
+    assert_eq!(rule.grants[0].id, "3");
+
+    // 无曲目规则时回落到专辑级
+    acc.delete_rule(ScopeType::Track, "1").await.unwrap();
+    let rule2 = acc.effective_rule(&scope).await.unwrap().unwrap();
+    assert_eq!(rule2.scope_type, ScopeType::Album);
+}
+
+#[tokio::test]
+async fn access_无规则则开放() {
+    let (index, _dir) = temp_index().await;
+    let acc = index.access();
+    let scope = TrackScope {
+        track_id: 1,
+        album_id: Some(10),
+        artist_id: Some(100),
+        genre: Some("Rock"),
+    };
+    assert!(acc.effective_rule(&scope).await.unwrap().is_none());
+}
