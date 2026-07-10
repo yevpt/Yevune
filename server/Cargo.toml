@@ -19,7 +19,18 @@ serde_json = "1"
 # 结构化日志（红线锁定）
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+# 数据库（红线锁定：SQLite via sqlx；运行时查询，不启用编译期宏校验）
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "macros",
+    "migrate",
+] }
+# 跨端共享 DTO
+contract = { path = "../contract" }
 
 [dev-dependencies]
 # 集成测试用 oneshot 驱动 Router，无需真实绑定端口
 tower = { version = "0.5", features = ["util"] }
+# 集成测试用临时 SQLite 文件
+tempfile = "3"
