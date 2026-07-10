@@ -10,7 +10,15 @@
 
 搭建一个自托管的音乐流媒体服务，本质上类似 Navidrome / Plex-for-music。
 
-**使用场景（已确认）**：纯个人自托管（单用户为主），但部署要**对非技术用户（小白）友好**，存在被小圈子小白使用的可能。**不做**多租户、计费、水平扩展、海量并发。
+**使用场景（已确认）**：个人 + **家庭**自部署产品，**不对外**，但对内是**真多用户**：
+
+1. 首启创建管理员，管理员再为家人创建账号。
+2. **每个用户有独立的歌单空间**（各自的歌单 + 文件夹树，默认私有，互不干扰）。
+3. **曲库访问控制**：管理员可为曲目/专辑/艺人配置开放给哪些用户/角色，**默认全部开放**。
+
+部署要**对非技术用户（小白）友好**。**不做**多租户 SaaS、计费、水平扩展、海量并发。
+
+**协议契合**：OpenSubsonic 协议原生多用户（每请求带 `u=用户名`，歌单、收藏、播放计数天然按用户隔离），因此"独立歌单空间"零阻力贴合协议。真正的自研扩展只有**曲库访问控制**。
 
 **存储**：兼容 S3 的对象存储，实际采用 **Garage**。Garage 是唯一存储源（source of truth）——原始音频文件直接放 Garage，服务端从 Garage 读取。
 
@@ -100,7 +108,7 @@ music/
 | **对象存储客户端** | 读写 Garage | `object_store` 或 `aws-sdk-s3` |
 | **扫描/入库器** | 发现文件、读嵌入标签建库 | `symphonia`/`lofty` 纯 Rust 读标签 |
 | **转码管线** | FLAC/ALAC → AAC/Opus，按需 + 缓存 | FFmpeg 子进程 |
-| **认证** | 个人单用户 + 小白友好 | OpenSubsonic token/明文 + 自研 Bearer |
+| **认证** | 家庭多用户 + 小白友好 | OpenSubsonic token/明文 + 自研 Bearer |
 
 **核心数据流**：上传 FLAC 到 Garage → 扫描器读标签写入 SQLite 索引 → 客户端请求播放 → 命中转码缓存则直接流，否则 FFmpeg 实时转码并缓存回 Garage → HTTP Range 分发。
 
@@ -111,10 +119,10 @@ music/
 
 ### 数据存储选型决策（SQLite，无 Redis / 无 Postgres）
 
-个人单用户场景，明确**不引入 Postgres、不引入 Redis**：
+个人/家庭（少量用户）场景，明确**不引入 Postgres、不引入 Redis**：
 
 - **SQLite 不慢**：进程内嵌入式，无网络/IPC 往返，读密集场景常快于 Postgres（参照 Navidrome 扛 10 万+ 曲库）。短板是并发写，但本场景写负载极小（偶尔扫描/改标签/scrobble），开 **WAL 模式**足矣。
-- **Postgres/Redis 会拉起独立容器、常驻内存**，直接顶撞"省内存 + 小白友好"两条硬约束，对单用户零收益，属过早优化。Redis 能干的活儿（缓存、会话、任务队列）分别被 OS 页缓存 / SQLite / 进程内 tokio 任务覆盖。
+- **Postgres/Redis 会拉起独立容器、常驻内存**，直接顶撞"省内存 + 小白友好"两条硬约束，对家庭少量用户零收益，属过早优化。Redis 能干的活儿（缓存、会话、任务队列）分别被 OS 页缓存 / SQLite / 进程内 tokio 任务覆盖。
 - **留后路**：数据访问层用 `sqlx`（同时支持 SQLite/Postgres）。若将来扩到多用户公开产品，再迁 Postgres 可行——"到时候再说"。
 
 **docker-compose 内容**：仅 `服务端 + Garage + FFmpeg` 三件。
@@ -127,19 +135,31 @@ music/
 
 | 表 | 关键字段 | 说明 |
 |---|---|---|
-| **users** | id, name, password_enc | 个人单用户，保留表兼容认证与未来扩展；密码可逆加密存储（见 §10） |
+| **users** | id, name, password_enc, created_at | 真多用户；密码可逆加密存储（见 §10） |
+| **roles** | id, name, is_builtin | 内建 `admin`/`member` + 管理员自建角色（如"孩子""大人"） |
+| **user_roles** | user_id, role_id | 用户 ↔ 角色 多对多 |
 | **artists** | id, name, sort_name, mbid?, cover_key? | 艺人 |
 | **albums** | id, name, artist_id, year, genre, cover_key, added_at | 专辑 |
 | **tracks** | id, title, album_id, artist_id, disc_no, track_no, duration, codec, bitrate, size, **object_key**, **etag**, content_hash, replaygain, added_at | 曲目；`object_key` 指向 Garage 原始文件 |
-| **annotations** | user_id, item_type, item_id, starred_at, play_count, last_played, rating | 收藏/播放次数/评分 |
+| **annotations** | user_id, item_type, item_id, starred_at, play_count, last_played, rating | 收藏/播放次数/评分，按用户隔离 |
 | **tag_overrides** | track_id, field, value | 改标签的覆盖层（见 §9），不动原文件 |
-| **playlist_folders** | id, name, **parent_id**(自引用,可空), position | 多级歌单的文件夹树；parent_id 空 = 顶级 |
-| **playlists** | id, name, comment, **folder_id**(可空), position | 歌单叶子；folder_id 空 = 根级 |
+| **playlist_folders** | id, **owner_id**, name, **parent_id**(自引用,可空), position | 每用户一棵文件夹树；parent_id 空 = 顶级 |
+| **playlists** | id, **owner_id**, name, comment, **folder_id**(可空), position | 歌单叶子，默认私有；folder_id 空 = 根级 |
 | **playlist_tracks** | playlist_id, track_id, position | 歌单内曲目有序 |
+| **access_rules** | id, **scope_type**(track/album/artist/genre), scope_id, created_by, created_at | 曲库访问控制规则（见下），仅为被限制内容存行 |
+| **access_rule_grants** | rule_id, principal_type(user/role), principal_id | 规则的允许名单 |
 | **transcode_cache** | track_id, format, bitrate, object_key, size, created_at, last_access | 转码产物登记（文件本体在 Garage） |
 | **scan_state** | last_scan_at, cursor | 扫描进度/断点 |
 
-**多级歌单模型**：文件夹只做容器（本身不装曲目），歌单是装曲目的叶子。任意深度嵌套。例：`中文`(folder) → `精选`/`流行`/`摇滚`(playlist)，或 `中文` → `华语经典`(subfolder) → …
+**多级歌单模型**：文件夹只做容器（本身不装曲目），歌单是装曲目的叶子。任意深度嵌套。例：`中文`(folder) → `精选`/`流行`/`摇滚`(playlist)，或 `中文` → `华语经典`(subfolder) → …。**每个用户拥有各自独立的歌单树**（`owner_id` 隔离，默认私有）。
+
+**曲库访问控制模型**：
+- **默认开放**：一首歌若无任何限制规则 → 所有用户可见。只为被限制的内容存 `access_rules` 行（默认零成本、省空间）。
+- **规则 = 作用域 + 允许名单**：一条规则指定作用域（曲目/专辑/艺人/流派）和允许访问的用户/角色（`access_rule_grants` 允许名单）。
+- **多级作用域，最具体优先**：曲目规则 > 专辑规则 > 艺人规则 > 流派规则。可"限制整个艺人"再"单独开放某专辑"。
+- **查询时评估**（非逐曲固化）：扫描新入库的曲目**自动继承**其所在专辑/艺人的规则，无需重新配置。
+- **管理员永远可见全部**并负责配置；浏览/搜索/播放的每个查询按当前用户过滤可见性。
+- 允许名单语义（"仅这些人可见"）覆盖家庭场景；"除某角色外都可见"通过给其余角色授权实现。deny 名单作为未来可选。
 
 **变更检测**：`tracks` 存每个文件的 Garage **ETag + size**；扫描时列举 bucket 对比 ETag → 判定新增/修改/删除，增量处理。
 
@@ -208,8 +228,9 @@ Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动
 | 媒体 | `stream`, `download`, `getCoverArt`（`hls.m3u8` 后置） |
 | 标注 | `star`, `unstar`, `setRating`, `scrobble` |
 | 扫描 | `getScanStatus`, `startScan` |
+| 用户 | `getUser`, `getUsers`, `createUser`, `updateUser`, `deleteUser`, `changePassword` |
 
-`getPlaylists` 返回**所有歌单的扁平列表** → 现成客户端照常可用（只是看不到层级）。
+`getPlaylists` 返回**当前用户可见歌单的扁平列表** → 现成客户端照常可用（只是看不到层级）。浏览/搜索/媒体接口均按当前用户的曲库访问控制过滤。
 
 ### 自研扩展层（命名空间隔离，如 `/rest/ext/*`）
 
@@ -217,7 +238,11 @@ Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动
 |---|---|---|
 | **多级歌单** | `getPlaylistTree`, `create/update/deletePlaylistFolder`, `movePlaylist`, `moveFolder` | 文件夹树 + 歌单叶子 |
 | **库管理（写）** | `uploadTrack`(multipart→Garage+入库), `updateTags`, `deleteTrack`, `moveTrack` | 客户端音频文件管理，后期主力 |
+| **访问控制** | `setAccessRule`(scope+允许名单), `getAccessRules`, `deleteAccessRule` | 管理员配置曲库开放范围，默认开放 |
+| **角色管理** | `getRoles`, `createRole`, `deleteRole`, `assignRole`, `unassignRole` | 内建 admin/member + 自定义角色 |
 | **扫描增强** | 自定义范围/前缀扫描触发 | 补漏、纠偏 |
+
+访问控制与角色管理接口仅管理员可调用。
 
 **`updateTags` 处理策略（决策 A：覆盖层）**：改动存 `tag_overrides` 覆盖层，**不动 Garage 原文件**（快、非破坏性、不变 etag）。展示时以覆盖层优先于文件标签。另提供显式"写回文件"操作（下载→改标签→重传）供需要时使用。
 
@@ -229,7 +254,8 @@ Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动
 - **不强制 HTTPS**：默认支持明文 HTTP，方便小白局域网/本机一键起服务。纯 HTTP 下优先用 token 认证（md5(密码+盐)）避免裸传密码。TLS/反代作为进阶可选。
 - **密码存储**：Subsonic token 认证要求服务端能还原密码校验，故密码**可逆加密存储**（同 Navidrome 做法），个人 + HTTP 场景可接受。
 - **自研客户端**：额外发 **Bearer token**（会话令牌）走扩展接口，比 Subsonic 老式认证更干净。
-- 个人场景无需 OAuth 等复杂机制。
+- **多用户与权限**：首启创建管理员；管理员通过用户/角色管理接口创建家人账号并分配角色。每个请求解析出用户身份 → 决定其曲库可见性、歌单空间、管理员专属接口的授权。**授权（谁能看什么、谁是管理员）在服务端强制**，客户端不可绕过。
+- 家庭场景无需 OAuth 等复杂机制。
 
 ---
 
@@ -261,7 +287,7 @@ Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动
 ## 12. 明确排除（YAGNI / 未来）
 
 - 多租户、计费、水平扩展、海量并发（非本场景）。
-- Postgres、Redis（单用户过早优化，留 `sqlx` 后路）。
+- Postgres、Redis（家庭少量用户过早优化，留 `sqlx` 后路）。
 - HLS 自适应转码（v1 后置增强）。
 - Prometheus 指标（可选，后置）。
 - 预转码（采用按需 + 缓存替代）。
