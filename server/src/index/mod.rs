@@ -8,6 +8,10 @@ use std::path::Path;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
+pub mod repo_media;
+
+pub use repo_media::{MediaRepo, NewTrack, SearchResults};
+
 /// 本层统一结果类型（迁移错误并入 [`sqlx::Error`]）。
 pub type Result<T> = std::result::Result<T, sqlx::Error>;
 
@@ -39,5 +43,10 @@ impl Index {
     /// 访问底层连接池（供各仓储使用）。
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// 媒体仓储。
+    pub fn media(&self) -> MediaRepo<'_> {
+        MediaRepo::new(&self.pool)
     }
 }
