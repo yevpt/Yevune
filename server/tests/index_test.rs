@@ -223,3 +223,83 @@ async fn media_delete_by_object_key() {
     assert!(media.get_track(id).await.unwrap().is_none());
     assert!(!media.delete_by_object_key("music/del.flac").await.unwrap());
 }
+
+// ─────────────────────────── User / Role ───────────────────────────
+
+#[tokio::test]
+async fn user_创建读取与改密() {
+    let (index, _dir) = temp_index().await;
+    let users = index.users();
+    let id = users.create_user("papa", "enc-1").await.unwrap();
+
+    let u = users.get_user(id).await.unwrap().expect("应存在");
+    assert_eq!(u.id, id.to_string());
+    assert_eq!(u.name, "papa");
+    assert!(!u.admin);
+    assert!(u.roles.is_empty());
+
+    // 密码不进入 DTO，但可供认证层取回
+    assert_eq!(
+        users.password_enc("papa").await.unwrap().as_deref(),
+        Some("enc-1")
+    );
+    assert!(users.change_password(id, "enc-2").await.unwrap());
+    assert_eq!(
+        users.password_enc("papa").await.unwrap().as_deref(),
+        Some("enc-2")
+    );
+
+    let by_name = users.get_user_by_name("papa").await.unwrap().unwrap();
+    assert_eq!(by_name.id, id.to_string());
+}
+
+#[tokio::test]
+async fn user_删除() {
+    let (index, _dir) = temp_index().await;
+    let users = index.users();
+    let id = users.create_user("kid", "e").await.unwrap();
+    assert!(users.delete_user(id).await.unwrap());
+    assert!(users.get_user(id).await.unwrap().is_none());
+    assert!(!users.delete_user(id).await.unwrap());
+}
+
+#[tokio::test]
+async fn role_分配解除与_admin_判定() {
+    let (index, _dir) = temp_index().await;
+    let users = index.users();
+    let roles = index.roles();
+
+    let uid = users.create_user("papa", "e").await.unwrap();
+    let admin = roles.create_role("admin", true).await.unwrap();
+    let member = roles.create_role("member", true).await.unwrap();
+
+    assert!(!roles.is_admin(uid).await.unwrap());
+    roles.assign(uid, admin).await.unwrap();
+    roles.assign(uid, member).await.unwrap();
+    // 幂等：重复分配不报错
+    roles.assign(uid, admin).await.unwrap();
+
+    assert!(roles.is_admin(uid).await.unwrap());
+    let list = roles.roles_of(uid).await.unwrap();
+    assert_eq!(list.len(), 2);
+
+    // DTO 反映角色与 admin
+    let u = users.get_user(uid).await.unwrap().unwrap();
+    assert!(u.admin);
+    assert!(u.roles.iter().any(|r| r == "admin"));
+
+    assert!(roles.unassign(uid, admin).await.unwrap());
+    assert!(!roles.is_admin(uid).await.unwrap());
+    assert!(!roles.unassign(uid, admin).await.unwrap());
+}
+
+#[tokio::test]
+async fn role_列举与删除() {
+    let (index, _dir) = temp_index().await;
+    let roles = index.roles();
+    let r = roles.create_role("孩子", false).await.unwrap();
+    assert!(roles.get_role_by_name("孩子").await.unwrap().is_some());
+    assert_eq!(roles.list_roles().await.unwrap().len(), 1);
+    assert!(roles.delete_role(r).await.unwrap());
+    assert!(roles.get_role_by_name("孩子").await.unwrap().is_none());
+}
