@@ -12,11 +12,13 @@
 pub mod access;
 pub mod media;
 pub mod playlist;
+pub mod response;
 pub mod stream;
 pub mod user;
 
 pub use access::{AccessRule, Principal, PrincipalType, ScopeType};
 pub use media::{Album, Artist, Genre, Track};
 pub use playlist::{Playlist, PlaylistFolder};
+pub use response::{ResponseStatus, SubsonicBody, SubsonicError, SubsonicResponse};
 pub use stream::StreamRequest;
 pub use user::{Role, User};

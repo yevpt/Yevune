@@ -10,12 +10,13 @@ env:
 
 jobs:
   build:
-    name: fmt · clippy · test
+    name: fmt · clippy · test (${{ matrix.crate }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        # Cargo workspace 根位于 server/
-        working-directory: server
+    strategy:
+      fail-fast: false
+      matrix:
+        # 各独立 crate（server 为 workspace 根，contract 为独立 crate）
+        crate: [server, contract]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,13 +25,16 @@ jobs:
       - name: 安装 Rust 工具链
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          cache-workspaces: server
+          cache-workspaces: ${{ matrix.crate }}
 
       - name: 格式检查
+        working-directory: ${{ matrix.crate }}
         run: cargo fmt --check
 
       - name: Clippy（警告即错误）
+        working-directory: ${{ matrix.crate }}
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: 测试
+        working-directory: ${{ matrix.crate }}
         run: cargo test --locked
