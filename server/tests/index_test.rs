@@ -303,3 +303,143 @@ async fn role_列举与删除() {
     assert!(roles.delete_role(r).await.unwrap());
     assert!(roles.get_role_by_name("孩子").await.unwrap().is_none());
 }
+
+// ─────────────────────────── Playlist / Folder ───────────────────────────
+
+async fn seed_user(index: &Index, name: &str) -> i64 {
+    index.users().create_user(name, "e").await.unwrap()
+}
+
+#[tokio::test]
+async fn playlist_文件夹树_嵌套与_owner_隔离() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let papa = seed_user(&index, "papa").await;
+    let kid = seed_user(&index, "kid").await;
+
+    // papa: 中文 → 华语经典(子)
+    let zh = pl.create_folder(papa, "中文", None).await.unwrap();
+    let _classic = pl.create_folder(papa, "华语经典", Some(zh)).await.unwrap();
+    // kid 的树
+    pl.create_folder(kid, "儿歌", None).await.unwrap();
+
+    let papa_folders = pl.list_folders(papa).await.unwrap();
+    assert_eq!(papa_folders.len(), 2, "papa 只应见到自己的两个文件夹");
+    let child = papa_folders
+        .iter()
+        .find(|f| f.name == "华语经典")
+        .expect("应有子文件夹");
+    assert_eq!(child.parent_id.as_deref(), Some(zh.to_string().as_str()));
+
+    // owner 隔离
+    assert!(!papa_folders.iter().any(|f| f.name == "儿歌"));
+    assert_eq!(pl.list_folders(kid).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn playlist_文件夹重命名与移动() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let papa = seed_user(&index, "papa").await;
+    let a = pl.create_folder(papa, "A", None).await.unwrap();
+    let b = pl.create_folder(papa, "B", None).await.unwrap();
+
+    assert!(pl.rename_folder(a, "A-改").await.unwrap());
+    assert!(pl.move_folder(b, Some(a)).await.unwrap());
+
+    let folders = pl.list_folders(papa).await.unwrap();
+    let moved = folders.iter().find(|f| f.id == b.to_string()).unwrap();
+    assert_eq!(moved.parent_id.as_deref(), Some(a.to_string().as_str()));
+    assert!(folders.iter().any(|f| f.name == "A-改"));
+}
+
+#[tokio::test]
+async fn playlist_删除文件夹级联子文件夹() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let papa = seed_user(&index, "papa").await;
+    let parent = pl.create_folder(papa, "父", None).await.unwrap();
+    pl.create_folder(papa, "子", Some(parent)).await.unwrap();
+
+    assert!(pl.delete_folder(parent).await.unwrap());
+    assert_eq!(
+        pl.list_folders(papa).await.unwrap().len(),
+        0,
+        "子文件夹应被级联删除"
+    );
+}
+
+#[tokio::test]
+async fn playlist_crud_与移动() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let papa = seed_user(&index, "papa").await;
+    let folder = pl.create_folder(papa, "中文", None).await.unwrap();
+
+    let id = pl.create_playlist(papa, "精选", None).await.unwrap();
+    let got = pl.get_playlist(id).await.unwrap().expect("应存在");
+    assert_eq!(got.name, "精选");
+    assert_eq!(got.owner_id, papa.to_string());
+    assert_eq!(got.song_count, 0);
+    assert!(got.folder_id.is_none());
+
+    assert!(pl.update_playlist(id, "精选2", Some("备注")).await.unwrap());
+    assert!(pl.move_playlist(id, Some(folder)).await.unwrap());
+    let moved = pl.get_playlist(id).await.unwrap().unwrap();
+    assert_eq!(moved.name, "精选2");
+    assert_eq!(moved.comment.as_deref(), Some("备注"));
+    assert_eq!(
+        moved.folder_id.as_deref(),
+        Some(folder.to_string().as_str())
+    );
+
+    assert!(pl.delete_playlist(id).await.unwrap());
+    assert!(pl.get_playlist(id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn playlist_曲目有序增删与聚合() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let media = index.media();
+    let papa = seed_user(&index, "papa").await;
+
+    let t1 = media
+        .upsert_track(&new_track("A", None, None, "music/a.flac"))
+        .await
+        .unwrap();
+    let t2 = media
+        .upsert_track(&new_track("B", None, None, "music/b.flac"))
+        .await
+        .unwrap();
+    let pid = pl.create_playlist(papa, "L", None).await.unwrap();
+
+    pl.set_tracks(pid, &[t2, t1]).await.unwrap();
+    assert_eq!(
+        pl.track_ids(pid).await.unwrap(),
+        vec![t2, t1],
+        "应保持插入顺序"
+    );
+
+    let dto = pl.get_playlist(pid).await.unwrap().unwrap();
+    assert_eq!(dto.song_count, 2);
+    assert_eq!(dto.duration, 400);
+
+    // 整体替换
+    pl.set_tracks(pid, &[t1]).await.unwrap();
+    assert_eq!(pl.track_ids(pid).await.unwrap(), vec![t1]);
+}
+
+#[tokio::test]
+async fn playlist_列举按_owner() {
+    let (index, _dir) = temp_index().await;
+    let pl = index.playlists();
+    let papa = seed_user(&index, "papa").await;
+    let kid = seed_user(&index, "kid").await;
+    pl.create_playlist(papa, "P1", None).await.unwrap();
+    pl.create_playlist(papa, "P2", None).await.unwrap();
+    pl.create_playlist(kid, "K1", None).await.unwrap();
+
+    assert_eq!(pl.list_playlists(papa).await.unwrap().len(), 2);
+    assert_eq!(pl.list_playlists(kid).await.unwrap().len(), 1);
+}

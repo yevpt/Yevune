@@ -9,9 +9,11 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
 pub mod repo_media;
+pub mod repo_playlist;
 pub mod repo_user;
 
 pub use repo_media::{MediaRepo, NewTrack, SearchResults};
+pub use repo_playlist::PlaylistRepo;
 pub use repo_user::{RoleRepo, UserRepo};
 
 /// 本层统一结果类型（迁移错误并入 [`sqlx::Error`]）。
@@ -60,5 +62,10 @@ impl Index {
     /// 角色仓储。
     pub fn roles(&self) -> RoleRepo<'_> {
         RoleRepo::new(&self.pool)
+    }
+
+    /// 歌单/文件夹仓储。
+    pub fn playlists(&self) -> PlaylistRepo<'_> {
+        PlaylistRepo::new(&self.pool)
     }
 }
