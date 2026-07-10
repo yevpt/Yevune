@@ -1,0 +1,12 @@
+[package]
+name = "contract"
+version = "0.1.0"
+edition = "2021"
+description = "服务端与客户端共用的纯数据类型（DTO），字段对齐 OpenSubsonic 语义"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
