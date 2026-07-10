@@ -28,6 +28,10 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 # 跨端共享 DTO
 contract = { path = "../contract" }
+object_store = { version = "0.14.0", features = ["aws"] }
+async-trait = "0.1.89"
+bytes = "1.12.1"
+futures = "0.3.32"
 
 [dev-dependencies]
 # 集成测试用 oneshot 驱动 Router，无需真实绑定端口
