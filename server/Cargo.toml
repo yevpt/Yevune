@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+
+[package]
+name = "music-server"
+version = "0.1.0"
+edition = "2021"
+description = "自托管家庭音乐流媒体服务端（OpenSubsonic 兼容）"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# HTTP 框架（红线锁定）
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"] }
+# 配置：TOML 文件 + 环境变量分层覆盖（标准库无法胜任分层反序列化）
+config = { version = "0.14", default-features = false, features = ["toml"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 结构化日志（红线锁定）
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+# 集成测试用 oneshot 驱动 Router，无需真实绑定端口
+tower = { version = "0.5", features = ["util"] }
