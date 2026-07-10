@@ -16,3 +16,6 @@ Cargo.lock.bak
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# 工具本地权限（勿提交）
+.claude/settings.local.json

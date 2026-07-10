@@ -50,6 +50,9 @@
 ```
 music/
 ├── AGENTS.md / CLAUDE.md        # 本宪法（Claude 版引用本文件）
+├── .agents/skills/              # AI skills（权威）；.claude/.cursor 下为符号链接
+├── .githooks/                   # 版本化 git hooks（core.hooksPath）
+├── scripts/                     # hook 校验脚本等
 ├── server/          Rust 服务端 (axum)；模块：api/index/storage/scanner/transcode
 ├── contract/        Rust 共享 DTO → 服务端+客户端共用，生成 OpenAPI
 ├── core/            Rust 客户端核心 → UniFFI 生成各语言绑定
@@ -68,11 +71,20 @@ music/
 
 1. **TDD**：先写失败测试 → 跑红 → 最小实现 → 跑绿 → 提交。禁止无测试提交产品代码。
 2. **契约先行**：改跨端接口，先改 `contract`，靠编译错误驱动两端同步更新。
-3. **小步频繁提交**，Conventional Commits（`feat:`/`fix:`/`docs:`/`refactor:`/`test:`），信息用中文可。
+3. **小步频繁提交**。写/改 commit 前**必须**先读并遵守 [`.agents/skills/git-commit/SKILL.md`](.agents/skills/git-commit/SKILL.md)。身份与 message 由 `.githooks` 硬校验，不合规直接拒。
 4. **改架构前先改文档**：任何偏离 spec 的设计，先更新 spec 并写 ADR，不得"边写边悄悄改架构"。
 5. **CI 必须绿**：`cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 全过才算完成。
 6. **任务边界**：只做当前任务范围内的事。发现范围外的问题 → 记录到 issue/TODO，不擅自扩大改动。
 7. **资源守护**：转码/传输**流式、有界缓冲，绝不把整个音频文件读进内存**；转码/扫描并发用信号量限流。
+
+### 5.1 Git hooks 启用（克隆后一次）
+
+```bash
+git config core.hooksPath .githooks
+# 或：./scripts/setup-git-hooks.sh
+```
+
+未设置则 hooks 不生效；AI 与人工提交均须启用。
 
 ---
 
@@ -89,9 +101,13 @@ music/
 
 ## 7. 各工具如何使用本文件
 
-- **Claude Code**：根 `CLAUDE.md` 已 `@AGENTS.md` 引用本文件，自动加载。
-- **Codex**：原生读取 `AGENTS.md`。
-- **Cursor**：读取 `AGENTS.md`（如用 `.cursor/rules`，请在其中 include 本文件）。
+- **Claude Code**：根 `CLAUDE.md` 已 `@AGENTS.md` 引用本文件，自动加载；skills 见 `.claude/skills/`（链到 `.agents/skills/`）。
+- **Codex**：原生读取 `AGENTS.md`；skills 见 `.agents/skills/`。
+- **Cursor**：读取 `AGENTS.md`；skills 见 `.cursor/skills/`（链到 `.agents/skills/`）。
 - **其他 AI**：交接提示词会显式要求"先阅读并遵守 AGENTS.md 与对应 spec"。
+
+### 按场景读 skill（`.agents/skills/<name>/SKILL.md`）
+
+- 写 commit message / 执行 `git commit` → `git-commit`
 
 **当你（AI）不确定某个决策时**：查 spec 和 ADR；仍不明确 → 停下来问人，不要臆测发挥。
