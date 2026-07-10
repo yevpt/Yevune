@@ -7,6 +7,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod index;
+pub mod scanner;
 pub mod storage;
 
 use axum::Router;

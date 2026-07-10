@@ -29,6 +29,8 @@ sqlx = { version = "0.8", default-features = false, features = [
 # 跨端共享 DTO
 contract = { path = "../contract" }
 object_store = { version = "0.14.0", features = ["aws"] }
+# 读音频标签/内嵌封面（纯 Rust；仅解析文件头元数据，配合 ObjectStore Range 读，绝不整读音频）。
+lofty = "0.24"
 async-trait = "0.1.89"
 bytes = "1.12.1"
 futures = "0.3.32"
