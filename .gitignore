@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# 本地配置与运行时
+*.local.toml
+/data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
