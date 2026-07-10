@@ -51,7 +51,9 @@ else
   if ! printf '%s' "$subject" | grep -q '[一-龥]'; then
     errors+=("主题需使用中文描述")
   fi
-  if [[ "$subject" =~ [。.]$ ]]; then
+  # 用 glob 按「字符」判断结尾，避免 =~ 在非 UTF-8 locale 下把全角「。」
+  # 按字节拆入字符类，从而误伤末字节相同的中文字（如「层」E5 B1 82）。
+  if [[ "$subject" == *. || "$subject" == *"。" ]]; then
     errors+=("主题结尾不要加句号")
   fi
 fi
