@@ -1,10 +1,10 @@
 //! 带 OpenSubsonic 认证的 JSON HTTP 请求。
 
-use serde::de::DeserializeOwned;
-use serde::Deserialize;
-
+use crate::api::manage::{self, UploadProgress};
 use crate::auth::AuthenticatedSession;
 use crate::error::{CoreError, Result};
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 
 /// Core 内部 HTTP 客户端。
 #[derive(Debug, Clone)]
@@ -38,6 +38,29 @@ impl HttpClient {
         Self {
             client: reqwest::Client::new(),
         }
+    }
+
+    /// 从本地路径流式读取 multipart 文件并上传至曲库扩展端点。
+    pub(crate) async fn upload_track(
+        &self,
+        auth: &AuthenticatedSession,
+        local_path: String,
+        library_key: String,
+        progress: Box<dyn UploadProgress>,
+    ) -> Result<contract::Track> {
+        let mut url = auth.config.endpoint("ext/uploadTrack")?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.extend_pairs(auth.query_pairs());
+        }
+        tokio::task::spawn_blocking(move || {
+            let client = reqwest::blocking::Client::new();
+            manage::blocking_upload(&client, url, local_path, library_key, progress)
+        })
+        .await
+        .map_err(|error| CoreError::Network {
+            message: error.to_string(),
+        })?
     }
 
     /// 调用没有业务负载的 OpenSubsonic 端点并验证协议信封。

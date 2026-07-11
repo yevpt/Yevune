@@ -11,7 +11,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 contract = { path = "../contract" }
 # 客户端 HTTP；其 multipart 文件 part 在内部流式读取本地文件。
-reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "multipart", "rustls"] }
 # UniFFI 为 Swift 生成类型安全绑定。
 uniffi = { version = "0.31", features = ["cli", "tokio"] }
 # async reqwest 运行时；仓库服务端已使用同一运行时。

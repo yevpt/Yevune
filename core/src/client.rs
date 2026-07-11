@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
+use crate::api::manage::{self, UploadMetadata, UploadProgress};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
 use crate::error::{CoreError, Result};
@@ -99,6 +100,23 @@ impl MusicClient {
     /// 在艺人、专辑与曲目中全文搜索。
     pub async fn search(&self, query: String) -> Result<SearchResult> {
         browse::search(&self.http, &self.authenticated_session().await?, query).await
+    }
+
+    /// 从本地路径流式上传单曲；音频字节不会穿越 FFI。
+    pub async fn upload_track(
+        &self,
+        local_path: String,
+        metadata: UploadMetadata,
+        progress: Box<dyn UploadProgress>,
+    ) -> Result<contract::Track> {
+        manage::upload_track(
+            &self.http,
+            &self.authenticated_session().await?,
+            local_path,
+            metadata,
+            progress,
+        )
+        .await
     }
 }
 

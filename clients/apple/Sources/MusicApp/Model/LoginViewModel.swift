@@ -10,6 +10,7 @@ protocol MusicClientProviding: Sendable {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
     func search(query: String) async throws -> SearchResult
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws
 }
 
 @MainActor

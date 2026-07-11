@@ -45,6 +45,16 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.searchResult?.albums, [album])
         XCTAssertNil(model.errorMessage)
     }
+
+    func testUploadPublishesCallbackProgress() async {
+        let model = UploadViewModel(client: FakeMusicClient())
+
+        await model.upload(localPath: "/tmp/song.flac", libraryKey: "library/song.flac")
+
+        XCTAssertEqual(model.progress, 1)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.isUploading)
+    }
 }
 
 private actor FakeMusicClient: MusicClientProviding {
@@ -75,5 +85,10 @@ private actor FakeMusicClient: MusicClientProviding {
 
     func search(query: String) async throws -> SearchResult {
         SearchResult(artists: [], albums: [album], tracks: [])
+    }
+
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws {
+        progress.onProgress(sentBytes: 16, totalBytes: 32)
+        progress.onProgress(sentBytes: 32, totalBytes: 32)
     }
 }
