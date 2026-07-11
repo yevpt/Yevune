@@ -239,6 +239,27 @@ fn upload_request(uri: String, key: &str, bytes: &[u8]) -> Request<Body> {
         .unwrap()
 }
 
+fn cover_request(uri: String, id: &str, bytes: &[u8]) -> Request<Body> {
+    let boundary = "cover-test-boundary";
+    let mut body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"id\"\r\n\r\n{id}\r\n\
+         --{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"cover.png\"\r\n\
+         Content-Type: image/png\r\n\r\n"
+    )
+    .into_bytes();
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap()
+}
+
 async fn wait_for_track_key(index: &Index, expected: &str) {
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         loop {
@@ -832,9 +853,38 @@ async fn extensions_discovery_declares_every_ext_capability() {
         "accessControl",
         "roleManagement",
         "prefixScan",
+        "coverArtManagement",
     ] {
         assert!(names.contains(&name), "缺少 {name}: {body}");
     }
+}
+
+#[tokio::test]
+async fn set_cover_art_streams_image_and_associates_album() {
+    let fixture = Fixture::new().await;
+    let album_id: i64 =
+        sqlx::query_scalar("INSERT INTO albums(name) VALUES('Replacement') RETURNING id")
+            .fetch_one(fixture.index.pool())
+            .await
+            .unwrap();
+    let bytes = b"replacement-cover";
+    let response = music_server::app(fixture.state.clone())
+        .oneshot(cover_request(
+            fixture.uri("admin", "/rest/ext/setCoverArt"),
+            &format!("al-{album_id}"),
+            bytes,
+        ))
+        .await
+        .unwrap();
+    let body = json(response).await;
+    assert_eq!(body["subsonic-response"]["status"], "ok", "{body}");
+    let key: String = sqlx::query_scalar("SELECT cover_key FROM albums WHERE id = ?")
+        .bind(album_id)
+        .fetch_one(fixture.index.pool())
+        .await
+        .unwrap();
+    assert!(key.starts_with("covers/"));
+    assert_eq!(fixture.store.get(&key).await.unwrap().as_ref(), bytes);
 }
 
 #[tokio::test]

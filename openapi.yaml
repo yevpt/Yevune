@@ -67,6 +67,12 @@ paths:
       responses:
         '200':
           description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/setCoverArt:
+    get:
+      summary: 替换专辑封面（扩展，multipart）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
   /rest/ext/uploadTrack:
     get:
       summary: 上传曲目入库（扩展，multipart）

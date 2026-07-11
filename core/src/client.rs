@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
+use crate::api::media;
 use crate::api::scan::{self, ScanStatus};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
@@ -139,6 +140,21 @@ impl MusicClient {
     }
     pub async fn scan_status(&self) -> Result<ScanStatus> {
         scan::status(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 生成带当前认证参数的封面 URL。
+    pub async fn cover_art_url(&self, id: String, size: Option<u32>) -> Result<String> {
+        media::cover_art_url(&self.authenticated_session().await?, id, size)
+    }
+
+    /// 从本地路径流式替换专辑封面。
+    pub async fn set_cover_art(&self, album_id: String, local_path: String) -> Result<()> {
+        media::set_cover_art(&self.authenticated_session().await?, album_id, local_path).await
+    }
+
+    /// 生成交给平台播放器的认证流媒体 URL。
+    pub async fn stream_url(&self, track_id: String) -> Result<String> {
+        media::stream_url(&self.authenticated_session().await?, track_id)
     }
 }
 

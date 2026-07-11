@@ -50,6 +50,7 @@ async fn get_open_subsonic_extensions(OriginalUri(uri): OriginalUri) -> Response
             {"name": "accessControl", "versions": [1]},
             {"name": "roleManagement", "versions": [1]},
             {"name": "prefixScan", "versions": [1]}
+            ,{"name": "coverArtManagement", "versions": [1]}
         ]}),
     )
 }

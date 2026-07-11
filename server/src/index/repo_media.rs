@@ -419,6 +419,16 @@ impl<'a> MediaRepo<'a> {
         Ok(count > 0)
     }
 
+    /// 替换专辑封面对象键；专辑不存在时返回 `false`。
+    pub async fn set_album_cover(&self, album_id: i64, key: &str) -> Result<bool> {
+        let result = sqlx::query("UPDATE albums SET cover_key = ? WHERE id = ?")
+            .bind(key)
+            .bind(album_id)
+            .execute(self.pool)
+            .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     /// 在数据库侧完成 `getAlbumList2` 排序、过滤与分页，仅返回本页主键。
     #[allow(clippy::too_many_arguments)]
     pub async fn album_ids_for_list(

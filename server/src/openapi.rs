@@ -37,7 +37,7 @@ use utoipa::OpenApi as _;
 struct ApiDoc;
 
 /// 覆盖的主要端点：OpenSubsonic 兼容子集 + 自研扩展代表端点。
-/// 与 `api` 路由树对应；均为 `GET`（OpenSubsonic 惯例，含 multipart 的 uploadTrack 亦走 GET 触发）。
+/// 与 `api` 路由树对应；列表只描述能力，实际方法以路由实现为准。
 const ENDPOINTS: &[(&str, &str)] = &[
     ("/rest/ping", "存活探测"),
     ("/rest/getLicense", "许可信息"),
@@ -72,6 +72,7 @@ const ENDPOINTS: &[(&str, &str)] = &[
     ("/rest/changePassword", "改密码"),
     ("/rest/ext/getPlaylistTree", "多级歌单树（扩展）"),
     ("/rest/ext/uploadTrack", "上传曲目入库（扩展，multipart）"),
+    ("/rest/ext/setCoverArt", "替换专辑封面（扩展，multipart）"),
     (
         "/rest/ext/setAccessRule",
         "设置曲库访问规则（扩展，仅管理员）",

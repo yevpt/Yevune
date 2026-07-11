@@ -1,12 +1,20 @@
 import SwiftUI
+import CoreFFI
 
 struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     @State private var query = ""
+    @State private var selection: Album?
+    @StateObject private var media: MediaViewModel
+
+    init(model: LibraryViewModel) {
+        self.model = model
+        _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(model.albums, id: \.id) { album in
+            List(model.albums, id: \.id, selection: $selection) { album in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(album.name).font(.headline)
                     Text(album.artist ?? "未知艺人")
@@ -16,6 +24,7 @@ struct LibraryView: View {
             }
             .navigationTitle("曲库")
         } detail: {
+            if let selection { MediaDetailView(album: selection, model: media) } else {
             VStack(spacing: 18) {
                 TextField("搜索艺人、专辑或曲目", text: $query)
                     .textFieldStyle(.roundedBorder)
@@ -34,6 +43,7 @@ struct LibraryView: View {
                 }
             }
             .padding()
+            }
         }
         .task { await model.load() }
     }

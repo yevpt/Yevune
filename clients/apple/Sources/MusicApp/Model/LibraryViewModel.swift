@@ -9,6 +9,7 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var isLoading = false
 
     private let client: any MusicClientProviding
+    var clientForViews: any MusicClientProviding { client }
 
     init(client: any MusicClientProviding) {
         self.client = client

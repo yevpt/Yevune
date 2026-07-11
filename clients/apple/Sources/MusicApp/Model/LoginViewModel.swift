@@ -16,6 +16,17 @@ protocol MusicClientProviding: Sendable {
     func moveTrack(id: String, key: String) async throws
     func startScan() async throws -> ScanStatus
     func scanStatus() async throws -> ScanStatus
+    func getAlbum(id: String) async throws -> AlbumDetail
+    func coverArtURL(id: String, size: UInt32?) async throws -> String
+    func setCoverArt(albumID: String, localPath: String) async throws
+    func streamURL(trackID: String) async throws -> String
+}
+
+extension MusicClientProviding {
+    func getAlbum(id: String) async throws -> AlbumDetail { throw CocoaError(.featureUnsupported) }
+    func coverArtURL(id: String, size: UInt32?) async throws -> String { throw CocoaError(.featureUnsupported) }
+    func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
+    func streamURL(trackID: String) async throws -> String { throw CocoaError(.featureUnsupported) }
 }
 
 @MainActor

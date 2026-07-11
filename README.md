@@ -67,6 +67,8 @@ swift run --package-path clients/apple MusicApp
 
 脚本固定 `MACOSX_DEPLOYMENT_TARGET=14.0`，当前生成 Apple Silicon (`arm64`) 框架。框架与生成的 Swift 源码是本地构建产物，不提交；清理工作目录后再次运行该脚本即可。
 
+M1 客户端支持登录、浏览与搜索、拖拽上传、标签覆盖编辑、删除/移动、扫描状态、封面显示/替换和 AVFoundation 流式试听。上传与封面替换只把本地路径交给 Rust core，以有界流式请求传输；客户端不持有 Garage 凭证。
+
 ### 导入音乐
 
 把音频文件放进 Garage 的 `music` bucket（S3 客户端上传，或用扩展接口 `uploadTrack`），
