@@ -333,3 +333,279 @@ async fn 无规则时曲目对所有用户可见() {
         "默认开放：无任何规则时应可见"
     );
 }
+
+// ───────────── 带可见性过滤的读方法（供各曲库读路径复用）─────────────
+
+#[tokio::test]
+async fn 过滤_get_track_visible_对未授权隐藏对管理员可见() {
+    let (index, _dir) = temp_index().await;
+    let alice = user_with_roles(&index, "alice", &[]).await;
+    let bob = user_with_roles(&index, "bob", &[]).await;
+    let root = user_with_roles(&index, "root", &["admin"]).await;
+    let tid = index
+        .media()
+        .upsert_track(&new_track("受限曲", None, None, "k1"))
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Track,
+            &tid.to_string(),
+            None,
+            &[grant_user(alice)],
+        )
+        .await
+        .unwrap();
+
+    let ac = index.access_control();
+    let (v_alice, v_bob, v_root) = (
+        ac.resolve_viewer(alice).await.unwrap(),
+        ac.resolve_viewer(bob).await.unwrap(),
+        ac.resolve_viewer(root).await.unwrap(),
+    );
+    assert!(index
+        .media()
+        .get_track_visible(&v_bob, tid)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(index
+        .media()
+        .get_track_visible(&v_alice, tid)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(index
+        .media()
+        .get_track_visible(&v_root, tid)
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
+async fn 过滤_专辑曲目列表仅含可见曲目() {
+    let (index, _dir) = temp_index().await;
+    let alice = user_with_roles(&index, "alice", &[]).await;
+    let bob = user_with_roles(&index, "bob", &[]).await;
+    let album = index
+        .media()
+        .upsert_album("混合专辑", None, None, None)
+        .await
+        .unwrap();
+    let open = index
+        .media()
+        .upsert_track(&new_track("开放曲", Some(album), None, "k1"))
+        .await
+        .unwrap();
+    let secret = index
+        .media()
+        .upsert_track(&new_track("隐藏曲", Some(album), None, "k2"))
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Track,
+            &secret.to_string(),
+            None,
+            &[grant_user(alice)],
+        )
+        .await
+        .unwrap();
+
+    let ac = index.access_control();
+    let v_bob = ac.resolve_viewer(bob).await.unwrap();
+    let v_alice = ac.resolve_viewer(alice).await.unwrap();
+
+    let bob_tracks = index
+        .media()
+        .album_tracks_visible(&v_bob, album)
+        .await
+        .unwrap();
+    let bob_ids: Vec<String> = bob_tracks.iter().map(|t| t.id.clone()).collect();
+    assert_eq!(bob_ids, vec![open.to_string()], "bob 只看到开放曲");
+
+    let alice_tracks = index
+        .media()
+        .album_tracks_visible(&v_alice, album)
+        .await
+        .unwrap();
+    assert_eq!(alice_tracks.len(), 2, "alice 看到全部");
+    let _ = secret;
+}
+
+#[tokio::test]
+async fn 过滤_专辑列表隐藏无可见曲目的专辑() {
+    let (index, _dir) = temp_index().await;
+    let alice = user_with_roles(&index, "alice", &[]).await;
+    let bob = user_with_roles(&index, "bob", &[]).await;
+    let restricted_album = index
+        .media()
+        .upsert_album("受限专辑", None, None, None)
+        .await
+        .unwrap();
+    let open_album = index
+        .media()
+        .upsert_album("开放专辑", None, None, None)
+        .await
+        .unwrap();
+    index
+        .media()
+        .upsert_track(&new_track("受限曲", Some(restricted_album), None, "k1"))
+        .await
+        .unwrap();
+    index
+        .media()
+        .upsert_track(&new_track("开放曲", Some(open_album), None, "k2"))
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Album,
+            &restricted_album.to_string(),
+            None,
+            &[grant_user(alice)],
+        )
+        .await
+        .unwrap();
+
+    let ac = index.access_control();
+    let v_bob = ac.resolve_viewer(bob).await.unwrap();
+    let v_alice = ac.resolve_viewer(alice).await.unwrap();
+
+    let bob_albums = index.media().list_albums_visible(&v_bob).await.unwrap();
+    let bob_ids: Vec<String> = bob_albums.iter().map(|a| a.id.clone()).collect();
+    assert!(bob_ids.contains(&open_album.to_string()), "bob 见开放专辑");
+    assert!(
+        !bob_ids.contains(&restricted_album.to_string()),
+        "bob 不见无可见曲目的受限专辑"
+    );
+    assert!(index
+        .media()
+        .get_album_visible(&v_bob, restricted_album)
+        .await
+        .unwrap()
+        .is_none());
+
+    let alice_albums = index.media().list_albums_visible(&v_alice).await.unwrap();
+    assert_eq!(alice_albums.len(), 2, "alice 见全部专辑");
+}
+
+#[tokio::test]
+async fn 过滤_艺人及其专辑按可见性收敛() {
+    let (index, _dir) = temp_index().await;
+    let alice = user_with_roles(&index, "alice", &[]).await;
+    let bob = user_with_roles(&index, "bob", &[]).await;
+    let artist = index.media().upsert_artist("神秘艺人").await.unwrap();
+    let restricted_album = index
+        .media()
+        .upsert_album("受限专辑", Some(artist), None, None)
+        .await
+        .unwrap();
+    index
+        .media()
+        .upsert_track(&new_track(
+            "受限曲",
+            Some(restricted_album),
+            Some(artist),
+            "k1",
+        ))
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Album,
+            &restricted_album.to_string(),
+            None,
+            &[grant_user(alice)],
+        )
+        .await
+        .unwrap();
+
+    let ac = index.access_control();
+    let v_bob = ac.resolve_viewer(bob).await.unwrap();
+
+    // 该艺人当前对 bob 无任何可见曲目 → 不出现在列表。
+    let artists = index.media().list_artists_visible(&v_bob).await.unwrap();
+    assert!(
+        !artists.iter().any(|a| a.id == artist.to_string()),
+        "无可见曲目的艺人不出现"
+    );
+    assert!(index
+        .media()
+        .get_artist_visible(&v_bob, artist)
+        .await
+        .unwrap()
+        .is_none());
+
+    // 在该艺人下新增一张开放专辑与曲目 → bob 现在能看到艺人，且只看到开放专辑。
+    let open_album = index
+        .media()
+        .upsert_album("开放专辑", Some(artist), None, None)
+        .await
+        .unwrap();
+    index
+        .media()
+        .upsert_track(&new_track("开放曲", Some(open_album), Some(artist), "k2"))
+        .await
+        .unwrap();
+
+    let artists = index.media().list_artists_visible(&v_bob).await.unwrap();
+    assert!(
+        artists.iter().any(|a| a.id == artist.to_string()),
+        "有可见曲目后艺人出现"
+    );
+    let albums = index
+        .media()
+        .artist_albums_visible(&v_bob, artist)
+        .await
+        .unwrap();
+    let ids: Vec<String> = albums.iter().map(|a| a.id.clone()).collect();
+    assert_eq!(ids, vec![open_album.to_string()], "只列出有可见曲目的专辑");
+}
+
+#[tokio::test]
+async fn 过滤_search_visible_过滤受限命中() {
+    let (index, _dir) = temp_index().await;
+    let alice = user_with_roles(&index, "alice", &[]).await;
+    let bob = user_with_roles(&index, "bob", &[]).await;
+    let tid = index
+        .media()
+        .upsert_track(&new_track("绝密档案", None, None, "k1"))
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Track,
+            &tid.to_string(),
+            None,
+            &[grant_user(alice)],
+        )
+        .await
+        .unwrap();
+
+    let ac = index.access_control();
+    let v_bob = ac.resolve_viewer(bob).await.unwrap();
+    let v_alice = ac.resolve_viewer(alice).await.unwrap();
+
+    let bob_hits = index
+        .media()
+        .search_visible(&v_bob, "绝密档", 20)
+        .await
+        .unwrap();
+    assert!(
+        bob_hits.tracks.is_empty(),
+        "受限曲目不出现在未授权者搜索结果"
+    );
+    let alice_hits = index
+        .media()
+        .search_visible(&v_alice, "绝密档", 20)
+        .await
+        .unwrap();
+    assert_eq!(alice_hits.tracks.len(), 1, "授权者可搜到");
+}

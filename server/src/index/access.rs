@@ -75,11 +75,17 @@ impl<'a> AccessControl<'a> {
         Ok(visible != 0)
     }
 
-    /// 生成可注入曲目读查询的**可见性谓词**（布尔 SQL 表达式，作用于曲目别名 `t`）。
+    /// 生成作用于曲目别名 `t` 的可见性谓词。见 [`visibility_sql_for`](Self::visibility_sql_for)。
+    pub fn visibility_sql(&self, viewer: &Viewer) -> String {
+        self.visibility_sql_for(viewer, "t")
+    }
+
+    /// 生成可注入曲目读查询的**可见性谓词**（布尔 SQL 表达式，作用于曲目别名 `alias`）。
     ///
     /// 供 browsing/search/media 等所有读路径在 `WHERE` 中 `AND (谓词)` 使用，
     /// 从而把"查询时评估 + 最具体优先 + 管理员绕过"统一强制在数据层。
-    pub fn visibility_sql(&self, viewer: &Viewer) -> String {
+    /// 需要在 `EXISTS` 子查询中判定另一张曲目别名（如按专辑聚可见曲目）时传入对应别名。
+    pub fn visibility_sql_for(&self, viewer: &Viewer, alias: &str) -> String {
         if viewer.admin {
             return "1 = 1".to_string();
         }
@@ -88,10 +94,10 @@ impl<'a> AccessControl<'a> {
         // COALESCE 取最具体的非空裁决；全空则默认开放(1)。
         format!(
             "COALESCE({track}, {album}, {artist}, {genre}, 1) = 1",
-            track = level_verdict("track", "CAST(t.id AS TEXT)", &m),
-            album = level_verdict("album", "CAST(t.album_id AS TEXT)", &m),
-            artist = level_verdict("artist", "CAST(t.artist_id AS TEXT)", &m),
-            genre = level_verdict("genre", "t.genre", &m),
+            track = level_verdict("track", &format!("CAST({alias}.id AS TEXT)"), &m),
+            album = level_verdict("album", &format!("CAST({alias}.album_id AS TEXT)"), &m),
+            artist = level_verdict("artist", &format!("CAST({alias}.artist_id AS TEXT)"), &m),
+            genre = level_verdict("genre", &format!("{alias}.genre"), &m),
         )
     }
 
