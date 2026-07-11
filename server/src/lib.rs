@@ -12,11 +12,16 @@ pub mod storage;
 
 use axum::Router;
 
-/// 构建应用的 axum [`Router`]。
-///
-/// 目前仅挂载治理骨架端点（健康检查与 OpenSubsonic `ping`）。
+pub use api::AppState;
+
+/// 构建无状态治理骨架应用（健康检查与 OpenSubsonic `ping`）。
 pub fn app() -> Router {
     api::router()
+}
+
+/// 构建挂载业务端点的完整应用（浏览/搜索/媒体，均强制曲库访问控制）。
+pub fn app_with_state(state: AppState) -> Router {
+    api::router_with_state(state)
 }
 
 /// 初始化 `tracing` 结构化日志。
