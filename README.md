@@ -57,15 +57,13 @@ OpenSubsonic 探测：`curl "http://localhost:4533/rest/ping?u=admin&p=<密码>&
 
 ### Mac 管理客户端（M1 开发）
 
-前置：Rust stable、Xcode（含命令行工具）与 macOS 14+。首次或 Rust core 改动后，先生成本机架构的 UniFFI Swift 绑定和 xcframework：
+前置：Rust stable、Xcode（含命令行工具）与 macOS 14+。在仓库根目录一键启动：
 
 ```bash
-./clients/apple/Packages/CoreFFI/scripts/build-core.sh
-swift test --package-path clients/apple
-swift run --package-path clients/apple MusicApp
+./scripts/run-mac-client.sh
 ```
 
-脚本固定 `MACOSX_DEPLOYMENT_TARGET=14.0`，当前生成 Apple Silicon (`arm64`) 框架。框架与生成的 Swift 源码是本地构建产物，不提交；清理工作目录后再次运行该脚本即可。
+需要同时启动 Docker 服务端时使用 `./scripts/run-mac-client.sh --with-server`。脚本会在 Rust core 或 UniFFI 输入更新后自动重建绑定，其他时候直接启动客户端。构建脚本固定 `MACOSX_DEPLOYMENT_TARGET=14.0`，当前生成 Apple Silicon (`arm64`) 框架；框架与生成的 Swift 源码是本地构建产物，不提交。
 
 M1 客户端支持登录、浏览与搜索、拖拽上传、标签覆盖编辑、删除/移动、扫描状态、封面显示/替换和 AVFoundation 流式试听。上传与封面替换只把本地路径交给 Rust core，以有界流式请求传输；客户端不持有 Garage 凭证。
 
