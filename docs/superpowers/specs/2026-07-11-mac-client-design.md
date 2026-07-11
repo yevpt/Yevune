@@ -120,6 +120,8 @@ clients/apple/
 |---|---|---|
 | `reqwest` | core 的 HTTP 客户端 | 客户端需 HTTP，reqwest 为 Rust 标准选择 |
 | `uniffi` | 生成 Swift 绑定 | ADR-0001 已锁定 |
+| `tokio` | core 异步运行时 | async reqwest 需要运行时；复用服务端已有依赖 |
+| `serde` / `serde_json` | OpenSubsonic JSON 信封解析 | 不能安全地手写 JSON 解析；复用 `contract`/服务端已有依赖 |
 | `AVFoundation` | macOS 原生音频 | 系统框架 |
 
 其余能不加就不加（YAGNI）。新增依赖在提交说明给理由。

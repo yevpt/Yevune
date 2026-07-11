@@ -6,12 +6,12 @@
 
 **Architecture:** `core` 是依赖 `contract` 的 Rust HTTP 客户端，并以 UniFFI 暴露唯一的 `MusicClient` 门面；`clients/apple` 仅持有 SwiftUI 视图、视图模型与 AVFoundation 试听。上传在 Rust 内从本地路径分块读取并发出 multipart，绝不跨 FFI 或在内存中聚合整个音频文件。
 
-**Tech Stack:** Rust 2021、reqwest、uniffi、Swift 5.9/SwiftUI、XCTest、AVFoundation。
+**Tech Stack:** Rust 2021、reqwest、uniffi、tokio、serde、serde_json、Swift 5.9/SwiftUI、XCTest、AVFoundation。
 
 ## Global Constraints
 
 - 服务端仍为 Rust；SQLite 在本地磁盘、Garage 是音频与转码缓存的唯一对象存储。
-- 新客户端依赖只允许 `reqwest` 与 `uniffi`；提交说明须说明二者分别用于 HTTP 和 Swift 绑定。
+- Core 可直接依赖 `reqwest`、`uniffi`、`tokio`、`serde` 与 `serde_json`；后 3 个复用仓库既有依赖，分别用于异步运行时与 JSON 协议解析。
 - 所有 OpenSubsonic 端点保持兼容；新增服务端能力只能在 `/rest/ext/*` 并在扩展发现端点声明。
 - UI 不实现 HTTP、认证或管理协议；`MusicClient` 与其可 mock 的 Swift 协议是唯一桥梁。
 - 每个行为先测试红，再写最小实现并验证绿；切片末尾运行格式化、clippy 与对应端到端验证。
