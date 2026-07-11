@@ -8,12 +8,14 @@ use std::path::Path;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
+pub mod access;
 pub mod repo_access;
 pub mod repo_annotation;
 pub mod repo_media;
 pub mod repo_playlist;
 pub mod repo_user;
 
+pub use access::{AccessControl, Viewer};
 pub use repo_access::{AccessRepo, TrackScope};
 pub use repo_annotation::{Annotation, AnnotationRepo};
 pub use repo_media::{MediaRepo, NewTrack, SearchResults};
@@ -78,8 +80,13 @@ impl Index {
         AnnotationRepo::new(&self.pool)
     }
 
-    /// 访问控制仓储。
+    /// 访问控制仓储（规则读写）。
     pub fn access(&self) -> AccessRepo<'_> {
         AccessRepo::new(&self.pool)
+    }
+
+    /// 访问控制判定器（查询时可见性强制）。
+    pub fn access_control(&self) -> AccessControl<'_> {
+        AccessControl::new(&self.pool)
     }
 }
