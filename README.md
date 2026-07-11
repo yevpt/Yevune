@@ -55,6 +55,18 @@ OpenSubsonic 探测：`curl "http://localhost:4533/rest/ping?u=admin&p=<密码>&
 - 服务器：`http://<主机>:4533`
 - 用户名 / 密码：管理员账号（或管理员后续创建的家庭成员账号）
 
+### Mac 管理客户端（M1 开发）
+
+前置：Rust stable、Xcode（含命令行工具）与 macOS 14+。首次或 Rust core 改动后，先生成本机架构的 UniFFI Swift 绑定和 xcframework：
+
+```bash
+./clients/apple/Packages/CoreFFI/scripts/build-core.sh
+swift test --package-path clients/apple
+swift run --package-path clients/apple MusicApp
+```
+
+脚本固定 `MACOSX_DEPLOYMENT_TARGET=14.0`，当前生成 Apple Silicon (`arm64`) 框架。框架与生成的 Swift 源码是本地构建产物，不提交；清理工作目录后再次运行该脚本即可。
+
 ### 导入音乐
 
 把音频文件放进 Garage 的 `music` bucket（S3 客户端上传，或用扩展接口 `uploadTrack`），

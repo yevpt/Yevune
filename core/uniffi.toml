@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "CoreFFI"
+ffi_module_name = "MusicCoreFFI"
+ffi_module_filename = "MusicCoreFFI"

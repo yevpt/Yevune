@@ -1,0 +1,24 @@
+[package]
+name = "music-core"
+version = "0.1.0"
+edition = "2021"
+description = "家庭音乐服务的跨平台 Rust 客户端核心"
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+contract = { path = "../contract" }
+# 客户端 HTTP；其 multipart 文件 part 在内部流式读取本地文件。
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
+# UniFFI 为 Swift 生成类型安全绑定。
+uniffi = { version = "0.31", features = ["cli", "tokio"] }
+# async reqwest 运行时；仓库服务端已使用同一运行时。
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+# OpenSubsonic JSON 信封解析；仓库 contract/server 已使用。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util"] }
