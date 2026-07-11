@@ -6,6 +6,7 @@
 mod common;
 
 use contract::{Principal, PrincipalType, ScopeType};
+use music_server::index::NewTrack;
 use serde_json::Value;
 
 /// 内部主键 → OpenSubsonic 对外 opaque id（前缀区分实体类型）。
@@ -274,4 +275,76 @@ async fn get_album_默认返回_xml() {
     assert!(body.contains("<subsonic-response"), "XML 根元素: {body}");
     assert!(body.contains("<album"), "含 album 元素: {body}");
     assert!(body.contains("<song"), "含 song 子元素: {body}");
+}
+
+#[tokio::test]
+async fn get_genres_按可见性过滤() {
+    let ctx = common::ctx().await;
+    let alice = ctx.create_user("alice", &[]).await;
+    let bob = ctx.create_user("bob", &[]).await;
+    let media = ctx.index.media();
+    let artist = media.upsert_artist("歌手").await.unwrap();
+    let album = media
+        .upsert_album("专辑", Some(artist), None, None)
+        .await
+        .unwrap();
+    let track_with = |title: &str, genre: &str, key: &str| NewTrack {
+        title: title.into(),
+        album_id: Some(album),
+        artist_id: Some(artist),
+        genre: Some(genre.into()),
+        codec: Some("flac".into()),
+        object_key: key.into(),
+        ..Default::default()
+    };
+    media
+        .upsert_track(&track_with("公开", "摇滚", "g/open.flac"))
+        .await
+        .unwrap();
+    let secret = media
+        .upsert_track(&track_with("机密", "机密流派", "g/secret.flac"))
+        .await
+        .unwrap();
+    ctx.index
+        .access()
+        .set_rule(
+            ScopeType::Track,
+            &secret.to_string(),
+            None,
+            &[Principal {
+                principal_type: PrincipalType::User,
+                id: alice.to_string(),
+            }],
+        )
+        .await
+        .unwrap();
+
+    let genres = |v: &Value| -> Vec<String> {
+        v["subsonic-response"]["genres"]["genre"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|g| g["value"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let (_, bob_resp) = ctx
+        .get_json("/rest/getGenres?f=json", Some(&ctx.bearer(bob)))
+        .await;
+    let bob_g = genres(&bob_resp);
+    assert!(bob_g.contains(&"摇滚".to_string()), "公开流派可见");
+    assert!(
+        !bob_g.contains(&"机密流派".to_string()),
+        "受限曲目的流派对 bob 不可见"
+    );
+
+    let (_, alice_resp) = ctx
+        .get_json("/rest/getGenres?f=json", Some(&ctx.bearer(alice)))
+        .await;
+    assert!(
+        genres(&alice_resp).contains(&"机密流派".to_string()),
+        "alice 可见"
+    );
 }

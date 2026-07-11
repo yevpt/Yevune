@@ -551,6 +551,31 @@ impl<'a> MediaRepo<'a> {
             .collect())
     }
 
+    /// 聚合流派，但只计 `viewer` 可见的曲目：仅含至少一条可见曲目的流派，计数只计可见曲目。
+    pub async fn list_genres_visible(&self, viewer: &Viewer) -> Result<Vec<contract::Genre>> {
+        let pred = self.visibility(viewer, "t");
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(&format!(
+            "SELECT COALESCE(o.value, t.genre) AS display_genre, \
+                    COUNT(DISTINCT t.id), COUNT(DISTINCT t.album_id) \
+             FROM tracks t \
+             LEFT JOIN tag_overrides o ON o.track_id = t.id AND o.field = 'genre' \
+             WHERE COALESCE(o.value, t.genre) IS NOT NULL \
+               AND COALESCE(o.value, t.genre) <> '' \
+               AND ({pred}) \
+             GROUP BY display_genre ORDER BY display_genre"
+        ))
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(value, songs, albums)| contract::Genre {
+                value,
+                song_count: songs as u32,
+                album_count: albums as u32,
+            })
+            .collect())
+    }
+
     /// 读取曲目原始对象定位信息，供 stream/download 使用。
     pub async fn media_source(&self, id: i64) -> Result<Option<MediaSource>> {
         sqlx::query_as("SELECT id, object_key, etag, codec, bitrate, size FROM tracks WHERE id = ?")

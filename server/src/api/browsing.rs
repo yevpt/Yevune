@@ -286,10 +286,17 @@ async fn get_album_list2(
 async fn get_genres(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
-    _user: ApiUser,
+    ApiUser(user): ApiUser,
 ) -> Response {
     let format = Format::from_uri(&uri);
-    match state.index.media().list_genres().await {
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getGenres 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    match state.index.media().list_genres_visible(&viewer).await {
         Ok(genres) => response::ok(format, serde_json::json!({"genres": {"genre": genres}})),
         Err(error) => {
             tracing::error!(%error, "getGenres 查询失败");
