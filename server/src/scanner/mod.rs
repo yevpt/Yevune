@@ -141,6 +141,58 @@ impl Scanner {
         self.finish_started_scan(prefix.unwrap_or(""), guard).await
     }
 
+    /// 按已知 `key` 直接读取对象头部解析入库，**绕过 bucket 列举**。
+    ///
+    /// 用于上传后的即时入库：Garage 写后 LIST 存在可见性延迟，依赖列举的
+    /// [`scan`](Self::scan) 会漏掉刚写入对象；本方法按 key 直接 `head` + 读文件头，
+    /// 对「读己之写」可靠（S3 新对象 `head`/`get` 强一致，仅 LIST 最终一致）。
+    ///
+    /// 语义为单个对象与索引的一次对账（reconcile），因此也可用于失败补偿后恢复索引：
+    /// - 对象存在且为音频后缀 → 只读文件头解析、抽封面、按 `object_key` upsert；
+    /// - 对象不存在 → 从索引删除该 key（若存在），返回 `deleted`；
+    /// - 对象存在但非音频后缀 → 不入库，返回空统计。
+    ///
+    /// 不占用扫描 single-flight 状态：入库按 `object_key` 幂等，与并发全量扫描安全共存。
+    pub async fn ingest_object(&self, key: &str) -> Result<ScanReport> {
+        let meta = match self.store.head(key).await {
+            Ok(meta) => meta,
+            Err(StorageError::NotFound(_)) => {
+                let deleted = self.index.media().delete_by_object_key(key).await?;
+                return Ok(ScanReport {
+                    deleted: u32::from(deleted),
+                    ..Default::default()
+                });
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !is_audio(key) {
+            return Ok(ScanReport::default());
+        }
+        let entry = ListEntry {
+            key: key.to_string(),
+            etag: meta.etag,
+            size: meta.size,
+        };
+        let was_present = incremental::existing_tracks(self.index.pool(), key)
+            .await?
+            .contains_key(key);
+        // 只读文件头：读取上限内的前缀字节，绝不整读音频（红线）。
+        let cap = entry.size.min(HEADER_READ_CAP);
+        let head = self.store.get_range(&entry.key, 0..cap).await?;
+        let parsed = tags::parse_header(head)
+            .map_err(|error| Error::Parse(format!("{}: {error}", entry.key)))?;
+        let cover_key = match &parsed.cover {
+            Some(cover) => Some(cover::store_cover(self.store.as_ref(), cover).await?),
+            None => None,
+        };
+        incremental::upsert_track(&self.index, &entry, &parsed, cover_key.as_deref()).await?;
+        Ok(ScanReport {
+            added: u32::from(!was_present),
+            updated: u32::from(was_present),
+            ..Default::default()
+        })
+    }
+
     /// 原子检查并后台启动一次扫描；已有扫描时返回 `false`。
     pub fn try_start(self: &Arc<Self>, prefix: Option<String>) -> bool {
         let Some(guard) = self.begin_scan() else {

@@ -2,7 +2,7 @@
 
 mod operation;
 
-use axum::extract::{Multipart, OriginalUri, State};
+use axum::extract::{DefaultBodyLimit, Multipart, OriginalUri, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
@@ -38,9 +38,17 @@ struct MoveParams {
     key: Option<String>,
 }
 
+/// 单曲上传的请求体上限（字节）。放宽 axum 默认 2 MiB，容纳整首无损曲目；
+/// handler 全程流式写临时文件，绝不整读进内存（AGENTS.md 红线），故上限仅用于
+/// 防御异常超大请求，取 2 GiB 足以覆盖任何单曲。
+const MAX_UPLOAD_BODY_BYTES: usize = 2 * 1024 * 1024 * 1024;
+
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/rest/ext/uploadTrack", post(upload_track))
+        .route(
+            "/rest/ext/uploadTrack",
+            post(upload_track).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
         .route("/rest/ext/updateTags", get(update_tags))
         .route("/rest/ext/writeBackTags", get(write_back_tags))
         .route("/rest/ext/deleteTrack", get(delete_track))

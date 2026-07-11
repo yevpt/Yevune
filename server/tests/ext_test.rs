@@ -1,5 +1,6 @@
 //! `/rest/ext/*` 自研扩展接口集成测试。
 
+use std::collections::HashSet;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -1547,4 +1548,139 @@ async fn failed_move_rolls_back_index_and_cleans_owned_destination() {
             .is_err(),
         "回滚后不得遗留 owned 目标对象"
     );
+}
+
+/// 模拟 Garage「读己之写」时序：对象 `put` 后 `head`/`get_range` 立即可见，
+/// 但 `list`（LIST）尚未收敛看不到刚写入的 key。用于验证上传后的即时入库
+/// 不依赖列举、对刚写入对象可靠。
+struct ListLagStore {
+    inner: MemoryStore,
+    invisible: Mutex<HashSet<String>>,
+}
+
+impl ListLagStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryStore::new(),
+            invisible: Mutex::new(HashSet::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl ObjectStore for ListLagStore {
+    async fn list(&self, prefix: &str, token: Option<String>) -> StorageResult<ListPage> {
+        let page = self.inner.list(prefix, token).await?;
+        let invisible = self.invisible.lock().unwrap();
+        let entries = page
+            .entries
+            .into_iter()
+            .filter(|entry| !invisible.contains(&entry.key))
+            .collect();
+        Ok(ListPage {
+            entries,
+            next_token: page.next_token,
+        })
+    }
+
+    async fn get(&self, key: &str) -> StorageResult<Bytes> {
+        self.inner.get(key).await
+    }
+
+    async fn get_range(&self, key: &str, range: Range<u64>) -> StorageResult<Bytes> {
+        self.inner.get_range(key, range).await
+    }
+
+    async fn put(&self, key: &str, bytes: Bytes) -> StorageResult<ObjectMeta> {
+        self.inner.put(key, bytes).await
+    }
+
+    async fn put_file(&self, key: &str, path: &Path) -> StorageResult<ObjectMeta> {
+        let meta = self.inner.put_file(key, path).await?;
+        // 写后 list 尚未可见：模拟 Garage LIST 的最终一致延迟。
+        self.invisible.lock().unwrap().insert(key.to_string());
+        Ok(meta)
+    }
+
+    async fn delete(&self, key: &str) -> StorageResult<()> {
+        self.invisible.lock().unwrap().remove(key);
+        self.inner.delete(key).await
+    }
+
+    async fn head(&self, key: &str) -> StorageResult<ObjectMeta> {
+        self.inner.head(key).await
+    }
+}
+
+#[tokio::test]
+async fn upload_accepts_files_larger_than_default_body_limit() {
+    let fixture = Fixture::new().await;
+    let large = flac("large.flac");
+    assert!(
+        large.len() > 2 * 1024 * 1024,
+        "fixture 必须大于 axum 默认 2MB body 上限，实际 {} 字节",
+        large.len()
+    );
+    let response = fixture.upload("library/uploads/large.flac", &large).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json(response).await;
+    let id = payload(&body, "track")["id"].as_str().unwrap();
+    assert!(id.starts_with("tr-"), "{body}");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tracks WHERE object_key = 'library/uploads/large.flac'",
+    )
+    .fetch_one(fixture.index.pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn upload_indexes_track_even_when_list_lags_behind_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = Index::connect(&dir.path().join("music.sqlite"))
+        .await
+        .unwrap();
+    let encryptor = Encryptor::new("pwd:test-secret");
+    UserAdmin::new(&index, &encryptor)
+        .create_user("admin", "secret", true)
+        .await
+        .unwrap();
+    let store = Arc::new(ListLagStore::new());
+    let object_store: Arc<dyn ObjectStore> = store.clone();
+    let state = AppState::new(
+        index.clone(),
+        object_store,
+        "test-secret",
+        "/missing/ffmpeg",
+    );
+
+    let response = music_server::app(state.clone())
+        .oneshot(upload_request(
+            "/rest/ext/uploadTrack?u=admin&p=secret&v=1.16.1&c=test&f=json".to_string(),
+            "library/uploads/lag.flac",
+            &flac("a.flac"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json(response).await;
+    let id = payload(&body, "track")["id"].as_str().unwrap();
+    assert!(id.starts_with("tr-"), "{body}");
+
+    // 前提校验：list 确实看不到刚写入的对象（否则测试无法证明不依赖列举）。
+    let page = store.list("library/", None).await.unwrap();
+    assert!(
+        page.entries.is_empty(),
+        "list 应模拟写后延迟看不到新对象，实际 {:?}",
+        page.entries
+    );
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tracks WHERE object_key = 'library/uploads/lag.flac'",
+    )
+    .fetch_one(index.pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 1, "上传后曲目应立即入库，即便列举尚未可见");
 }

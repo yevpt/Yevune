@@ -56,7 +56,7 @@ pub(super) async fn commit_upload(
         tracing::error!(%error, object_key = %key, "上传对象失败");
         return Err(OperationError::Internal);
     }
-    if let Err(error) = scan_key(&state, &key).await {
+    if let Err(error) = state.scanner.ingest_object(&key).await {
         tracing::error!(%error, object_key = %key, "上传后即时入库失败");
         let compensated = match &backup {
             Some(backup) => state.store.put_file(&key, backup.path()).await.map(|_| ()),
@@ -64,7 +64,7 @@ pub(super) async fn commit_upload(
         };
         if let Err(cleanup) = compensated {
             tracing::error!(%cleanup, object_key = %key, "上传入库失败且对象补偿失败，需要人工对账");
-        } else if let Err(rescan) = scan_key(&state, &key).await {
+        } else if let Err(rescan) = state.scanner.ingest_object(&key).await {
             tracing::error!(%rescan, object_key = %key, "上传对象已补偿但索引恢复失败，需要人工对账");
         }
         return Err(OperationError::Internal);
