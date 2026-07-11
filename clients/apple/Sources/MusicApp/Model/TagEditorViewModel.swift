@@ -10,6 +10,7 @@ final class TagEditorViewModel: ObservableObject {
     @Published var year = ""
     @Published var track = ""
     @Published var discNumber = ""
+    @Published var moveKey = ""
     @Published private(set) var didSave = false
     @Published private(set) var errorMessage: String?
 
@@ -33,6 +34,18 @@ final class TagEditorViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func delete() async {
+        errorMessage = nil
+        do { try await client.deleteTrack(id: trackID) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func move() async {
+        errorMessage = nil
+        do { try await client.moveTrack(id: trackID, key: moveKey) }
+        catch { errorMessage = error.localizedDescription }
     }
 
     private func value(_ text: String) -> String? {

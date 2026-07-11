@@ -12,6 +12,8 @@ protocol MusicClientProviding: Sendable {
     func search(query: String) async throws -> SearchResult
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws
     func updateTags(id: String, update: TagUpdate) async throws
+    func deleteTrack(id: String) async throws
+    func moveTrack(id: String, key: String) async throws
 }
 
 @MainActor

@@ -123,6 +123,16 @@ impl MusicClient {
     pub async fn update_tags(&self, id: String, update: TagUpdate) -> Result<()> {
         manage::update_tags(&self.http, &self.authenticated_session().await?, id, update).await
     }
+
+    /// 删除曲目及其对象存储文件。
+    pub async fn delete_track(&self, id: String) -> Result<()> {
+        manage::delete_track(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 移动曲目到新的 `library/` 对象键。
+    pub async fn move_track(&self, id: String, key: String) -> Result<()> {
+        manage::move_track(&self.http, &self.authenticated_session().await?, id, key).await
+    }
 }
 
 impl MusicClient {

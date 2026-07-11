@@ -27,4 +27,7 @@ actor CoreMusicClient: MusicClientProviding {
     func updateTags(id: String, update: TagUpdate) async throws {
         try await client.updateTags(id: id, update: update)
     }
+
+    func deleteTrack(id: String) async throws { try await client.deleteTrack(id: id) }
+    func moveTrack(id: String, key: String) async throws { try await client.moveTrack(id: id, key: key) }
 }

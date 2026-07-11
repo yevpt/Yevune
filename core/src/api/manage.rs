@@ -82,6 +82,29 @@ pub(crate) async fn update_tags(
         .await
 }
 
+pub(crate) async fn delete_track(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+) -> Result<()> {
+    http.get_empty_with_params(auth, "ext/deleteTrack", &[("id".to_owned(), id)])
+        .await
+}
+
+pub(crate) async fn move_track(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    key: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "ext/moveTrack",
+        &[("id".to_owned(), id), ("key".to_owned(), key)],
+    )
+    .await
+}
+
 pub(crate) fn blocking_upload(
     client: &reqwest::blocking::Client,
     url: reqwest::Url,

@@ -14,6 +14,11 @@ struct TagEditorView: View {
             TextField("碟序", text: $model.discNumber)
             if let errorMessage = model.errorMessage { Text(errorMessage).foregroundStyle(.red) }
             Button("保存标签覆盖") { Task { await model.save() } }
+            Section("整理") {
+                TextField("新对象键（library/...）", text: $model.moveKey)
+                Button("移动曲目") { Task { await model.move() } }
+                Button("删除曲目", role: .destructive) { Task { await model.delete() } }
+            }
         }
         .padding()
     }
