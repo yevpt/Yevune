@@ -17,5 +17,9 @@ Cargo.lock.bak
 *.sqlite-wal
 *.sqlite-shm
 
+# 本地测试环境（密钥与脚手架，勿提交）
+.env
+/.local/
+
 # 工具本地权限（勿提交）
 .claude/settings.local.json
