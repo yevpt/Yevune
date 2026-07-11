@@ -438,6 +438,36 @@ impl<'a> MediaRepo<'a> {
         Ok(row.map(Artist::from))
     }
 
+    /// 取曲目的原始对象键与编码（供 stream/download 透传，不进入客户端 DTO）。
+    pub async fn track_source(&self, id: i64) -> Result<Option<(String, Option<String>)>> {
+        let row: Option<(String, Option<String>)> =
+            sqlx::query_as("SELECT object_key, codec FROM tracks WHERE id = ?")
+                .bind(id)
+                .fetch_optional(self.pool)
+                .await?;
+        Ok(row)
+    }
+
+    /// 某封面键是否对 `viewer` 可见：存在引用它且含可见曲目的专辑，或引用它的艺人有可见曲目。
+    pub async fn cover_key_visible(&self, viewer: &Viewer, cover_key: &str) -> Result<bool> {
+        let pred = self.visibility(viewer, "t");
+        let sql = format!(
+            "SELECT EXISTS(\
+                 SELECT 1 FROM albums a JOIN tracks t ON t.album_id = a.id \
+                 WHERE a.cover_key = ? AND ({pred})\
+             ) OR EXISTS(\
+                 SELECT 1 FROM artists ar JOIN tracks t ON t.artist_id = ar.id \
+                 WHERE ar.cover_key = ? AND ({pred})\
+             )"
+        );
+        let visible: i64 = sqlx::query_scalar(&sql)
+            .bind(cover_key)
+            .bind(cover_key)
+            .fetch_one(self.pool)
+            .await?;
+        Ok(visible != 0)
+    }
+
     /// FTS5 搜索，仅返回 `viewer` 可见的命中（曲目直判；专辑/艺人按是否含可见曲目）。
     pub async fn search_visible(
         &self,

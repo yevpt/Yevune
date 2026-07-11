@@ -4,6 +4,7 @@
 //! [`AppState`] 的业务端点（浏览/搜索/媒体，均已强制曲库访问控制）。
 
 mod browsing;
+mod media;
 mod response;
 mod search;
 pub mod state;
@@ -24,6 +25,7 @@ pub fn router_with_state(state: AppState) -> Router {
     let stateful = Router::new()
         .merge(browsing::router())
         .merge(search::router())
+        .merge(media::router())
         .with_state(state);
     router().merge(stateful)
 }
