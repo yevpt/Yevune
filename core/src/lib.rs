@@ -9,7 +9,7 @@ mod ffi_types;
 mod http;
 
 pub use api::browse::{AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
-pub use api::manage::{UploadMetadata, UploadProgress};
+pub use api::manage::{TagUpdate, UploadMetadata, UploadProgress};
 pub use client::{MusicClient, Session};
 pub use error::CoreError;
 

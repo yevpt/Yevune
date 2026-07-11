@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
-use crate::api::manage::{self, UploadMetadata, UploadProgress};
+use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
 use crate::error::{CoreError, Result};
@@ -117,6 +117,11 @@ impl MusicClient {
             progress,
         )
         .await
+    }
+
+    /// 写入服务端标签覆盖层，不修改原始音频文件。
+    pub async fn update_tags(&self, id: String, update: TagUpdate) -> Result<()> {
+        manage::update_tags(&self.http, &self.authenticated_session().await?, id, update).await
     }
 }
 

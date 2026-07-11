@@ -55,6 +55,16 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.isUploading)
     }
+
+    func testTagEditorSubmitsAnOverlayUpdate() async {
+        let model = TagEditorViewModel(client: FakeMusicClient(), trackID: "tr-1")
+        model.title = "Retitled"
+
+        await model.save()
+
+        XCTAssertTrue(model.didSave)
+        XCTAssertNil(model.errorMessage)
+    }
 }
 
 private actor FakeMusicClient: MusicClientProviding {
@@ -91,4 +101,6 @@ private actor FakeMusicClient: MusicClientProviding {
         progress.onProgress(sentBytes: 16, totalBytes: 32)
         progress.onProgress(sentBytes: 32, totalBytes: 32)
     }
+
+    func updateTags(id: String, update: TagUpdate) async throws {}
 }

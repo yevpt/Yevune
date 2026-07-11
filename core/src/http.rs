@@ -73,6 +73,17 @@ impl HttpClient {
         Ok(())
     }
 
+    pub(crate) async fn get_empty_with_params(
+        &self,
+        auth: &AuthenticatedSession,
+        endpoint: &str,
+        parameters: &[(String, String)],
+    ) -> Result<()> {
+        self.get_json::<EmptyPayload>(auth, endpoint, parameters)
+            .await?;
+        Ok(())
+    }
+
     /// 发送认证 GET 请求并提取 OpenSubsonic 成功信封中的业务数据。
     pub(crate) async fn get_json<T>(
         &self,

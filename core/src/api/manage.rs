@@ -10,6 +10,18 @@ use crate::auth::AuthenticatedSession;
 use crate::error::{CoreError, Result};
 use crate::http::HttpClient;
 
+/// 标签覆盖层的可编辑字段；`None` 表示保持原值。
+#[derive(Clone, uniffi::Record)]
+pub struct TagUpdate {
+    pub title: Option<String>,
+    pub album: Option<String>,
+    pub artist: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<u32>,
+    pub track: Option<u32>,
+    pub disc_number: Option<u32>,
+}
+
 /// 上传时传给服务端的曲库目标信息。
 #[derive(Clone, uniffi::Record)]
 pub struct UploadMetadata {
@@ -32,6 +44,41 @@ pub(crate) async fn upload_track(
     progress: Box<dyn UploadProgress>,
 ) -> Result<Track> {
     http.upload_track(auth, local_path, metadata.library_key, progress)
+        .await
+}
+
+pub(crate) async fn update_tags(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    update: TagUpdate,
+) -> Result<()> {
+    let mut parameters = vec![("id".to_owned(), id)];
+    for (name, value) in [
+        ("title", update.title),
+        ("album", update.album),
+        ("artist", update.artist),
+        ("genre", update.genre),
+    ] {
+        if let Some(value) = value {
+            parameters.push((name.to_owned(), value));
+        }
+    }
+    for (name, value) in [
+        ("year", update.year),
+        ("track", update.track),
+        ("discNumber", update.disc_number),
+    ] {
+        if let Some(value) = value {
+            parameters.push((name.to_owned(), value.to_string()));
+        }
+    }
+    if parameters.len() == 1 {
+        return Err(CoreError::InvalidRequest {
+            message: "至少需要修改一个标签字段".to_owned(),
+        });
+    }
+    http.get_empty_with_params(auth, "ext/updateTags", &parameters)
         .await
 }
 

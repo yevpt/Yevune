@@ -23,4 +23,8 @@ actor CoreMusicClient: MusicClientProviding {
             progress: progress
         )
     }
+
+    func updateTags(id: String, update: TagUpdate) async throws {
+        try await client.updateTags(id: id, update: update)
+    }
 }

@@ -9,6 +9,8 @@ pub enum CoreError {
     Network { message: String },
     /// 本地文件无法读取。
     File { message: String },
+    /// 调用参数不满足端点约束。
+    InvalidRequest { message: String },
     /// 尚未成功登录。
     NotAuthenticated,
     /// 服务端按 OpenSubsonic 信封报告的错误。
@@ -23,6 +25,7 @@ impl std::fmt::Display for CoreError {
             Self::InvalidServer { message }
             | Self::Network { message }
             | Self::File { message }
+            | Self::InvalidRequest { message }
             | Self::InvalidResponse { message } => formatter.write_str(message),
             Self::NotAuthenticated => formatter.write_str("尚未登录"),
             Self::Server { code, message } => write!(formatter, "服务端错误 {code}: {message}"),
