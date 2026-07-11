@@ -5,13 +5,16 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
+use std::path::Path;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use tokio::io::AsyncReadExt;
 
 use super::{
     ListEntry, ListPage, ObjectMeta, ObjectStore, Result, StorageError, DEFAULT_PAGE_SIZE,
+    STREAM_CHUNK_SIZE,
 };
 
 /// 单个存储对象。
@@ -122,6 +125,25 @@ impl ObjectStore for MemoryStore {
             etag: Some(etag),
             size,
         })
+    }
+
+    async fn put_file(&self, key: &str, path: &Path) -> Result<ObjectMeta> {
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let mut data = Vec::new();
+        let mut chunk = vec![0_u8; STREAM_CHUNK_SIZE];
+        loop {
+            let read = file
+                .read(&mut chunk)
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            if read == 0 {
+                break;
+            }
+            data.extend_from_slice(&chunk[..read]);
+        }
+        self.put(key, Bytes::from(data)).await
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

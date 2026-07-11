@@ -4,10 +4,30 @@
 //! 也供下游（scanner/transcode）测试直接复用假实现。
 
 use bytes::Bytes;
-use music_server::storage::{MemoryStore, ObjectStore, StorageError};
+use music_server::storage::{MemoryStore, ObjectStore, StorageError, STREAM_CHUNK_SIZE};
 
 fn payload(s: &str) -> Bytes {
     Bytes::from(s.as_bytes().to_vec())
+}
+
+#[tokio::test]
+async fn put_file_以有界分块上传完整文件() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.bin");
+    let bytes = vec![0x5a; STREAM_CHUNK_SIZE * 2 + 17];
+    std::fs::write(&path, &bytes).unwrap();
+    let store = MemoryStore::new();
+
+    let meta = store
+        .put_file("transcode/1/opus_128.opus", &path)
+        .await
+        .unwrap();
+
+    assert_eq!(meta.size, bytes.len() as u64);
+    assert_eq!(
+        store.get("transcode/1/opus_128.opus").await.unwrap(),
+        Bytes::from(bytes)
+    );
 }
 
 #[tokio::test]

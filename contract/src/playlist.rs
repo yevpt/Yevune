@@ -40,4 +40,8 @@ pub struct Playlist {
     pub song_count: u32,
     /// 总时长（秒）。
     pub duration: u32,
+    /// 创建时间（ISO8601）。
+    pub created: Option<String>,
+    /// 最近修改时间（ISO8601）。
+    pub changed: Option<String>,
 }

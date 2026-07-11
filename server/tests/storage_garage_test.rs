@@ -111,3 +111,31 @@ async fn garage_分页_用_token_翻页且不重不漏() {
         store.delete(k).await.expect("delete 失败");
     }
 }
+
+#[tokio::test]
+async fn garage_put_file_大于单_part_可往返并删除() {
+    let Some(store) = store_from_env() else {
+        eprintln!("跳过：未设置 MUSIC_TEST_S3_ENDPOINT（无本地 S3 后端）");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("multipart.bin");
+    let size = 5 * 1024 * 1024 + 123;
+    let body = vec![0x6d_u8; size];
+    std::fs::write(&path, &body).unwrap();
+    let key = format!("multipart-{}/large.bin", std::process::id());
+
+    let put = store.put_file(&key, &path).await.expect("put_file 失败");
+    assert_eq!(put.size, size as u64);
+    assert_eq!(store.head(&key).await.unwrap().size, size as u64);
+    let boundary = store
+        .get_range(&key, 5 * 1024 * 1024 - 2..5 * 1024 * 1024 + 2)
+        .await
+        .unwrap();
+    assert_eq!(boundary, Bytes::from_static(&[0x6d; 4]));
+    store.delete(&key).await.unwrap();
+    assert!(matches!(
+        store.head(&key).await,
+        Err(StorageError::NotFound(_))
+    ));
+}

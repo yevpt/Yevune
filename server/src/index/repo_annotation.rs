@@ -81,15 +81,27 @@ impl<'a> AnnotationRepo<'a> {
 
     /// 记一次播放（播放计数 +1，更新最近播放时间）。
     pub async fn scrobble(&self, user_id: i64, item_type: &str, item_id: i64) -> Result<()> {
+        self.scrobble_at(user_id, item_type, item_id, None).await
+    }
+
+    /// 记一次播放，可保留客户端上报的毫秒 Unix 时间。
+    pub async fn scrobble_at(
+        &self,
+        user_id: i64,
+        item_type: &str,
+        item_id: i64,
+        played_at_ms: Option<i64>,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO annotations(user_id, item_type, item_id, play_count, last_played) \
-             VALUES(?, ?, ?, 1, datetime('now')) \
+             VALUES(?, ?, ?, 1, COALESCE(datetime(? / 1000, 'unixepoch'), datetime('now'))) \
              ON CONFLICT(user_id, item_type, item_id) DO UPDATE SET \
-                 play_count = play_count + 1, last_played = datetime('now')",
+                 play_count = play_count + 1, last_played = excluded.last_played",
         )
         .bind(user_id)
         .bind(item_type)
         .bind(item_id)
+        .bind(played_at_ms)
         .execute(self.pool)
         .await?;
         Ok(())

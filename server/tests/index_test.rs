@@ -1,6 +1,6 @@
 //! index 层集成测试：迁移、模式、WAL 与各仓储行为（临时 SQLite 文件）。
 
-use music_server::index::{Index, NewTrack};
+use music_server::index::{Index, NewTrack, NewTranscodeCache};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
@@ -51,6 +51,57 @@ async fn wal_模式生效() {
         .await
         .unwrap();
     assert_eq!(mode.to_lowercase(), "wal");
+}
+
+#[tokio::test]
+async fn transcode_cache_仓储可登记查询更新与删除() {
+    let (index, _dir) = temp_index().await;
+    let track_id = index
+        .media()
+        .upsert_track(&new_track("Cache Me", None, None, "music/cache.flac"))
+        .await
+        .unwrap();
+    let cache = index.transcode_cache();
+
+    cache
+        .upsert(&NewTranscodeCache {
+            track_id,
+            format: "opus".into(),
+            bitrate: 128,
+            object_key: format!("transcode/{track_id}/opus_128.opus"),
+            size: 1234,
+        })
+        .await
+        .unwrap();
+    let found = cache.get(track_id, "opus", 128).await.unwrap().unwrap();
+    assert_eq!(
+        found.object_key,
+        format!("transcode/{track_id}/opus_128.opus")
+    );
+    assert_eq!(found.size, 1234);
+
+    cache
+        .upsert(&NewTranscodeCache {
+            track_id,
+            format: "opus".into(),
+            bitrate: 128,
+            object_key: format!("transcode/{track_id}/opus_128.opus"),
+            size: 5678,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        cache
+            .get(track_id, "opus", 128)
+            .await
+            .unwrap()
+            .unwrap()
+            .size,
+        5678
+    );
+
+    cache.remove(track_id, "opus", 128).await.unwrap();
+    assert!(cache.get(track_id, "opus", 128).await.unwrap().is_none());
 }
 
 // ─────────────────────────── MediaRepo ───────────────────────────

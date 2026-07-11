@@ -1,249 +1,349 @@
-//! 浏览类端点：`getArtists`/`getIndexes`/`getArtist`/`getAlbum`/`getSong`/`getAlbumList2`。
-//!
-//! 每个端点解析当前用户为 [`Viewer`]，改走 MediaRepo 的 `*_visible` 读方法，把曲库访问控制
-//! 统一强制在数据层（设计文档 §6）。受限内容对无授权者一律以「未找到」(70) 遮蔽，避免存在性泄漏。
+//! ID3 语义的艺人、专辑、曲目、流派与索引浏览端点。
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use axum::extract::{Query, State};
+use axum::extract::{OriginalUri, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
-use serde_json::{Map, Value};
+use serde::Deserialize;
 
-use super::response::{self, Format, ERROR_MISSING_PARAM, ERROR_NOT_FOUND};
-use super::state::AppState;
-use crate::auth::CurrentUser;
-use crate::index::Viewer;
+use super::response::{self, Format};
+use super::{ApiQuery, ApiUser, AppState};
 
-/// 浏览端点路由。
+#[derive(Deserialize)]
+struct IdParams {
+    id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AlbumListParams {
+    #[serde(rename = "type")]
+    list_type: Option<String>,
+    size: Option<usize>,
+    offset: Option<usize>,
+    from_year: Option<u32>,
+    to_year: Option<u32>,
+    genre: Option<String>,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/rest/getArtists", get(get_artists))
-        .route("/rest/getIndexes", get(get_indexes))
-        .route("/rest/getArtist", get(get_artist))
-        .route("/rest/getAlbum", get(get_album))
-        .route("/rest/getSong", get(get_song))
-        .route("/rest/getAlbumList2", get(get_album_list2))
-}
-
-/// 解析查询参数 `f` 的响应格式。
-fn format_of(params: &HashMap<String, String>) -> Format {
-    Format::from_param(params.get("f").map(String::as_str))
-}
-
-/// 解析整型 id 参数。
-fn param_i64(params: &HashMap<String, String>, key: &str) -> Option<i64> {
-    params.get(key).and_then(|v| v.parse().ok())
-}
-
-/// 解析当前用户为 [`Viewer`]（服务端权威角色/管理员判定）。
-async fn viewer_of(state: &AppState, user: &CurrentUser) -> Result<Viewer, sqlx::Error> {
-    state.index.access_control().resolve_viewer(user.id).await
-}
-
-/// 把 DTO 序列化为 JSON 对象（供并入响应载荷）。
-fn to_object<T: serde::Serialize>(value: &T) -> Map<String, Value> {
-    match serde_json::to_value(value) {
-        Ok(Value::Object(m)) => m,
-        _ => Map::new(),
+    let mut router = Router::new();
+    for path in ["/rest/getArtists", "/rest/getArtists.view"] {
+        router = router.route(path, get(get_artists));
     }
-}
-
-/// `GET /rest/getSong` —— 取单曲目，受限则对无授权者遮蔽。
-async fn get_song(
-    State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
-    let format = format_of(&params);
-    let Some(id) = param_i64(&params, "id") else {
-        return response::error(format, ERROR_MISSING_PARAM, "缺少参数 id");
-    };
-    let Ok(viewer) = viewer_of(&state, &user).await else {
-        return response::error(format, 0, "内部错误");
-    };
-    match state.index.media().get_track_visible(&viewer, id).await {
-        Ok(Some(track)) => {
-            let mut payload = Map::new();
-            payload.insert("song".into(), Value::Object(to_object(&track)));
-            response::ok(format, Value::Object(payload))
-        }
-        Ok(None) => response::error(format, ERROR_NOT_FOUND, "曲目不存在"),
-        Err(_) => response::error(format, 0, "内部错误"),
+    for path in ["/rest/getArtist", "/rest/getArtist.view"] {
+        router = router.route(path, get(get_artist));
     }
-}
-
-/// `GET /rest/getAlbum` —— 取专辑元数据 + 其**可见**曲目列表。
-async fn get_album(
-    State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
-    let format = format_of(&params);
-    let Some(id) = param_i64(&params, "id") else {
-        return response::error(format, ERROR_MISSING_PARAM, "缺少参数 id");
-    };
-    let Ok(viewer) = viewer_of(&state, &user).await else {
-        return response::error(format, 0, "内部错误");
-    };
-    let media = state.index.media();
-    match media.get_album_visible(&viewer, id).await {
-        Ok(Some(album)) => {
-            let songs = match media.album_tracks_visible(&viewer, id).await {
-                Ok(s) => s,
-                Err(_) => return response::error(format, 0, "内部错误"),
-            };
-            let mut album_obj = to_object(&album);
-            let song_values: Vec<Value> =
-                songs.iter().map(|t| Value::Object(to_object(t))).collect();
-            album_obj.insert("song".into(), Value::Array(song_values));
-            let mut payload = Map::new();
-            payload.insert("album".into(), Value::Object(album_obj));
-            response::ok(format, Value::Object(payload))
-        }
-        Ok(None) => response::error(format, ERROR_NOT_FOUND, "专辑不存在"),
-        Err(_) => response::error(format, 0, "内部错误"),
+    for path in ["/rest/getAlbum", "/rest/getAlbum.view"] {
+        router = router.route(path, get(get_album));
     }
-}
-
-/// `GET /rest/getArtist` —— 取艺人 + 其**可见**专辑列表。
-async fn get_artist(
-    State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
-) -> Response {
-    let format = format_of(&params);
-    let Some(id) = param_i64(&params, "id") else {
-        return response::error(format, ERROR_MISSING_PARAM, "缺少参数 id");
-    };
-    let Ok(viewer) = viewer_of(&state, &user).await else {
-        return response::error(format, 0, "内部错误");
-    };
-    let media = state.index.media();
-    match media.get_artist_visible(&viewer, id).await {
-        Ok(Some(artist)) => {
-            let albums = match media.artist_albums_visible(&viewer, id).await {
-                Ok(a) => a,
-                Err(_) => return response::error(format, 0, "内部错误"),
-            };
-            let mut artist_obj = to_object(&artist);
-            let album_values: Vec<Value> =
-                albums.iter().map(|a| Value::Object(to_object(a))).collect();
-            artist_obj.insert("album".into(), Value::Array(album_values));
-            let mut payload = Map::new();
-            payload.insert("artist".into(), Value::Object(artist_obj));
-            response::ok(format, Value::Object(payload))
-        }
-        Ok(None) => response::error(format, ERROR_NOT_FOUND, "艺人不存在"),
-        Err(_) => response::error(format, 0, "内部错误"),
+    for path in ["/rest/getSong", "/rest/getSong.view"] {
+        router = router.route(path, get(get_song));
     }
+    for path in ["/rest/getAlbumList2", "/rest/getAlbumList2.view"] {
+        router = router.route(path, get(get_album_list2));
+    }
+    for path in ["/rest/getGenres", "/rest/getGenres.view"] {
+        router = router.route(path, get(get_genres));
+    }
+    for path in ["/rest/getIndexes", "/rest/getIndexes.view"] {
+        router = router.route(path, get(get_indexes));
+    }
+    router
 }
 
-/// `GET /rest/getArtists` —— 按首字母分组列出**可见**艺人。
 async fn get_artists(
     State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
+    OriginalUri(uri): OriginalUri,
+    ApiUser(user): ApiUser,
 ) -> Response {
-    artists_grouped(&state, &user, &params, "artists").await
+    let format = Format::from_uri(&uri);
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getArtists 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    match state.index.media().list_artists_visible(&viewer).await {
+        Ok(artists) => response::ok(
+            format,
+            serde_json::json!({"artists": artist_indexes(&artists)}),
+        ),
+        Err(error) => {
+            tracing::error!(%error, "getArtists 查询失败");
+            response::internal(format)
+        }
+    }
 }
 
-/// `GET /rest/getIndexes` —— 结构同 `getArtists`，根键为 `indexes`。
-async fn get_indexes(
+async fn get_artist(
     State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<IdParams>,
+    ApiUser(user): ApiUser,
 ) -> Response {
-    artists_grouped(&state, &user, &params, "indexes").await
+    let format = Format::from_uri(&uri);
+    let Some(id) = params
+        .id
+        .as_deref()
+        .and_then(|id| response::parse_entity_id(id, "artist"))
+    else {
+        return response::parameter_error(format, "Required parameter 'id' is missing");
+    };
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getArtist 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    let artist = match state.index.media().get_artist_visible(&viewer, id).await {
+        Ok(Some(artist)) => artist,
+        Ok(None) => return response::not_found(format),
+        Err(error) => {
+            tracing::error!(%error, "getArtist 查询失败");
+            return response::internal(format);
+        }
+    };
+    let albums = match state.index.media().artist_albums_visible(&viewer, id).await {
+        Ok(albums) => albums,
+        Err(error) => {
+            tracing::error!(%error, "getArtist 专辑查询失败");
+            return response::internal(format);
+        }
+    };
+    let mut value = response::artist_value(&artist);
+    value.as_object_mut().expect("artist 是对象").insert(
+        "album".into(),
+        albums
+            .iter()
+            .map(response::album_value)
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    response::ok(format, serde_json::json!({"artist": value}))
 }
 
-/// 公共实现：把可见艺人按首字母分组为 `<index>`。
-async fn artists_grouped(
-    state: &AppState,
-    user: &CurrentUser,
-    params: &HashMap<String, String>,
-    root_key: &str,
+async fn get_album(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<IdParams>,
+    ApiUser(user): ApiUser,
 ) -> Response {
-    let format = format_of(params);
-    let Ok(viewer) = viewer_of(state, user).await else {
-        return response::error(format, 0, "内部错误");
+    let format = Format::from_uri(&uri);
+    let Some(id) = params
+        .id
+        .as_deref()
+        .and_then(|id| response::parse_entity_id(id, "album"))
+    else {
+        return response::parameter_error(format, "Required parameter 'id' is missing");
     };
-    let artists = match state.index.media().list_artists_visible(&viewer).await {
-        Ok(a) => a,
-        Err(_) => return response::error(format, 0, "内部错误"),
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getAlbum 解析访问者失败");
+            return response::internal(format);
+        }
     };
-
-    // 按首字母（sort_name 优先）分组，保持组内原有顺序。
-    let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
-    for artist in &artists {
-        let key = index_key(artist.sort_name.as_deref().unwrap_or(&artist.name));
-        let entry = match groups.iter_mut().find(|(k, _)| *k == key) {
-            Some(e) => e,
-            None => {
-                groups.push((key.clone(), Vec::new()));
-                groups.last_mut().unwrap()
-            }
-        };
-        entry.1.push(Value::Object(to_object(artist)));
-    }
-
-    let index_values: Vec<Value> = groups
-        .into_iter()
-        .map(|(name, artist_values)| {
-            let mut obj = Map::new();
-            obj.insert("name".into(), Value::from(name));
-            obj.insert("artist".into(), Value::Array(artist_values));
-            Value::Object(obj)
-        })
-        .collect();
-
-    let mut inner = Map::new();
-    inner.insert("ignoredArticles".into(), Value::from(""));
-    inner.insert("index".into(), Value::Array(index_values));
-    let mut payload = Map::new();
-    payload.insert(root_key.into(), Value::Object(inner));
-    response::ok(format, Value::Object(payload))
+    let album = match state.index.media().get_album_visible(&viewer, id).await {
+        Ok(Some(album)) => album,
+        Ok(None) => return response::not_found(format),
+        Err(error) => {
+            tracing::error!(%error, "getAlbum 查询失败");
+            return response::internal(format);
+        }
+    };
+    let tracks = match state.index.media().album_tracks_visible(&viewer, id).await {
+        Ok(tracks) => tracks,
+        Err(error) => {
+            tracing::error!(%error, "getAlbum 曲目查询失败");
+            return response::internal(format);
+        }
+    };
+    let mut value = response::album_value(&album);
+    value.as_object_mut().expect("album 是对象").insert(
+        "song".into(),
+        tracks
+            .iter()
+            .map(response::track_value)
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    response::ok(format, serde_json::json!({"album": value}))
 }
 
-/// 取分组首字母：首个字符大写，非字母归入 `#`。
-fn index_key(name: &str) -> String {
-    match name.chars().next() {
-        Some(c) if c.is_alphabetic() => c.to_uppercase().to_string(),
-        Some(_) => "#".to_string(),
-        None => "#".to_string(),
+async fn get_song(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<IdParams>,
+    ApiUser(user): ApiUser,
+) -> Response {
+    let format = Format::from_uri(&uri);
+    let Some(id) = params
+        .id
+        .as_deref()
+        .and_then(|id| response::parse_entity_id(id, "track"))
+    else {
+        return response::parameter_error(format, "Required parameter 'id' is missing");
+    };
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getSong 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    match state.index.media().get_track_visible(&viewer, id).await {
+        Ok(Some(track)) => response::ok(
+            format,
+            serde_json::json!({"song": response::track_value(&track)}),
+        ),
+        Ok(None) => response::not_found(format),
+        Err(error) => {
+            tracing::error!(%error, "getSong 查询失败");
+            response::internal(format)
+        }
     }
 }
 
-/// `GET /rest/getAlbumList2` —— 列出**可见**专辑，支持 `size`/`offset` 分页。
 async fn get_album_list2(
     State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<AlbumListParams>,
+    ApiUser(user): ApiUser,
 ) -> Response {
-    let format = format_of(&params);
-    let Ok(viewer) = viewer_of(&state, &user).await else {
-        return response::error(format, 0, "内部错误");
+    let format = Format::from_uri(&uri);
+    let Some(list_type) = params.list_type.as_deref() else {
+        return response::parameter_error(format, "Required parameter 'type' is missing");
     };
-    let mut albums = match state.index.media().list_albums_visible(&viewer).await {
-        Ok(a) => a,
-        Err(_) => return response::error(format, 0, "内部错误"),
-    };
-
-    // 分页（默认 size=10，对齐 OpenSubsonic 默认；offset 默认 0）。
-    let offset = param_i64(&params, "offset").unwrap_or(0).max(0) as usize;
-    let size = param_i64(&params, "size").unwrap_or(10).clamp(0, 500) as usize;
-    if offset < albums.len() {
-        albums = albums[offset..].to_vec();
-    } else {
-        albums.clear();
+    let valid = [
+        "random",
+        "newest",
+        "highest",
+        "frequent",
+        "recent",
+        "alphabeticalByName",
+        "alphabeticalByArtist",
+        "starred",
+        "byYear",
+        "byGenre",
+    ];
+    if !valid.contains(&list_type) {
+        return response::parameter_error(format, "Invalid album list type");
     }
-    albums.truncate(size);
+    if list_type == "byYear" && (params.from_year.is_none() || params.to_year.is_none()) {
+        return response::parameter_error(format, "fromYear and toYear are required");
+    }
+    if list_type == "byGenre" && params.genre.is_none() {
+        return response::parameter_error(format, "genre is required");
+    }
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getAlbumList2 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    let offset = params.offset.unwrap_or(0) as i64;
+    let size = params.size.unwrap_or(10).min(500) as i64;
+    let ids = match state
+        .index
+        .media()
+        .album_ids_for_list(
+            user.id,
+            list_type,
+            offset,
+            size,
+            params.from_year,
+            params.to_year,
+            params.genre.as_deref(),
+        )
+        .await
+    {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::error!(%error, "getAlbumList2 查询失败");
+            return response::internal(format);
+        }
+    };
+    let mut values = Vec::with_capacity(ids.len());
+    for id in ids {
+        match state.index.media().get_album_visible(&viewer, id).await {
+            Ok(Some(album)) => values.push(response::album_value(&album)),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::error!(%error, "getAlbumList2 专辑读取失败");
+                return response::internal(format);
+            }
+        }
+    }
+    response::ok(format, serde_json::json!({"albumList2": {"album": values}}))
+}
 
-    let album_values: Vec<Value> = albums.iter().map(|a| Value::Object(to_object(a))).collect();
-    let mut inner = Map::new();
-    inner.insert("album".into(), Value::Array(album_values));
-    let mut payload = Map::new();
-    payload.insert("albumList2".into(), Value::Object(inner));
-    response::ok(format, Value::Object(payload))
+async fn get_genres(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    _user: ApiUser,
+) -> Response {
+    let format = Format::from_uri(&uri);
+    match state.index.media().list_genres().await {
+        Ok(genres) => response::ok(format, serde_json::json!({"genres": {"genre": genres}})),
+        Err(error) => {
+            tracing::error!(%error, "getGenres 查询失败");
+            response::internal(format)
+        }
+    }
+}
+
+async fn get_indexes(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    ApiUser(user): ApiUser,
+) -> Response {
+    let format = Format::from_uri(&uri);
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getIndexes 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    match state.index.media().list_artists_visible(&viewer).await {
+        Ok(artists) => {
+            let mut indexes = artist_indexes(&artists);
+            indexes
+                .as_object_mut()
+                .expect("indexes 是对象")
+                .insert("lastModified".into(), 0.into());
+            response::ok(format, serde_json::json!({"indexes": indexes}))
+        }
+        Err(error) => {
+            tracing::error!(%error, "getIndexes 查询失败");
+            response::internal(format)
+        }
+    }
+}
+
+fn artist_indexes(artists: &[contract::Artist]) -> serde_json::Value {
+    let mut groups: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+    for artist in artists {
+        let name = artist
+            .name
+            .chars()
+            .next()
+            .map(|value| value.to_uppercase().to_string())
+            .unwrap_or_else(|| "#".to_string());
+        groups
+            .entry(name)
+            .or_default()
+            .push(response::artist_value(artist));
+    }
+    let indexes: Vec<_> = groups
+        .into_iter()
+        .map(|(name, artist)| serde_json::json!({"name": name, "artist": artist}))
+        .collect();
+    serde_json::json!({"ignoredArticles": "The El La Los Las Le Les", "index": indexes})
 }

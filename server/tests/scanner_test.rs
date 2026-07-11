@@ -2,7 +2,8 @@
 //! 断言 index 被正确填充、二次扫描 no-op、删除被标记、头部有界读取。
 
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -13,6 +14,7 @@ use music_server::storage::{
     ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StoreResult,
 };
 use tempfile::TempDir;
+use tokio::sync::Notify;
 
 /// 读取 fixture FLAC 的原始字节。
 fn fixture(name: &str) -> Bytes {
@@ -188,6 +190,9 @@ impl ObjectStore for CountingStore {
     async fn put(&self, key: &str, bytes: Bytes) -> StoreResult<ObjectMeta> {
         self.inner.put(key, bytes).await
     }
+    async fn put_file(&self, key: &str, path: &Path) -> StoreResult<ObjectMeta> {
+        self.inner.put_file(key, path).await
+    }
     async fn delete(&self, key: &str) -> StoreResult<()> {
         self.inner.delete(key).await
     }
@@ -248,4 +253,103 @@ async fn scan_status_reports_completion() {
     assert!(after.last_scan_at.is_some(), "完成后应记录 last_scan_at");
     assert!(after.error.is_none());
     assert_eq!(after.scanned, 2, "应统计已处理对象数");
+}
+
+struct BlockingListStore {
+    inner: MemoryStore,
+    list_calls: AtomicUsize,
+    entered: Notify,
+    release: Notify,
+}
+
+impl BlockingListStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryStore::new(),
+            list_calls: AtomicUsize::new(0),
+            entered: Notify::new(),
+            release: Notify::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl ObjectStore for BlockingListStore {
+    async fn list(&self, prefix: &str, token: Option<String>) -> StoreResult<ListPage> {
+        self.list_calls.fetch_add(1, Ordering::SeqCst);
+        self.entered.notify_one();
+        self.release.notified().await;
+        self.inner.list(prefix, token).await
+    }
+
+    async fn get(&self, key: &str) -> StoreResult<Bytes> {
+        self.inner.get(key).await
+    }
+
+    async fn get_range(&self, key: &str, range: Range<u64>) -> StoreResult<Bytes> {
+        self.inner.get_range(key, range).await
+    }
+
+    async fn put(&self, key: &str, bytes: Bytes) -> StoreResult<ObjectMeta> {
+        self.inner.put(key, bytes).await
+    }
+
+    async fn put_file(&self, key: &str, path: &Path) -> StoreResult<ObjectMeta> {
+        self.inner.put_file(key, path).await
+    }
+
+    async fn delete(&self, key: &str) -> StoreResult<()> {
+        self.inner.delete(key).await
+    }
+
+    async fn head(&self, key: &str) -> StoreResult<ObjectMeta> {
+        self.inner.head(key).await
+    }
+}
+
+#[tokio::test]
+async fn background_scan_start_is_single_flight() {
+    let store = Arc::new(BlockingListStore::new());
+    let (index, _dir) = temp_index().await;
+    let scanner = Arc::new(Scanner::new(store.clone(), index));
+
+    assert!(scanner.try_start(None), "首次后台扫描应启动");
+    tokio::time::timeout(std::time::Duration::from_secs(1), store.entered.notified())
+        .await
+        .expect("后台扫描应进入对象列举");
+    assert!(scanner.scan_status().scanning);
+    assert!(!scanner.try_start(None), "运行期间的重复启动必须被拒绝");
+    assert_eq!(store.list_calls.load(Ordering::SeqCst), 1);
+
+    store.release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while scanner.scan_status().scanning {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("后台扫描应完成并释放 single-flight 状态");
+}
+
+#[tokio::test]
+async fn cancelled_scan_releases_single_flight_state() {
+    let store = Arc::new(BlockingListStore::new());
+    let (index, _dir) = temp_index().await;
+    let scanner = Arc::new(Scanner::new(store.clone(), index));
+    let running = {
+        let scanner = scanner.clone();
+        tokio::spawn(async move { scanner.scan(None).await })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(1), store.entered.notified())
+        .await
+        .expect("扫描应进入对象列举");
+    running.abort();
+    let _ = running.await;
+
+    assert!(
+        !scanner.scan_status().scanning,
+        "取消扫描必须复位 single-flight"
+    );
+    assert!(scanner.try_start(None), "取消后应能重新启动扫描");
+    store.release.notify_one();
 }

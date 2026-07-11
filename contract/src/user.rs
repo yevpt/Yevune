@@ -12,6 +12,8 @@ pub struct User {
     pub id: String,
     /// 用户名（OpenSubsonic 请求中的 `u`）。
     pub name: String,
+    /// 电子邮箱（OpenSubsonic 用户管理字段）。
+    pub email: Option<String>,
     /// 创建时间（ISO8601），对应 `created_at`。
     pub created: Option<String>,
     /// 是否管理员（便于客户端；服务端仍以角色为准强制授权）。

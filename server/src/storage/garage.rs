@@ -5,16 +5,19 @@
 //! [ADR-0005]: ../../../docs/adr/0005-object-store-over-aws-sdk.md
 
 use std::ops::Range;
+use std::path::Path as FsPath;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 use object_store::path::Path;
-use object_store::{ObjectStore as _, ObjectStoreExt as _, PutPayload};
+use object_store::{MultipartUpload, ObjectStore as _, ObjectStoreExt as _, PutPayload, PutResult};
+use tokio::io::AsyncReadExt;
 
 use super::{
     ListEntry, ListPage, ObjectMeta, ObjectStore, Result, StorageError, DEFAULT_PAGE_SIZE,
+    STREAM_CHUNK_SIZE,
 };
 
 /// Garage/S3 连接配置。
@@ -91,6 +94,106 @@ fn to_storage_err(e: object_store::Error) -> StorageError {
     }
 }
 
+const MULTIPART_CHUNK_SIZE: usize = 5 * 1024 * 1024;
+
+struct MultipartAbortGuard {
+    upload: Option<Box<dyn MultipartUpload>>,
+}
+
+impl MultipartAbortGuard {
+    fn new(upload: Box<dyn MultipartUpload>) -> Self {
+        Self {
+            upload: Some(upload),
+        }
+    }
+
+    fn upload(&mut self) -> &mut Box<dyn MultipartUpload> {
+        self.upload.as_mut().expect("multipart guard 已结束")
+    }
+
+    async fn abort(mut self) {
+        if let Some(mut upload) = self.upload.take() {
+            let _ = upload.abort().await;
+        }
+    }
+
+    fn disarm(mut self) {
+        self.upload.take();
+    }
+}
+
+impl Drop for MultipartAbortGuard {
+    fn drop(&mut self) {
+        let Some(mut upload) = self.upload.take() else {
+            return;
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = upload.abort().await;
+            });
+        }
+    }
+}
+
+async fn upload_multipart_file(
+    upload: Box<dyn MultipartUpload>,
+    file: &mut tokio::fs::File,
+) -> object_store::Result<(PutResult, u64)> {
+    let mut guard = MultipartAbortGuard::new(upload);
+    let mut part = Vec::with_capacity(MULTIPART_CHUNK_SIZE);
+    let mut read_buffer = vec![0_u8; STREAM_CHUNK_SIZE];
+    let mut size = 0_u64;
+    loop {
+        let remaining = MULTIPART_CHUNK_SIZE - part.len();
+        let read = match file
+            .read(&mut read_buffer[..remaining.min(STREAM_CHUNK_SIZE)])
+            .await
+        {
+            Ok(read) => read,
+            Err(source) => {
+                guard.abort().await;
+                return Err(object_store::Error::Generic {
+                    store: "local file",
+                    source: Box::new(source),
+                });
+            }
+        };
+        if read == 0 {
+            break;
+        }
+        part.extend_from_slice(&read_buffer[..read]);
+        size += read as u64;
+        if part.len() == MULTIPART_CHUNK_SIZE {
+            let payload = PutPayload::from(Bytes::from(std::mem::take(&mut part)));
+            if let Err(error) = guard.upload().put_part(payload).await {
+                guard.abort().await;
+                return Err(error);
+            }
+            part = Vec::with_capacity(MULTIPART_CHUNK_SIZE);
+        }
+    }
+    if !part.is_empty() {
+        if let Err(error) = guard
+            .upload()
+            .put_part(PutPayload::from(Bytes::from(part)))
+            .await
+        {
+            guard.abort().await;
+            return Err(error);
+        }
+    }
+    match guard.upload().complete().await {
+        Ok(result) => {
+            guard.disarm();
+            Ok((result, size))
+        }
+        Err(error) => {
+            guard.abort().await;
+            Err(error)
+        }
+    }
+}
+
 #[async_trait]
 impl ObjectStore for GarageStore {
     async fn list(&self, prefix: &str, token: Option<String>) -> Result<ListPage> {
@@ -153,6 +256,33 @@ impl ObjectStore for GarageStore {
         })
     }
 
+    async fn put_file(&self, key: &str, path: &FsPath) -> Result<ObjectMeta> {
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let file_size = file
+            .metadata()
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?
+            .len();
+        if file_size == 0 {
+            return self.put(key, Bytes::new()).await;
+        }
+
+        let upload = self
+            .inner
+            .put_multipart(&Path::from(key))
+            .await
+            .map_err(to_storage_err)?;
+        let (result, size) = upload_multipart_file(upload, &mut file)
+            .await
+            .map_err(to_storage_err)?;
+        Ok(ObjectMeta {
+            etag: result.e_tag,
+            size,
+        })
+    }
+
     async fn delete(&self, key: &str) -> Result<()> {
         self.inner
             .delete(&Path::from(key))
@@ -170,5 +300,104 @@ impl ObjectStore for GarageStore {
             etag: meta.e_tag,
             size: meta.size,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    use object_store::{MultipartUpload, PutPayload, PutResult, UploadPart};
+
+    use super::upload_multipart_file;
+
+    #[derive(Debug)]
+    struct FailingUpload {
+        aborted: Arc<AtomicBool>,
+    }
+
+    #[derive(Debug)]
+    struct PendingUpload {
+        part_started: Arc<AtomicBool>,
+        aborted: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartUpload for PendingUpload {
+        fn put_part(&mut self, _data: PutPayload) -> UploadPart {
+            self.part_started.store(true, Ordering::SeqCst);
+            Box::pin(std::future::pending())
+        }
+
+        async fn complete(&mut self) -> object_store::Result<PutResult> {
+            unreachable!("pending part 不得 complete")
+        }
+
+        async fn abort(&mut self) -> object_store::Result<()> {
+            self.aborted.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartUpload for FailingUpload {
+        fn put_part(&mut self, _data: PutPayload) -> UploadPart {
+            Box::pin(async {
+                Err(object_store::Error::Generic {
+                    store: "test",
+                    source: Box::new(std::io::Error::other("part failed")),
+                })
+            })
+        }
+
+        async fn complete(&mut self) -> object_store::Result<PutResult> {
+            unreachable!("part 失败后不得 complete")
+        }
+
+        async fn abort(&mut self) -> object_store::Result<()> {
+            self.aborted.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn multipart_part_失败会显式_abort() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), b"payload").unwrap();
+        let mut file = tokio::fs::File::open(temp.path()).await.unwrap();
+        let aborted = Arc::new(AtomicBool::new(false));
+        let upload = Box::new(FailingUpload {
+            aborted: aborted.clone(),
+        });
+
+        assert!(upload_multipart_file(upload, &mut file).await.is_err());
+        assert!(aborted.load(Ordering::SeqCst), "失败 multipart 必须 abort");
+    }
+
+    #[tokio::test]
+    async fn multipart_future_取消后仍会_abort() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), vec![0_u8; super::MULTIPART_CHUNK_SIZE]).unwrap();
+        let mut file = tokio::fs::File::open(temp.path()).await.unwrap();
+        let part_started = Arc::new(AtomicBool::new(false));
+        let aborted = Arc::new(AtomicBool::new(false));
+        let upload = Box::new(PendingUpload {
+            part_started: part_started.clone(),
+            aborted: aborted.clone(),
+        });
+        let task = tokio::spawn(async move { upload_multipart_file(upload, &mut file).await });
+        while !part_started.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+
+        task.abort();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !aborted.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("取消 multipart future 后必须异步 abort");
     }
 }

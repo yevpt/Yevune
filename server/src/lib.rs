@@ -9,19 +9,15 @@ pub mod config;
 pub mod index;
 pub mod scanner;
 pub mod storage;
+pub mod transcode;
 
 use axum::Router;
 
-pub use api::AppState;
-
-/// 构建无状态治理骨架应用（健康检查与 OpenSubsonic `ping`）。
-pub fn app() -> Router {
-    api::router()
-}
-
-/// 构建挂载业务端点的完整应用（浏览/搜索/媒体，均强制曲库访问控制）。
-pub fn app_with_state(state: AppState) -> Router {
-    api::router_with_state(state)
+/// 构建应用的 axum [`Router`]。
+///
+/// 挂载健康检查与 OpenSubsonic 兼容 API。
+pub fn app(state: api::AppState) -> Router {
+    api::router(state)
 }
 
 /// 初始化 `tracing` 结构化日志。

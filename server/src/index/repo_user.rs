@@ -11,6 +11,7 @@ use super::Result;
 struct UserRow {
     id: i64,
     name: String,
+    email: Option<String>,
     created_at: String,
 }
 
@@ -54,7 +55,7 @@ impl<'a> UserRepo<'a> {
     /// 按主键取用户 DTO（含角色与 admin 标记）。
     pub async fn get_user(&self, id: i64) -> Result<Option<User>> {
         let row: Option<UserRow> =
-            sqlx::query_as("SELECT id, name, created_at FROM users WHERE id = ?")
+            sqlx::query_as("SELECT id, name, email, created_at FROM users WHERE id = ?")
                 .bind(id)
                 .fetch_optional(self.pool)
                 .await?;
@@ -64,7 +65,7 @@ impl<'a> UserRepo<'a> {
     /// 按用户名取用户 DTO。
     pub async fn get_user_by_name(&self, name: &str) -> Result<Option<User>> {
         let row: Option<UserRow> =
-            sqlx::query_as("SELECT id, name, created_at FROM users WHERE name = ?")
+            sqlx::query_as("SELECT id, name, email, created_at FROM users WHERE name = ?")
                 .bind(name)
                 .fetch_optional(self.pool)
                 .await?;
@@ -74,7 +75,7 @@ impl<'a> UserRepo<'a> {
     /// 列举全部用户。
     pub async fn list_users(&self) -> Result<Vec<User>> {
         let rows: Vec<UserRow> =
-            sqlx::query_as("SELECT id, name, created_at FROM users ORDER BY name")
+            sqlx::query_as("SELECT id, name, email, created_at FROM users ORDER BY name")
                 .fetch_all(self.pool)
                 .await?;
         let mut out = Vec::with_capacity(rows.len());
@@ -90,6 +91,17 @@ impl<'a> UserRepo<'a> {
     pub async fn change_password(&self, id: i64, password_enc: &str) -> Result<bool> {
         let affected = sqlx::query("UPDATE users SET password_enc = ? WHERE id = ?")
             .bind(password_enc)
+            .bind(id)
+            .execute(self.pool)
+            .await?
+            .rows_affected();
+        Ok(affected > 0)
+    }
+
+    /// 更新用户邮箱，返回是否命中用户。
+    pub async fn set_email(&self, id: i64, email: Option<&str>) -> Result<bool> {
+        let affected = sqlx::query("UPDATE users SET email = ? WHERE id = ?")
+            .bind(email)
             .bind(id)
             .execute(self.pool)
             .await?
@@ -130,6 +142,7 @@ impl<'a> UserRepo<'a> {
         Ok(Some(User {
             id: row.id.to_string(),
             name: row.name,
+            email: row.email,
             created: Some(row.created_at),
             admin,
             roles,

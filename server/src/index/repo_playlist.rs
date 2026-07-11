@@ -36,6 +36,8 @@ struct PlaylistRow {
     position: i64,
     song_count: i64,
     duration: i64,
+    created_at: String,
+    changed_at: String,
 }
 
 impl From<PlaylistRow> for Playlist {
@@ -49,13 +51,24 @@ impl From<PlaylistRow> for Playlist {
             position: r.position as u32,
             song_count: r.song_count as u32,
             duration: r.duration as u32,
+            created: Some(sqlite_utc_to_rfc3339(r.created_at)),
+            changed: Some(sqlite_utc_to_rfc3339(r.changed_at)),
         }
     }
 }
 
+fn sqlite_utc_to_rfc3339(mut value: String) -> String {
+    if value.len() == 19 && value.as_bytes().get(10) == Some(&b' ') {
+        value.replace_range(10..11, "T");
+        value.push('Z');
+    }
+    value
+}
+
 const PLAYLIST_SELECT: &str = "\
 SELECT p.id, p.owner_id, p.name, p.comment, p.folder_id, p.position, \
-       COUNT(pt.track_id) AS song_count, COALESCE(SUM(t.duration), 0) AS duration \
+       COUNT(pt.track_id) AS song_count, COALESCE(SUM(t.duration), 0) AS duration, \
+       p.created_at, p.changed_at \
 FROM playlists p \
 LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id \
 LEFT JOIN tracks t ON t.id = pt.track_id";
@@ -151,6 +164,37 @@ impl<'a> PlaylistRepo<'a> {
         .await
     }
 
+    /// 在单一事务内创建歌单并写入有序曲目，任一外键失败时不留孤立歌单。
+    pub async fn create_playlist_with_tracks(
+        &self,
+        owner_id: i64,
+        name: &str,
+        folder_id: Option<i64>,
+        track_ids: &[i64],
+    ) -> Result<i64> {
+        let mut tx = self.pool.begin().await?;
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO playlists(owner_id, name, folder_id) VALUES(?, ?, ?) RETURNING id",
+        )
+        .bind(owner_id)
+        .bind(name)
+        .bind(folder_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        for (position, track_id) in track_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES(?, ?, ?)",
+            )
+            .bind(id)
+            .bind(track_id)
+            .bind(position as i64)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(id)
+    }
+
     /// 按主键取歌单 DTO（含曲目数与时长）。
     pub async fn get_playlist(&self, id: i64) -> Result<Option<Playlist>> {
         let row: Option<PlaylistRow> =
@@ -178,6 +222,46 @@ impl<'a> PlaylistRepo<'a> {
         .await?
         .rows_affected();
         Ok(affected > 0)
+    }
+
+    /// 在单一事务内更新歌单元数据与完整曲目顺序。
+    pub async fn update_playlist_with_tracks(
+        &self,
+        id: i64,
+        name: &str,
+        comment: Option<&str>,
+        track_ids: &[i64],
+    ) -> Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let affected = sqlx::query(
+            "UPDATE playlists SET name = ?, comment = ?, changed_at = datetime('now') WHERE id = ?",
+        )
+        .bind(name)
+        .bind(comment)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+        sqlx::query("DELETE FROM playlist_tracks WHERE playlist_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        for (position, track_id) in track_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES(?, ?, ?)",
+            )
+            .bind(id)
+            .bind(track_id)
+            .bind(position as i64)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(true)
     }
 
     /// 移动歌单到新文件夹（`None` 为根级），返回是否命中。
@@ -216,6 +300,10 @@ impl<'a> PlaylistRepo<'a> {
     /// 用有序曲目整体替换歌单内容（事务内先清空再按序插入）。
     pub async fn set_tracks(&self, playlist_id: i64, track_ids: &[i64]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE playlists SET changed_at = datetime('now') WHERE id = ?")
+            .bind(playlist_id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("DELETE FROM playlist_tracks WHERE playlist_id = ?")
             .bind(playlist_id)
             .execute(&mut *tx)

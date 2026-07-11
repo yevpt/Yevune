@@ -20,7 +20,7 @@
 
 **协议契合**：OpenSubsonic 协议原生多用户（每请求带 `u=用户名`，歌单、收藏、播放计数天然按用户隔离），因此"独立歌单空间"零阻力贴合协议。真正的自研扩展只有**曲库访问控制**。
 
-**存储**：兼容 S3 的对象存储，实际采用 **Garage**。Garage 是唯一存储源（source of truth）——原始音频文件直接放 Garage，服务端从 Garage 读取。
+**存储**：兼容 S3 的对象存储，实际采用 **Garage**。Garage 的权威 `music` bucket 是原始音频唯一源（source of truth），正式原始音频键统一位于 `library/` 前缀。该 bucket 只向**单个服务端实例**授予写/删凭据；客户端不得直写。外部直传使用独立的非权威 inbox bucket/凭据，后续由受控导入流程转入权威 bucket。
 
 **转码诉求**：音乐库以无损（FLAC/ALAC）为主，需在移动端/外网播放时**实时转成 AAC/Opus 省流量**。
 
@@ -173,10 +173,12 @@ music/
 
 Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动扫描** + **客户端管理 API** 双路径，共用同一套入库逻辑（读标签 → 抽封面 → 写索引）。
 
+**单写者边界**（见 ADR-0006）：Garage v2.3 的 DeleteObject 是无条件删除，不能用 ETag 做原子 compare-and-delete。权威 `music` bucket 因而只允许一个服务端实例写/删，服务端用共享逐键锁 + SQLite CAS 串行化正式键变更。多实例部署前必须先引入跨实例协调，不能直接复用当前写路径。外部直传只能进入独立 inbox bucket；inbox 是非权威暂存，当前阶段不提供 inbox 消费接口。
+
 | 路径 | 用途 | 时机 |
 |---|---|---|
 | **主动扫描 Garage**（自定义/手动触发、可配范围前缀） | 批量更新、补漏、纠偏 | 全程保留作兜底 |
-| **客户端音频文件管理 API**（上传/改标签/删除/整理 → 写 Garage 后即时入库） | 后期主力 |
+| **客户端音频文件管理 API**（上传/改标签/删除/整理 → 写权威 Garage 后即时入库） | 后期主力；`uploadTrack`/`moveTrack` 仅接受 `library/...` 正式键 |
 
 **扫描流程**（增量、省资源）：
 1. 列举 bucket 对象（分页）。
@@ -237,7 +239,7 @@ Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动
 | 类别 | 接口 | 说明 |
 |---|---|---|
 | **多级歌单** | `getPlaylistTree`, `create/update/deletePlaylistFolder`, `movePlaylist`, `moveFolder` | 文件夹树 + 歌单叶子 |
-| **库管理（写）** | `uploadTrack`(multipart→Garage+入库), `updateTags`, `deleteTrack`, `moveTrack` | 客户端音频文件管理，后期主力 |
+| **库管理（写）** | `uploadTrack`(multipart→Garage+入库), `updateTags`, `deleteTrack`, `moveTrack` | 客户端音频文件管理；upload/move 仅接受非空 `library/...` 正式键 |
 | **访问控制** | `setAccessRule`(scope+允许名单), `getAccessRules`, `deleteAccessRule` | 管理员配置曲库开放范围，默认开放 |
 | **角色管理** | `getRoles`, `createRole`, `deleteRole`, `assignRole`, `unassignRole` | 内建 admin/member + 自定义角色 |
 | **扫描增强** | 自定义范围/前缀扫描触发 | 补漏、纠偏 |

@@ -13,13 +13,15 @@ pub mod repo_access;
 pub mod repo_annotation;
 pub mod repo_media;
 pub mod repo_playlist;
+pub mod repo_transcode_cache;
 pub mod repo_user;
 
 pub use access::{AccessControl, Viewer};
 pub use repo_access::{AccessRepo, TrackScope};
 pub use repo_annotation::{Annotation, AnnotationRepo};
-pub use repo_media::{MediaRepo, NewTrack, SearchResults};
+pub use repo_media::{MediaRepo, MediaSource, NewTrack, SearchPage, SearchResults};
 pub use repo_playlist::PlaylistRepo;
+pub use repo_transcode_cache::{NewTranscodeCache, TranscodeCache, TranscodeCacheRepo};
 pub use repo_user::{RoleRepo, UserRepo};
 
 /// 本层统一结果类型（迁移错误并入 [`sqlx::Error`]）。
@@ -35,6 +37,11 @@ pub struct Index {
 }
 
 impl Index {
+    #[cfg(test)]
+    pub(crate) fn from_pool_for_test(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     /// 打开（必要时创建）本地 SQLite 文件，开启 WAL 与外键，并应用全部迁移。
     pub async fn connect(path: &Path) -> Result<Self> {
         let options = SqliteConnectOptions::new()
@@ -88,5 +95,10 @@ impl Index {
     /// 访问控制判定器（查询时可见性强制）。
     pub fn access_control(&self) -> AccessControl<'_> {
         AccessControl::new(&self.pool)
+    }
+
+    /// 转码缓存登记仓储。
+    pub fn transcode_cache(&self) -> TranscodeCacheRepo<'_> {
+        TranscodeCacheRepo::new(&self.pool)
     }
 }

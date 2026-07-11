@@ -6,19 +6,23 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use music_server::auth::{issue_bearer, AuthState};
+use music_server::api::AppState;
+use music_server::app;
+use music_server::auth::{issue_bearer, BearerKey};
 use music_server::index::{Index, NewTrack};
 use music_server::storage::MemoryStore;
-use music_server::{app_with_state, AppState};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-/// 测试上下文：应用 + 索引 + 内存存储 + 认证句柄（保活临时目录）。
+/// 测试用应用密钥；bearer 令牌密钥与之域分离派生，须与 [`AppState`] 一致。
+const TEST_APP_SECRET: &str = "test-secret";
+
+/// 测试上下文：应用 + 索引 + 内存存储 + 令牌密钥（保活临时目录）。
 pub struct Ctx {
     pub index: Index,
     pub store: Arc<MemoryStore>,
     app: axum::Router,
-    auth: AuthState,
+    bearer_key: BearerKey,
     _dir: TempDir,
 }
 
@@ -30,16 +34,18 @@ pub async fn ctx() -> Ctx {
     let store = Arc::new(MemoryStore::new());
     let state = AppState::new(
         index.clone(),
-        "test-secret",
         store.clone() as Arc<dyn music_server::storage::ObjectStore>,
+        TEST_APP_SECRET,
+        "ffmpeg",
     );
-    let auth = state.auth.clone();
-    let app = app_with_state(state);
+    // Bearer 令牌密钥与 AppState 内部一致（`AuthState::new` 由 `bearer:{secret}` 派生）。
+    let bearer_key = BearerKey::derive(&format!("bearer:{TEST_APP_SECRET}"));
+    let app = app(state);
     Ctx {
         index,
         store,
         app,
-        auth,
+        bearer_key,
         _dir: dir,
     }
 }
@@ -47,7 +53,7 @@ pub async fn ctx() -> Ctx {
 impl Ctx {
     /// 为用户签发 1 小时有效的 Bearer 令牌。
     pub fn bearer(&self, user_id: i64) -> String {
-        issue_bearer(&self.auth.bearer_key, user_id, Duration::from_secs(3600))
+        issue_bearer(&self.bearer_key, user_id, Duration::from_secs(3600))
     }
 
     /// 建用户并（可选）赋角色，返回用户 id。

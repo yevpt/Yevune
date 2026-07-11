@@ -41,6 +41,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// 扫描层错误。
 #[derive(Debug)]
 pub enum Error {
+    /// 已有扫描正在运行。
+    AlreadyScanning,
     /// 存储后端错误。
     Storage(StorageError),
     /// 索引/数据库错误。
@@ -52,6 +54,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::AlreadyScanning => write!(f, "扫描已在运行"),
             Error::Storage(e) => write!(f, "存储错误: {e}"),
             Error::Db(e) => write!(f, "索引错误: {e}"),
             Error::Parse(msg) => write!(f, "标签解析失败: {msg}"),
@@ -134,20 +137,49 @@ impl Scanner {
 
     /// 增量扫描 `prefix`（`None` 表示整个 bucket）。返回本轮统计。
     pub async fn scan(&self, prefix: Option<&str>) -> Result<ScanReport> {
-        {
-            let mut status = self.status.lock().unwrap();
-            status.scanning = true;
-            status.scanned = 0;
-            status.error = None;
+        let guard = self.begin_scan().ok_or(Error::AlreadyScanning)?;
+        self.finish_started_scan(prefix.unwrap_or(""), guard).await
+    }
+
+    /// 原子检查并后台启动一次扫描；已有扫描时返回 `false`。
+    pub fn try_start(self: &Arc<Self>, prefix: Option<String>) -> bool {
+        let Some(guard) = self.begin_scan() else {
+            return false;
+        };
+        let scanner = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = scanner
+                .finish_started_scan(prefix.as_deref().unwrap_or(""), guard)
+                .await
+            {
+                tracing::error!(%error, "后台扫描失败");
+            }
+        });
+        true
+    }
+
+    fn begin_scan(&self) -> Option<ScanGuard> {
+        let mut status = self.status.lock().unwrap();
+        if status.scanning {
+            return None;
         }
-        let result = self.run_scan(prefix.unwrap_or("")).await;
+        status.scanning = true;
+        status.scanned = 0;
+        status.error = None;
+        Some(ScanGuard {
+            status: self.status.clone(),
+        })
+    }
+
+    async fn finish_started_scan(&self, prefix: &str, guard: ScanGuard) -> Result<ScanReport> {
+        let result = self.run_scan(prefix).await;
         {
             let mut status = self.status.lock().unwrap();
-            status.scanning = false;
             if let Err(e) = &result {
                 status.error = Some(e.to_string());
             }
         }
+        drop(guard);
         result
     }
 
@@ -265,6 +297,17 @@ impl Scanner {
             ingests.push(handle.await.expect("解析任务不应 panic")?);
         }
         Ok(ingests)
+    }
+}
+
+/// 扫描 single-flight 的取消安全守卫；future 被 drop 时同样复位状态。
+struct ScanGuard {
+    status: Arc<Mutex<ScanStatus>>,
+}
+
+impl Drop for ScanGuard {
+    fn drop(&mut self) {
+        self.status.lock().unwrap().scanning = false;
     }
 }
 

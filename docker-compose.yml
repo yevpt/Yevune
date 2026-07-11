@@ -5,7 +5,7 @@
 services:
   # 兼容 S3 的对象存储，音频文件与转码缓存的唯一源。
   garage:
-    image: dxflrs/garage:v1.0.1
+    image: dxflrs/garage:v2.3.0
     restart: unless-stopped
     volumes:
       - garage-meta:/var/lib/garage/meta

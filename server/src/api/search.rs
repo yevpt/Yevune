@@ -1,73 +1,103 @@
-//! 搜索端点：`search3`（走 FTS5），结果按当前用户曲库访问控制过滤。
+//! OpenSubsonic `search3`，由 SQLite FTS5 驱动。
 
-use std::collections::HashMap;
-
-use axum::extract::{Query, State};
+use axum::extract::{OriginalUri, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
-use serde_json::{Map, Value};
+use serde::Deserialize;
 
 use super::response::{self, Format};
-use super::state::AppState;
-use crate::auth::CurrentUser;
+use super::{ApiQuery, ApiUser, AppState};
 
-/// 搜索端点路由。
-pub fn router() -> Router<AppState> {
-    Router::new().route("/rest/search3", get(search3))
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Params {
+    query: Option<String>,
+    artist_count: Option<usize>,
+    artist_offset: Option<usize>,
+    album_count: Option<usize>,
+    album_offset: Option<usize>,
+    song_count: Option<usize>,
+    song_offset: Option<usize>,
 }
 
-/// `GET /rest/search3` —— FTS5 搜索，仅返回当前用户可见的命中。
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/rest/search3", get(search3))
+        .route("/rest/search3.view", get(search3))
+}
+
 async fn search3(
     State(state): State<AppState>,
-    user: CurrentUser,
-    Query(params): Query<HashMap<String, String>>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<Params>,
+    ApiUser(user): ApiUser,
 ) -> Response {
-    let format = Format::from_param(params.get("f").map(String::as_str));
-    let query = params.get("query").map(String::as_str).unwrap_or("").trim();
-
-    let mut result = Map::new();
-    // 空查询直接返回空结果集；trigram FTS 对过短查询无匹配。
-    if !query.is_empty() {
-        let Ok(viewer) = state.index.access_control().resolve_viewer(user.id).await else {
-            return response::error(format, 0, "内部错误");
-        };
-        // 取各类型上限（对齐 OpenSubsonic 默认 20），统一用较大 limit 拉取后再分组。
-        let limit = params
-            .get("songCount")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(20)
-            .clamp(1, 500);
-        match state
-            .index
-            .media()
-            .search_visible(&viewer, query, limit)
-            .await
-        {
-            Ok(hits) => {
-                result.insert(
-                    "artist".into(),
-                    Value::Array(hits.artists.iter().map(to_value).collect()),
-                );
-                result.insert(
-                    "album".into(),
-                    Value::Array(hits.albums.iter().map(to_value).collect()),
-                );
-                result.insert(
-                    "song".into(),
-                    Value::Array(hits.tracks.iter().map(to_value).collect()),
-                );
-            }
-            Err(_) => return response::error(format, 0, "内部错误"),
+    let format = Format::from_uri(&uri);
+    let Some(query) = params.query else {
+        return response::parameter_error(format, "Required parameter 'query' is missing");
+    };
+    let empty_query = query.trim().is_empty();
+    let artist_offset = params.artist_offset.unwrap_or(0);
+    let artist_count = params.artist_count.unwrap_or(20).min(500);
+    let album_offset = params.album_offset.unwrap_or(0);
+    let album_count = params.album_count.unwrap_or(20).min(500);
+    let song_offset = params.song_offset.unwrap_or(0);
+    let song_count = params.song_count.unwrap_or(20).min(500);
+    // 访问控制强制：先解析访问者，再只取其可见的命中；分页在过滤后的可见集上切片。
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "search3 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    let media = state.index.media();
+    let search = if empty_query {
+        match (
+            media.list_artists_visible(&viewer).await,
+            media.list_albums_visible(&viewer).await,
+            media.list_tracks_visible(&viewer).await,
+        ) {
+            (Ok(artists), Ok(albums), Ok(tracks)) => Ok(crate::index::SearchResults {
+                artists,
+                albums,
+                tracks,
+            }),
+            (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => Err(error),
+        }
+    } else {
+        // 过滤后再切片，故一次取足各类型 offset+count 之和的可见命中。
+        let limit = (artist_offset + artist_count)
+            .max(album_offset + album_count)
+            .max(song_offset + song_count)
+            .saturating_mul(3)
+            .max(1) as i64;
+        media.search_visible(&viewer, &query, limit).await
+    };
+    match search {
+        Ok(mut results) => {
+            results.artists = page(results.artists, artist_offset, artist_count);
+            results.albums = page(results.albums, album_offset, album_count);
+            results.tracks = page(results.tracks, song_offset, song_count);
+            let artists: Vec<_> = results.artists.iter().map(response::artist_value).collect();
+            let albums: Vec<_> = results.albums.iter().map(response::album_value).collect();
+            let songs: Vec<_> = results.tracks.iter().map(response::track_value).collect();
+            response::ok(
+                format,
+                serde_json::json!({
+                    "searchResult3": {"artist": artists, "album": albums, "song": songs}
+                }),
+            )
+        }
+        Err(error) => {
+            tracing::error!(%error, "search3 查询失败");
+            response::internal(format)
         }
     }
-
-    let mut payload = Map::new();
-    payload.insert("searchResult3".into(), Value::Object(result));
-    response::ok(format, Value::Object(payload))
 }
 
-/// 序列化 DTO 为 JSON 值。
-fn to_value<T: serde::Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
+/// 在可见集上按 `offset`/`count` 切片（在访问控制过滤之后分页）。
+fn page<T>(items: Vec<T>, offset: usize, count: usize) -> Vec<T> {
+    items.into_iter().skip(offset).take(count).collect()
 }

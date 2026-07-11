@@ -148,6 +148,8 @@ fn playlist_往返且字段名对齐() {
         position: 1,
         song_count: 20,
         duration: 5400,
+        created: Some("2026-07-11T00:00:00Z".into()),
+        changed: Some("2026-07-11T00:01:00Z".into()),
     };
     assert_roundtrip(
         &p,
@@ -160,6 +162,8 @@ fn playlist_往返且字段名对齐() {
             "position",
             "songCount",
             "duration",
+            "created",
+            "changed",
         ],
     );
 }
@@ -169,11 +173,12 @@ fn user_往返且字段名对齐() {
     let u = User {
         id: "us-1".into(),
         name: "papa".into(),
+        email: Some("papa@example.test".into()),
         created: Some("2026-07-10T00:00:00Z".into()),
         admin: true,
         roles: vec!["admin".into(), "member".into()],
     };
-    assert_roundtrip(&u, &["id", "name", "created", "admin", "roles"]);
+    assert_roundtrip(&u, &["id", "name", "email", "created", "admin", "roles"]);
 }
 
 #[test]

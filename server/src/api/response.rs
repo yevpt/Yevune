@@ -1,155 +1,369 @@
-//! OpenSubsonic 响应信封：统一 `subsonic-response`，支持 XML（默认）与 `f=json`。
-//!
-//! handler 用一个 `serde_json::Value` 载荷（对象）描述响应体，本模块据此渲染为 JSON 或
-//! 由通用 [`object_to_xml`] 转换器生成 OpenSubsonic 约定的 XML（标量→属性、数组/对象→子元素）。
+//! OpenSubsonic JSON/XML 统一响应与协议错误映射。
 
-use axum::http::header;
+use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
+use contract::{Album, Artist, Playlist, Track, User};
 use serde_json::{Map, Value};
 
-/// 声明兼容的 OpenSubsonic/Subsonic 协议版本。
-const API_VERSION: &str = "1.16.1";
-/// 服务端标识（对应 `subsonic-response` 的 `type` 字段）。
-const SERVER_TYPE: &str = "music-server";
+use crate::auth::AuthError;
 
-/// 响应格式。
+pub const SERVER_TYPE: &str = "music-server";
+pub const API_VERSION: &str = contract::response::OPEN_SUBSONIC_API_VERSION;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
-    /// XML（OpenSubsonic 默认）。
     Xml,
-    /// JSON（`f=json`）。
     Json,
 }
 
 impl Format {
-    /// 由查询参数 `f` 判定；`json` → JSON，其余（含缺省）→ XML。
-    pub fn from_param(f: Option<&str>) -> Self {
-        match f {
-            Some("json") => Format::Json,
-            _ => Format::Xml,
+    pub fn from_uri(uri: &Uri) -> Self {
+        let is_json = uri.query().is_some_and(|query| {
+            query
+                .split('&')
+                .any(|part| part.eq_ignore_ascii_case("f=json"))
+        });
+        if is_json {
+            Self::Json
+        } else {
+            Self::Xml
         }
     }
 }
 
-/// 成功响应：把 `payload`（对象）并入 `subsonic-response` 信封。
-pub fn ok(format: Format, payload: Value) -> Response {
-    envelope(format, "ok", payload)
+pub fn ok(format: Format, data: Value) -> Response {
+    envelope(format, "ok", Some(data), None)
 }
 
-/// 错误响应：`subsonic-response` 携带 `error{code,message}`，HTTP 状态仍为 200（OpenSubsonic 约定）。
+pub fn empty(format: Format) -> Response {
+    ok(format, Value::Object(Map::new()))
+}
+
 pub fn error(format: Format, code: u32, message: &str) -> Response {
-    let mut payload = Map::new();
-    let mut err = Map::new();
-    err.insert("code".into(), Value::from(code));
-    err.insert("message".into(), Value::from(message));
-    payload.insert("error".into(), Value::Object(err));
-    envelope(format, "failed", Value::Object(payload))
+    envelope(
+        format,
+        "failed",
+        None,
+        Some(serde_json::json!({"code": code, "message": message})),
+    )
 }
 
-/// OpenSubsonic 「未找到」错误码（用于受限内容对无授权者的统一遮蔽）。
-pub const ERROR_NOT_FOUND: u32 = 70;
-/// OpenSubsonic 「参数缺失」错误码。
-pub const ERROR_MISSING_PARAM: u32 = 10;
+fn envelope(format: Format, status: &str, data: Option<Value>, error: Option<Value>) -> Response {
+    let mut body = Map::new();
+    body.insert("status".into(), status.into());
+    body.insert("version".into(), API_VERSION.into());
+    body.insert("type".into(), SERVER_TYPE.into());
+    body.insert("serverVersion".into(), env!("CARGO_PKG_VERSION").into());
+    body.insert("openSubsonic".into(), true.into());
+    if let Some(Value::Object(data)) = data {
+        body.extend(data);
+    }
+    if let Some(error) = error {
+        body.insert("error".into(), error);
+    }
 
-fn envelope(format: Format, status: &str, payload: Value) -> Response {
-    let payload_obj = payload.as_object().cloned().unwrap_or_default();
     match format {
-        Format::Json => {
-            let mut resp = base_map(status);
-            for (k, v) in payload_obj {
-                resp.insert(k, v);
-            }
-            let mut root = Map::new();
-            root.insert("subsonic-response".into(), Value::Object(resp));
-            Json(Value::Object(root)).into_response()
-        }
+        Format::Json => axum::Json(serde_json::json!({"subsonic-response": body})).into_response(),
         Format::Xml => {
-            let (attrs, children) = object_to_xml(&payload_obj);
-            let body = format!(
-                concat!(
-                    r#"<?xml version="1.0" encoding="UTF-8"?>"#,
-                    "\n",
-                    r#"<subsonic-response xmlns="http://subsonic.org/restapi" status="{status}" "#,
-                    r#"version="{version}" type="{type}" serverVersion="{server}" openSubsonic="true"{attrs}>"#,
-                    "{children}</subsonic-response>",
-                ),
-                status = status,
-                version = API_VERSION,
-                r#type = SERVER_TYPE,
-                server = env!("CARGO_PKG_VERSION"),
-                attrs = attrs,
-                children = children,
-            );
+            let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            xml.push_str("<subsonic-response xmlns=\"http://subsonic.org/restapi\"");
+            let attributes = ["status", "version", "type", "serverVersion", "openSubsonic"];
+            for name in attributes {
+                if let Some(value) = body.remove(name) {
+                    xml.push(' ');
+                    xml.push_str(name);
+                    xml.push_str("=\"");
+                    xml.push_str(&escape(&scalar(&value)));
+                    xml.push('"');
+                }
+            }
+            if body.is_empty() {
+                xml.push_str("/>");
+            } else {
+                xml.push('>');
+                for (name, value) in body {
+                    write_xml(&mut xml, &name, &value);
+                }
+                xml.push_str("</subsonic-response>");
+            }
             (
+                StatusCode::OK,
                 [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
-                body,
+                xml,
             )
                 .into_response()
         }
     }
 }
 
-/// 信封固定字段（JSON）。
-fn base_map(status: &str) -> Map<String, Value> {
-    let mut m = Map::new();
-    m.insert("status".into(), Value::from(status));
-    m.insert("version".into(), Value::from(API_VERSION));
-    m.insert("type".into(), Value::from(SERVER_TYPE));
-    m.insert(
-        "serverVersion".into(),
-        Value::from(env!("CARGO_PKG_VERSION")),
-    );
-    m.insert("openSubsonic".into(), Value::from(true));
-    m
-}
-
-/// 把一个 JSON 对象按 OpenSubsonic 约定拆成 (属性串, 子元素串)。
-///
-/// 标量（字符串/数字/布尔）→ 属性；对象 → 子元素；数组 → 同名子元素重复；`null` → 略过。
-fn object_to_xml(obj: &Map<String, Value>) -> (String, String) {
-    let mut attrs = String::new();
-    let mut children = String::new();
-    for (key, val) in obj {
-        match val {
-            Value::Null => {}
-            Value::Bool(b) => attrs.push_str(&format!(" {key}=\"{b}\"")),
-            Value::Number(n) => attrs.push_str(&format!(" {key}=\"{n}\"")),
-            Value::String(s) => attrs.push_str(&format!(" {key}=\"{}\"", xml_escape(s))),
-            Value::Array(items) => {
-                for item in items {
-                    children.push_str(&element(key, item));
+fn write_xml(out: &mut String, name: &str, value: &Value) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                write_xml(out, name, item);
+            }
+        }
+        Value::Object(object) => {
+            out.push('<');
+            out.push_str(name);
+            for (key, value) in object {
+                if key == "value" || value.is_array() || value.is_object() || value.is_null() {
+                    continue;
+                }
+                out.push(' ');
+                out.push_str(key);
+                out.push_str("=\"");
+                out.push_str(&escape(&scalar(value)));
+                out.push('"');
+            }
+            let has_children = object
+                .iter()
+                .any(|(key, value)| value.is_array() || value.is_object() || key == "value");
+            if !has_children {
+                out.push_str("/>");
+                return;
+            }
+            out.push('>');
+            if let Some(value) = object.get("value") {
+                out.push_str(&escape(&scalar(value)));
+            }
+            for (key, value) in object {
+                if key != "value" && (value.is_array() || value.is_object()) {
+                    write_xml(out, key, value);
                 }
             }
-            Value::Object(_) => children.push_str(&element(key, val)),
+            out.push_str("</");
+            out.push_str(name);
+            out.push('>');
+        }
+        _ => {
+            out.push('<');
+            out.push_str(name);
+            out.push('>');
+            out.push_str(&escape(&scalar(value)));
+            out.push_str("</");
+            out.push_str(name);
+            out.push('>');
         }
     }
-    (attrs, children)
 }
 
-/// 渲染单个命名元素。
-fn element(name: &str, val: &Value) -> String {
-    match val {
-        Value::Object(o) => {
-            let (attrs, children) = object_to_xml(o);
-            if children.is_empty() {
-                format!("<{name}{attrs}/>")
-            } else {
-                format!("<{name}{attrs}>{children}</{name}>")
-            }
-        }
-        Value::String(s) => format!("<{name}>{}</{name}>", xml_escape(s)),
-        Value::Number(n) => format!("<{name}>{n}</{name}>"),
-        Value::Bool(b) => format!("<{name}>{b}</{name}>"),
+fn scalar(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
         Value::Null => String::new(),
-        Value::Array(items) => items.iter().map(|i| element(name, i)).collect(),
+        other => other.to_string(),
     }
 }
 
-/// 转义 XML 文本/属性中的特殊字符。
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
+fn escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+pub fn auth_error(format: Format, error_value: AuthError) -> Response {
+    let code = error_value.subsonic_code();
+    let message = match code {
+        10 => "Required parameter is missing or malformed",
+        40 => "Wrong username or password",
+        50 => "User is not authorized for the given operation",
+        _ => "Internal server error",
+    };
+    error(format, code, message)
+}
+
+pub fn parameter_error(format: Format, message: &str) -> Response {
+    error(format, 10, message)
+}
+
+pub fn not_found(format: Format) -> Response {
+    error(format, 70, "The requested data was not found")
+}
+
+pub fn internal(format: Format) -> Response {
+    error(format, 0, "Internal server error")
+}
+
+pub fn query_i64_values(uri: &Uri, name: &str) -> Result<Vec<i64>, ()> {
+    let mut values = Vec::new();
+    for pair in uri.query().unwrap_or_default().split('&') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        if key == name {
+            values.push(value.parse().map_err(|_| ())?);
+        }
+    }
+    Ok(values)
+}
+
+pub fn query_entity_ids(uri: &Uri, name: &str, kind: &str) -> Result<Vec<i64>, ()> {
+    let mut values = Vec::new();
+    for pair in uri.query().unwrap_or_default().split('&') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        if key == name {
+            values.push(parse_entity_id(value, kind).ok_or(())?);
+        }
+    }
+    Ok(values)
+}
+
+pub fn parse_entity_id(value: &str, kind: &str) -> Option<i64> {
+    let prefix = match kind {
+        "track" => "tr-",
+        "album" => "al-",
+        "artist" => "ar-",
+        "playlist" => "pl-",
+        "folder" => "pf-",
+        "user" => "us-",
+        "role" => "ro-",
+        "rule" => "ru-",
+        _ => return None,
+    };
+    if let Some(raw) = value.strip_prefix(prefix) {
+        return raw.parse().ok();
+    }
+    (kind == "track").then(|| value.parse().ok()).flatten()
+}
+
+pub fn parse_ratable_id(value: &str) -> Option<(&'static str, i64)> {
+    for (kind, prefix) in [("track", "tr-"), ("album", "al-"), ("artist", "ar-")] {
+        if let Some(raw) = value.strip_prefix(prefix) {
+            return Some((kind, raw.parse().ok()?));
+        }
+    }
+    Some(("track", value.parse().ok()?))
+}
+
+pub(crate) fn opaque_id(kind: &str, value: &str) -> String {
+    let prefix = match kind {
+        "track" => "tr-",
+        "album" => "al-",
+        "artist" => "ar-",
+        "playlist" => "pl-",
+        "folder" => "pf-",
+        "user" => "us-",
+        "role" => "ro-",
+        "rule" => "ru-",
+        _ => "",
+    };
+    format!("{prefix}{value}")
+}
+
+pub fn artist_value(artist: &Artist) -> Value {
+    let mut value = serde_json::to_value(artist).expect("Artist DTO 必须可序列化");
+    remove_nulls(&mut value);
+    value
+        .as_object_mut()
+        .expect("artist 是对象")
+        .insert("id".into(), opaque_id("artist", &artist.id).into());
+    value
+}
+
+pub fn album_value(album: &Album) -> Value {
+    let mut value = serde_json::to_value(album).expect("Album DTO 必须可序列化");
+    remove_nulls(&mut value);
+    if let Value::Object(object) = &mut value {
+        object.insert("id".into(), opaque_id("album", &album.id).into());
+        if let Some(artist_id) = &album.artist_id {
+            object.insert("artistId".into(), opaque_id("artist", artist_id).into());
+        }
+        object.insert("album".into(), album.name.clone().into());
+        object.insert("title".into(), album.name.clone().into());
+        object.insert("isDir".into(), true.into());
+    }
+    value
+}
+
+pub fn track_value(track: &Track) -> Value {
+    let mut value = serde_json::to_value(track).expect("Track DTO 必须可序列化");
+    remove_nulls(&mut value);
+    if let Value::Object(object) = &mut value {
+        object.insert("id".into(), opaque_id("track", &track.id).into());
+        if let Some(album_id) = &track.album_id {
+            object.insert("albumId".into(), opaque_id("album", album_id).into());
+        }
+        if let Some(artist_id) = &track.artist_id {
+            object.insert("artistId".into(), opaque_id("artist", artist_id).into());
+        }
+        object.insert("isDir".into(), false.into());
+        object.insert("type".into(), "music".into());
+        if let Some(suffix) = &track.suffix {
+            object.insert("contentType".into(), mime_type(suffix).into());
+        }
+    }
+    value
+}
+
+pub fn mime_type(codec: &str) -> &'static str {
+    match codec.to_ascii_lowercase().as_str() {
+        "mp3" => "audio/mpeg",
+        "aac" => "audio/aac",
+        "m4a" | "mp4" | "alac" => "audio/mp4",
+        "opus" | "ogg" | "oga" => "audio/ogg",
+        "flac" => "audio/flac",
+        "wav" => "audio/wav",
+        "wma" => "audio/x-ms-wma",
+        "ape" => "audio/ape",
+        _ => "application/octet-stream",
+    }
+}
+
+pub fn playlist_value(playlist: &Playlist, owner: &str) -> Value {
+    serde_json::json!({
+        "id": opaque_id("playlist", &playlist.id),
+        "name": playlist.name,
+        "comment": playlist.comment,
+        "owner": owner,
+        "public": false,
+        "songCount": playlist.song_count,
+        "duration": playlist.duration,
+        "created": playlist.created,
+        "changed": playlist.changed,
+    })
+}
+
+pub fn user_value(user: &User) -> Value {
+    serde_json::json!({
+        "username": user.name,
+        "email": user.email,
+        "scrobblingEnabled": true,
+        "adminRole": user.admin,
+        "settingsRole": true,
+        "downloadRole": true,
+        "uploadRole": user.admin,
+        "playlistRole": true,
+        "coverArtRole": true,
+        "commentRole": true,
+        "podcastRole": false,
+        "streamRole": true,
+        "jukeboxRole": false,
+        "shareRole": false,
+        "videoConversionRole": false,
+    })
+}
+
+fn remove_nulls(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.retain(|_, value| !value.is_null());
+            for value in object.values_mut() {
+                remove_nulls(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                remove_nulls(value);
+            }
+        }
+        _ => {}
+    }
 }

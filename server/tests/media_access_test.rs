@@ -214,8 +214,12 @@ async fn get_cover_art_按封面归属可见性门控() {
 async fn stream_未认证被拒() {
     let ctx = common::ctx().await;
     let m = seed(&ctx).await;
-    let (status, _) = ctx
-        .get(&format!("/rest/stream?id={}", m.open_track), None)
+    let (status, body) = ctx
+        .get_json(&format!("/rest/stream?id={}&f=json", m.open_track), None)
         .await;
-    assert_eq!(status, axum::http::StatusCode::UNAUTHORIZED);
+    // OpenSubsonic 惯例：认证失败以 HTTP 200 + subsonic 错误码回应（缺凭证=10），
+    // 而非 HTTP 401——现成客户端读响应信封里的错误码。
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(body["subsonic-response"]["status"], "failed");
+    assert_eq!(body["subsonic-response"]["error"]["code"], 10);
 }

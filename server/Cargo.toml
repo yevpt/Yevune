@@ -10,8 +10,18 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # HTTP 框架（红线锁定）
-axum = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"] }
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "net",
+    "macros",
+    "signal",
+    "fs",
+    "io-util",
+    "process",
+    "sync",
+    "time",
+] }
 # 配置：TOML 文件 + 环境变量分层覆盖（标准库无法胜任分层反序列化）
 config = { version = "0.14", default-features = false, features = ["toml"] }
 serde = { version = "1", features = ["derive"] }
@@ -34,6 +44,9 @@ lofty = "0.24"
 async-trait = "0.1.89"
 bytes = "1.12.1"
 futures = "0.3.32"
+# 扩展接口需按 application/x-www-form-urlencoded 语义解码重复 grant 参数；
+# 该 crate 已为 axum 传递依赖，直接声明以避免手拆 URI 绕过 percent/plus 解码。
+form_urlencoded = "1"
 # 认证密码学（纯 Rust RustCrypto）：
 # - aes-gcm：密码可逆加密存储（红线，支持 Subsonic token 校验，同 Navidrome 思路）
 # - md-5：OpenSubsonic token = md5(密码 + 盐)，协议要求
@@ -47,13 +60,23 @@ sha2 = "0.10"
 base64 = "0.22"
 hex = "0.4"
 rand = "0.8"
+# 转码临时文件必须碰撞安全且在成功、失败、中断路径自动清理；标准库无对应 RAII 工具。
+tempfile = "3"
+# getCoverArt 对 scanner 签发的五种封面做安全解码与缩放；关闭默认格式，避免引入无关编解码器。
+image = { version = "0.25", default-features = false, features = [
+    "bmp",
+    "gif",
+    "jpeg",
+    "png",
+    "webp",
+] }
 
 [dev-dependencies]
 # 集成测试用 oneshot 驱动 Router，无需真实绑定端口
 tower = { version = "0.5", features = ["util"] }
-# 集成测试用临时 SQLite 文件
-tempfile = "3"
 # 集成测试内自行构造 Subsonic token = md5(密码 + 盐) 以验证认证
 md-5 = "0.10"
 hex = "0.4"
 http-body-util = "0.1"
+# 标准库不提供 RFC3339 解析；仅测试严格验证协议时间字段（已是间接依赖）。
+chrono = { version = "0.4", default-features = false }

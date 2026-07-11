@@ -110,9 +110,14 @@ impl From<ArtistRow> for Artist {
 
 /// 取单曲目的 SELECT（含 LEFT JOIN 专辑/艺人）。
 const TRACK_SELECT: &str = "\
-SELECT t.id, t.title, t.album_id, a.name AS album_name, \
-       t.artist_id, ar.name AS artist_name, t.disc_no, t.track_no, t.year, \
-       t.genre, t.duration, t.codec, t.bitrate, t.size, a.cover_key AS cover_key, t.added_at \
+SELECT t.id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title) AS title, \
+       t.album_id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='album'), a.name) AS album_name, \
+       t.artist_id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='artist'), ar.name) AS artist_name, \
+       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no) AS disc_no, \
+       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no) AS track_no, \
+       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='year') AS INTEGER), t.year) AS year, \
+       COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='genre'), t.genre) AS genre, \
+       t.duration, t.codec, t.bitrate, t.size, a.cover_key AS cover_key, t.added_at \
 FROM tracks t \
 LEFT JOIN albums a ON t.album_id = a.id \
 LEFT JOIN artists ar ON t.artist_id = ar.id";
@@ -177,6 +182,40 @@ pub struct SearchResults {
     pub albums: Vec<Album>,
     /// 命中的曲目。
     pub tracks: Vec<Track>,
+}
+
+/// `search3` 各实体类型独立的数据库分页窗口。
+#[derive(Debug, Clone, Copy)]
+pub struct SearchPage {
+    /// 跳过的艺人结果数。
+    pub artist_offset: i64,
+    /// 返回的艺人结果上限。
+    pub artist_count: i64,
+    /// 跳过的专辑结果数。
+    pub album_offset: i64,
+    /// 返回的专辑结果上限。
+    pub album_count: i64,
+    /// 跳过的曲目结果数。
+    pub track_offset: i64,
+    /// 返回的曲目结果上限。
+    pub track_count: i64,
+}
+
+/// 媒体传输所需的内部存储定位信息（仅服务端使用）。
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct MediaSource {
+    /// 曲目主键。
+    pub id: i64,
+    /// Garage 原始对象键。
+    pub object_key: String,
+    /// 当前原始对象 ETag（移动失败回滚时恢复索引）。
+    pub etag: Option<String>,
+    /// 原始编码/后缀。
+    pub codec: Option<String>,
+    /// 原始码率（kbps）。
+    pub bitrate: Option<i64>,
+    /// 原始大小。
+    pub size: Option<i64>,
 }
 
 /// 媒体仓储。
@@ -284,38 +323,385 @@ impl<'a> MediaRepo<'a> {
         Ok(rows.into_iter().map(Album::from).collect())
     }
 
+    /// 列举全部艺人（按排序名/展示名排序）。
+    pub async fn list_artists(&self) -> Result<Vec<Artist>> {
+        let rows: Vec<ArtistRow> = sqlx::query_as(&format!(
+            "{ARTIST_SELECT} GROUP BY ar.id ORDER BY COALESCE(ar.sort_name, ar.name), ar.name"
+        ))
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Artist::from).collect())
+    }
+
+    /// 分页列举艺人，避免空 `search3` 整库加载。
+    pub async fn list_artists_page(&self, offset: i64, limit: i64) -> Result<Vec<Artist>> {
+        let rows: Vec<ArtistRow> = sqlx::query_as(&format!(
+            "{ARTIST_SELECT} GROUP BY ar.id ORDER BY COALESCE(ar.sort_name, ar.name), ar.name LIMIT ? OFFSET ?"
+        ))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Artist::from).collect())
+    }
+
+    /// 列举某艺人的全部专辑。
+    pub async fn albums_by_artist(&self, artist_id: i64) -> Result<Vec<Album>> {
+        let rows: Vec<AlbumRow> = sqlx::query_as(&format!(
+            "{ALBUM_SELECT} WHERE a.artist_id = ? GROUP BY a.id ORDER BY a.name"
+        ))
+        .bind(artist_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Album::from).collect())
+    }
+
+    /// 列举某专辑的曲目，按碟号、曲号与标题排序。
+    pub async fn tracks_by_album(&self, album_id: i64) -> Result<Vec<Track>> {
+        let rows: Vec<TrackRow> = sqlx::query_as(&format!(
+            "{TRACK_SELECT} WHERE t.album_id = ? ORDER BY \
+             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no, 0), \
+             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no, 0), \
+             COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title)"
+        ))
+        .bind(album_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Track::from).collect())
+    }
+
+    /// 列举全部曲目，供空 `search3` 的离线同步语义使用。
+    pub async fn list_tracks(&self) -> Result<Vec<Track>> {
+        let rows: Vec<TrackRow> = sqlx::query_as(&format!(
+            "{TRACK_SELECT} ORDER BY COALESCE((SELECT value FROM tag_overrides o \
+             WHERE o.track_id=t.id AND o.field='title'), t.title)"
+        ))
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Track::from).collect())
+    }
+
+    /// 分页列举专辑，供空搜索使用。
+    pub async fn list_albums_page(&self, offset: i64, limit: i64) -> Result<Vec<Album>> {
+        let rows: Vec<AlbumRow> = sqlx::query_as(&format!(
+            "{ALBUM_SELECT} GROUP BY a.id ORDER BY a.name LIMIT ? OFFSET ?"
+        ))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Album::from).collect())
+    }
+
+    /// 分页列举曲目，供空搜索使用。
+    pub async fn list_tracks_page(&self, offset: i64, limit: i64) -> Result<Vec<Track>> {
+        let rows: Vec<TrackRow> = sqlx::query_as(&format!(
+            "{TRACK_SELECT} ORDER BY COALESCE((SELECT value FROM tag_overrides o \
+                 WHERE o.track_id=t.id AND o.field='title'), t.title) LIMIT ? OFFSET ?"
+        ))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Track::from).collect())
+    }
+
+    /// 封面标识是否由媒体索引签发，防止把任意对象键当封面读取。
+    pub async fn has_cover_key(&self, key: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM albums WHERE cover_key = ?) + \
+                    (SELECT COUNT(*) FROM artists WHERE cover_key = ?)",
+        )
+        .bind(key)
+        .bind(key)
+        .fetch_one(self.pool)
+        .await?;
+        Ok(count > 0)
+    }
+
+    /// 在数据库侧完成 `getAlbumList2` 排序、过滤与分页，仅返回本页主键。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn album_ids_for_list(
+        &self,
+        user_id: i64,
+        kind: &str,
+        offset: i64,
+        limit: i64,
+        from_year: Option<u32>,
+        to_year: Option<u32>,
+        genre: Option<&str>,
+    ) -> Result<Vec<i64>> {
+        match kind {
+            "random" => {
+                sqlx::query_scalar("SELECT id FROM albums ORDER BY random() LIMIT ? OFFSET ?")
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "newest" => sqlx::query_scalar(
+                "SELECT id FROM albums ORDER BY added_at DESC LIMIT ? OFFSET ?",
+            )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "alphabeticalByArtist" => sqlx::query_scalar(
+                "SELECT a.id FROM albums a LEFT JOIN artists ar ON ar.id = a.artist_id \
+                 ORDER BY COALESCE(ar.sort_name, ar.name), a.name LIMIT ? OFFSET ?",
+            )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "byYear" => {
+                let from = from_year.unwrap_or(0);
+                let to = to_year.unwrap_or(0);
+                let order = if from > to { "DESC" } else { "ASC" };
+                let sql = format!(
+                    "SELECT id FROM albums WHERE year BETWEEN ? AND ? \
+                     ORDER BY year {order}, name LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(from.min(to))
+                    .bind(from.max(to))
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "byGenre" => sqlx::query_scalar(
+                "SELECT id FROM albums WHERE genre = ? ORDER BY name LIMIT ? OFFSET ?",
+            )
+            .bind(genre)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "highest" => sqlx::query_scalar(
+                "SELECT a.id FROM albums a JOIN annotations n \
+                 ON n.user_id = ? AND n.item_type = 'album' AND n.item_id = a.id \
+                 WHERE n.rating IS NOT NULL ORDER BY n.rating DESC, a.name LIMIT ? OFFSET ?",
+            )
+            .bind(user_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "frequent" => sqlx::query_scalar(
+                "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
+                 JOIN annotations n ON n.user_id = ? AND n.item_type = 'track' AND n.item_id = t.id \
+                 GROUP BY a.id HAVING SUM(n.play_count) > 0 \
+                 ORDER BY SUM(n.play_count) DESC, a.name LIMIT ? OFFSET ?",
+            )
+            .bind(user_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "recent" => sqlx::query_scalar(
+                "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
+                 JOIN annotations n ON n.user_id = ? AND n.item_type = 'track' AND n.item_id = t.id \
+                 WHERE n.last_played IS NOT NULL GROUP BY a.id \
+                 ORDER BY MAX(n.last_played) DESC, a.name LIMIT ? OFFSET ?",
+            )
+            .bind(user_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            "starred" => sqlx::query_scalar(
+                "SELECT a.id FROM albums a JOIN annotations n \
+                 ON n.user_id = ? AND n.item_type = 'album' AND n.item_id = a.id \
+                 WHERE n.starred_at IS NOT NULL ORDER BY n.starred_at DESC LIMIT ? OFFSET ?",
+            )
+            .bind(user_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(self.pool)
+            .await,
+            _ => sqlx::query_scalar("SELECT id FROM albums ORDER BY name LIMIT ? OFFSET ?")
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(self.pool)
+                .await,
+        }
+    }
+
+    /// 聚合非空流派的曲目数与专辑数。
+    pub async fn list_genres(&self) -> Result<Vec<contract::Genre>> {
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+            "SELECT COALESCE(o.value, t.genre) AS display_genre, \
+                    COUNT(DISTINCT t.id), COUNT(DISTINCT t.album_id) \
+             FROM tracks t \
+             LEFT JOIN tag_overrides o ON o.track_id = t.id AND o.field = 'genre' \
+             WHERE COALESCE(o.value, t.genre) IS NOT NULL \
+               AND COALESCE(o.value, t.genre) <> '' \
+             GROUP BY display_genre ORDER BY display_genre",
+        )
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(value, songs, albums)| contract::Genre {
+                value,
+                song_count: songs as u32,
+                album_count: albums as u32,
+            })
+            .collect())
+    }
+
+    /// 读取曲目原始对象定位信息，供 stream/download 使用。
+    pub async fn media_source(&self, id: i64) -> Result<Option<MediaSource>> {
+        sqlx::query_as("SELECT id, object_key, etag, codec, bitrate, size FROM tracks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(self.pool)
+            .await
+    }
+
+    /// 仅当旧对象键与 ETag 仍匹配时，原子更新对象定位信息。
+    pub async fn move_source_cas(
+        &self,
+        id: i64,
+        old_object_key: &str,
+        old_etag: Option<&str>,
+        object_key: &str,
+        etag: Option<&str>,
+        size: u64,
+    ) -> Result<bool> {
+        let affected = sqlx::query(
+            "UPDATE tracks SET object_key = ?, etag = ?, size = ? \
+             WHERE id = ? AND object_key = ? AND etag IS ?",
+        )
+        .bind(object_key)
+        .bind(etag)
+        .bind(size as i64)
+        .bind(id)
+        .bind(old_object_key)
+        .bind(old_etag)
+        .execute(self.pool)
+        .await?
+        .rows_affected();
+        Ok(affected > 0)
+    }
+
+    /// upsert 指定曲目的标签覆盖值；未提供的字段保持不变。
+    pub async fn set_tag_overrides(&self, id: i64, values: &[(&str, &str)]) -> Result<bool> {
+        let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tracks WHERE id = ?")
+            .bind(id)
+            .fetch_one(self.pool)
+            .await?;
+        if exists == 0 {
+            return Ok(false);
+        }
+        let mut tx = self.pool.begin().await?;
+        for (field, value) in values {
+            sqlx::query(
+                "INSERT INTO tag_overrides(track_id, field, value) VALUES(?, ?, ?) \
+                 ON CONFLICT(track_id, field) DO UPDATE SET value = excluded.value",
+            )
+            .bind(id)
+            .bind(field)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(true)
+    }
+
     /// FTS5 搜索艺人/专辑/曲目名，按类型分组返回。
     pub async fn search(&self, query: &str, limit: i64) -> Result<SearchResults> {
-        // 命中的 (kind, ref_id)
-        let hits: Vec<(String, i64)> =
-            sqlx::query_as("SELECT kind, ref_id FROM search_fts WHERE search_fts MATCH ? LIMIT ?")
-                .bind(query)
-                .bind(limit)
-                .fetch_all(self.pool)
-                .await?;
+        self.search_page(
+            query,
+            SearchPage {
+                artist_offset: 0,
+                artist_count: limit,
+                album_offset: 0,
+                album_count: limit,
+                track_offset: 0,
+                track_count: limit,
+            },
+        )
+        .await
+    }
 
+    /// FTS5 搜索并在数据库侧对各实体类型独立分页。
+    pub async fn search_page(&self, query: &str, page: SearchPage) -> Result<SearchResults> {
+        // 把用户输入包装成 FTS5 字面短语，避免 `/`、`-`、引号等被解释为查询语法。
+        let literal = format!("\"{}\"", query.replace('"', "\"\""));
         let mut results = SearchResults::default();
-        for (kind, ref_id) in hits {
-            match kind.as_str() {
-                "artist" => {
-                    if let Some(a) = self.get_artist(ref_id).await? {
-                        results.artists.push(a);
-                    }
-                }
-                "album" => {
-                    if let Some(a) = self.get_album(ref_id).await? {
-                        results.albums.push(a);
-                    }
-                }
-                "track" => {
-                    if let Some(t) = self.get_track(ref_id).await? {
-                        results.tracks.push(t);
-                    }
-                }
-                _ => {}
+        for id in self
+            .search_ids(&literal, "artist", page.artist_offset, page.artist_count)
+            .await?
+        {
+            if let Some(artist) = self.get_artist(id).await? {
+                results.artists.push(artist);
+            }
+        }
+        for id in self
+            .search_ids(&literal, "album", page.album_offset, page.album_count)
+            .await?
+        {
+            if let Some(album) = self.get_album(id).await? {
+                results.albums.push(album);
+            }
+        }
+        for id in self
+            .search_track_ids(query, page.track_offset, page.track_count)
+            .await?
+        {
+            if let Some(track) = self.get_track(id).await? {
+                results.tracks.push(track);
             }
         }
         Ok(results)
+    }
+
+    async fn search_ids(
+        &self,
+        literal: &str,
+        kind: &str,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<i64>> {
+        sqlx::query_scalar(
+            "SELECT ref_id FROM search_fts \
+             WHERE search_fts MATCH ? AND kind = ? ORDER BY rowid LIMIT ? OFFSET ?",
+        )
+        .bind(literal)
+        .bind(kind)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(self.pool)
+        .await
+    }
+
+    async fn search_track_ids(&self, query: &str, offset: i64, limit: i64) -> Result<Vec<i64>> {
+        sqlx::query_scalar(
+            "SELECT t.id FROM tracks t \
+             LEFT JOIN tag_overrides o ON o.track_id=t.id AND o.field='title' \
+             WHERE instr(lower(COALESCE(o.value, t.title)), lower(?)) > 0 \
+             ORDER BY lower(COALESCE(o.value, t.title)), t.id LIMIT ? OFFSET ?",
+        )
+        .bind(query)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(self.pool)
+        .await
+    }
+
+    /// 在事务内清除一组已经显式写回原文件的覆盖字段。
+    pub async fn clear_tag_overrides(&self, id: i64, fields: &[&str]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for field in fields {
+            sqlx::query("DELETE FROM tag_overrides WHERE track_id = ? AND field = ?")
+                .bind(id)
+                .bind(field)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await
     }
 
     /// 按主键取艺人 DTO。
@@ -360,12 +746,14 @@ impl<'a> MediaRepo<'a> {
         Ok(row.map(Track::from))
     }
 
-    /// 列举某专辑内 `viewer` 可见的曲目（按碟/曲序）。
+    /// 列举某专辑内 `viewer` 可见的曲目（按碟/曲序；排序尊重标签覆盖层）。
     pub async fn album_tracks_visible(&self, viewer: &Viewer, album_id: i64) -> Result<Vec<Track>> {
         let pred = self.visibility(viewer, "t");
         let rows: Vec<TrackRow> = sqlx::query_as(&format!(
-            "{TRACK_SELECT} WHERE t.album_id = ? AND ({pred}) \
-             ORDER BY t.disc_no, t.track_no, t.id"
+            "{TRACK_SELECT} WHERE t.album_id = ? AND ({pred}) ORDER BY \
+             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no, 0), \
+             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no, 0), \
+             COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title)"
         ))
         .bind(album_id)
         .fetch_all(self.pool)
@@ -373,24 +761,26 @@ impl<'a> MediaRepo<'a> {
         Ok(rows.into_iter().map(Track::from).collect())
     }
 
-    /// 列举 `viewer` 可见的专辑（含至少一条可见曲目；计数只计可见曲目）。
+    /// 列举 `viewer` 可见的专辑（含至少一条可见曲目，或本就无曲目；计数只计可见曲目）。
     pub async fn list_albums_visible(&self, viewer: &Viewer) -> Result<Vec<Album>> {
         let pred = self.visibility(viewer, "t");
         let rows: Vec<AlbumRow> = sqlx::query_as(&format!(
-            "{} GROUP BY a.id HAVING COUNT(t.id) > 0 ORDER BY a.name",
-            album_select_visible(&pred)
+            "{} GROUP BY a.id HAVING {} ORDER BY a.name",
+            album_select_visible(&pred),
+            ALBUM_VISIBLE_HAVING
         ))
         .fetch_all(self.pool)
         .await?;
         Ok(rows.into_iter().map(Album::from).collect())
     }
 
-    /// 按主键取专辑 DTO，仅当其含至少一条 `viewer` 可见曲目。
+    /// 按主键取专辑 DTO，仅当其含至少一条 `viewer` 可见曲目（或本就无曲目）。
     pub async fn get_album_visible(&self, viewer: &Viewer, id: i64) -> Result<Option<Album>> {
         let pred = self.visibility(viewer, "t");
         let row: Option<AlbumRow> = sqlx::query_as(&format!(
-            "{} WHERE a.id = ? GROUP BY a.id HAVING COUNT(t.id) > 0",
-            album_select_visible(&pred)
+            "{} WHERE a.id = ? GROUP BY a.id HAVING {}",
+            album_select_visible(&pred),
+            ALBUM_VISIBLE_HAVING
         ))
         .bind(id)
         .fetch_optional(self.pool)
@@ -406,13 +796,26 @@ impl<'a> MediaRepo<'a> {
     ) -> Result<Vec<Album>> {
         let pred = self.visibility(viewer, "t");
         let rows: Vec<AlbumRow> = sqlx::query_as(&format!(
-            "{} WHERE a.artist_id = ? GROUP BY a.id HAVING COUNT(t.id) > 0 ORDER BY a.year, a.name",
-            album_select_visible(&pred)
+            "{} WHERE a.artist_id = ? GROUP BY a.id HAVING {} ORDER BY a.year, a.name",
+            album_select_visible(&pred),
+            ALBUM_VISIBLE_HAVING
         ))
         .bind(artist_id)
         .fetch_all(self.pool)
         .await?;
         Ok(rows.into_iter().map(Album::from).collect())
+    }
+
+    /// 列举 `viewer` 可见的曲目（按标题排序），供空 `search3` 浏览语义使用。
+    pub async fn list_tracks_visible(&self, viewer: &Viewer) -> Result<Vec<Track>> {
+        let pred = self.visibility(viewer, "t");
+        let rows: Vec<TrackRow> = sqlx::query_as(&format!(
+            "{TRACK_SELECT} WHERE ({pred}) ORDER BY COALESCE((SELECT value FROM tag_overrides o \
+             WHERE o.track_id=t.id AND o.field='title'), t.title), t.id"
+        ))
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Track::from).collect())
     }
 
     /// 列举 `viewer` 可见的艺人（含至少一条可见曲目；专辑数只计有可见曲目的专辑）。
@@ -468,47 +871,44 @@ impl<'a> MediaRepo<'a> {
         Ok(visible != 0)
     }
 
-    /// FTS5 搜索，仅返回 `viewer` 可见的命中（曲目直判；专辑/艺人按是否含可见曲目）。
+    /// 搜索并仅返回 `viewer` 可见的命中。
+    ///
+    /// 匹配方式与 [`search_page`](Self::search_page) 一致（艺人/专辑走 FTS5，曲目按
+    /// 覆盖层标题 `instr` 匹配），从而尊重标签覆盖；再逐条经可见性过滤。
     pub async fn search_visible(
         &self,
         viewer: &Viewer,
         query: &str,
         limit: i64,
     ) -> Result<SearchResults> {
-        let hits: Vec<(String, i64)> =
-            sqlx::query_as("SELECT kind, ref_id FROM search_fts WHERE search_fts MATCH ? LIMIT ?")
-                .bind(query)
-                .bind(limit)
-                .fetch_all(self.pool)
-                .await?;
-
+        let literal = format!("\"{}\"", query.replace('"', "\"\""));
         let mut results = SearchResults::default();
-        for (kind, ref_id) in hits {
-            match kind.as_str() {
-                "artist" => {
-                    if let Some(a) = self.get_artist_visible(viewer, ref_id).await? {
-                        results.artists.push(a);
-                    }
-                }
-                "album" => {
-                    if let Some(a) = self.get_album_visible(viewer, ref_id).await? {
-                        results.albums.push(a);
-                    }
-                }
-                "track" => {
-                    if let Some(t) = self.get_track_visible(viewer, ref_id).await? {
-                        results.tracks.push(t);
-                    }
-                }
-                _ => {}
+        for id in self.search_ids(&literal, "artist", 0, limit).await? {
+            if let Some(artist) = self.get_artist_visible(viewer, id).await? {
+                results.artists.push(artist);
+            }
+        }
+        for id in self.search_ids(&literal, "album", 0, limit).await? {
+            if let Some(album) = self.get_album_visible(viewer, id).await? {
+                results.albums.push(album);
+            }
+        }
+        for id in self.search_track_ids(query, 0, limit).await? {
+            if let Some(track) = self.get_track_visible(viewer, id).await? {
+                results.tracks.push(track);
             }
         }
         Ok(results)
     }
 }
 
+/// 专辑可见性 `HAVING` 条件：含至少一条可见曲目，或本就无任何曲目（无内容可限制→默认开放）。
+/// 只隐藏"有曲目但对当前访问者全部受限"的专辑。
+const ALBUM_VISIBLE_HAVING: &str =
+    "(COUNT(t.id) > 0 OR (SELECT COUNT(*) FROM tracks tt WHERE tt.album_id = a.id) = 0)";
+
 /// 专辑 SELECT，但曲目 JOIN 附带可见性谓词：聚合计数只计可见曲目。
-/// 配合 `HAVING COUNT(t.id) > 0` 隐藏无可见曲目的专辑。
+/// 配合 [`ALBUM_VISIBLE_HAVING`] 隐藏"有曲目但全部受限"的专辑。
 fn album_select_visible(pred: &str) -> String {
     format!(
         "SELECT a.id, a.name, a.artist_id, ar.name AS artist_name, a.year, a.genre, \
@@ -520,8 +920,8 @@ fn album_select_visible(pred: &str) -> String {
     )
 }
 
-/// 艺人 SELECT，仅保留含至少一条可见曲目的艺人；专辑数只计有可见曲目的专辑。
-/// 谓词作用于内层曲目别名 `tv`。返回串以 `WHERE ... ` 结尾便于追加条件。
+/// 艺人 SELECT，保留含至少一条可见曲目的艺人，或本就无曲目的艺人（无内容可限制→默认开放）；
+/// 专辑数只计有可见曲目的专辑。谓词作用于内层曲目别名 `tv`。返回串以 `WHERE (...)` 结尾便于追加条件。
 fn artist_select_visible(pred: &str) -> String {
     format!(
         "SELECT ar.id, ar.name, ar.sort_name, ar.mbid, ar.cover_key, \
@@ -529,6 +929,7 @@ fn artist_select_visible(pred: &str) -> String {
                    AND EXISTS(SELECT 1 FROM tracks tv WHERE tv.album_id = al.id AND ({pred}))) \
                 AS album_count \
          FROM artists ar \
-         WHERE EXISTS(SELECT 1 FROM tracks tv WHERE tv.artist_id = ar.id AND ({pred}))"
+         WHERE (EXISTS(SELECT 1 FROM tracks tv WHERE tv.artist_id = ar.id AND ({pred})) \
+                OR NOT EXISTS(SELECT 1 FROM tracks tt WHERE tt.artist_id = ar.id))"
     )
 }

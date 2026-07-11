@@ -1,6 +1,7 @@
 //! 对象存储层：读写 Garage（S3 兼容）的窄抽象。
 //!
-//! 对外只暴露自研的 [`ObjectStore`] trait（`list`/`get`/`get_range`/`put`/`delete`/`head`），
+//! 对外只暴露自研的 [`ObjectStore`] trait
+//!（`list`/`get`/`get_range`/`put`/`put_file`/`delete`/`head`），
 //! 不泄漏底层 `object_store` 类型给 scanner/transcode，保留将来换实现的自由（见 [ADR-0005]）。
 //! trait 可用内存假实现 [`MemoryStore`] 替换以便单测，Garage 实现见 [`GarageStore`]。
 //!
@@ -10,6 +11,7 @@
 
 use std::fmt;
 use std::ops::Range;
+use std::path::Path;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -22,6 +24,9 @@ pub use memory::MemoryStore;
 
 /// 分页列举的默认页大小（对齐 S3 单次 List 上限）。
 pub const DEFAULT_PAGE_SIZE: usize = 1000;
+
+/// 文件读写的固定分块大小；上传与转码全程以此建立有界缓冲。
+pub const STREAM_CHUNK_SIZE: usize = 64 * 1024;
 
 /// 本层统一结果类型。
 pub type Result<T> = std::result::Result<T, StorageError>;
@@ -93,6 +98,11 @@ pub trait ObjectStore: Send + Sync {
 
     /// 写入对象，返回其元数据（含 ETag）。
     async fn put(&self, key: &str, bytes: Bytes) -> Result<ObjectMeta>;
+
+    /// 从本地文件有界分块上传对象，避免将完整文件组装为单个 [`Bytes`]。
+    ///
+    /// 实现必须只在全部分块成功后使对象可见；失败时需中止 multipart 并清理残留。
+    async fn put_file(&self, key: &str, path: &Path) -> Result<ObjectMeta>;
 
     /// 删除对象。不存在时视为成功（幂等，对齐 S3 语义）。
     async fn delete(&self, key: &str) -> Result<()>;
