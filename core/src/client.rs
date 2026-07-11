@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
 use crate::error::{CoreError, Result};
@@ -54,12 +55,59 @@ impl MusicClient {
 
     /// 验证当前会话仍可访问服务端。
     pub async fn ping(&self) -> Result<()> {
-        let session = self
-            .session
+        let session = self.authenticated_session().await?;
+        self.http.get_empty(&session, "ping").await
+    }
+
+    /// 读取一页专辑。
+    pub async fn list_albums(
+        &self,
+        sort: AlbumSort,
+        offset: u32,
+        size: u32,
+    ) -> Result<Vec<contract::Album>> {
+        browse::list_albums(
+            &self.http,
+            &self.authenticated_session().await?,
+            sort,
+            offset,
+            size,
+        )
+        .await
+    }
+
+    /// 读取专辑及其曲目。
+    pub async fn get_album(&self, id: String) -> Result<AlbumDetail> {
+        browse::get_album(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 读取艺人及其专辑。
+    pub async fn get_artist(&self, id: String) -> Result<ArtistDetail> {
+        browse::get_artist(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 读取单曲。
+    pub async fn get_song(&self, id: String) -> Result<contract::Track> {
+        browse::get_song(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 读取所有可见艺人。
+    pub async fn list_artists(&self) -> Result<Vec<contract::Artist>> {
+        browse::list_artists(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 在艺人、专辑与曲目中全文搜索。
+    pub async fn search(&self, query: String) -> Result<SearchResult> {
+        browse::search(&self.http, &self.authenticated_session().await?, query).await
+    }
+}
+
+impl MusicClient {
+    async fn authenticated_session(&self) -> Result<AuthenticatedSession> {
+        self.session
             .read()
             .await
             .clone()
-            .ok_or(CoreError::NotAuthenticated)?;
-        self.http.get_empty(&session, "ping").await
+            .ok_or(CoreError::NotAuthenticated)
     }
 }

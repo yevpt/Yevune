@@ -1,4 +1,5 @@
 import XCTest
+import CoreFFI
 @testable import MusicApp
 
 @MainActor
@@ -21,10 +22,58 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.isSubmitting)
     }
+
+    func testLibraryLoadAndSearchPublishCoreResults() async {
+        let album = Album(
+            id: "al-1",
+            name: "Blue",
+            artist: "Band",
+            artistId: "ar-1",
+            coverArt: nil,
+            songCount: 1,
+            duration: 120,
+            year: nil,
+            genre: nil,
+            created: nil
+        )
+        let model = LibraryViewModel(client: FakeMusicClient(album: album))
+
+        await model.load()
+        await model.search(query: "Blue")
+
+        XCTAssertEqual(model.albums, [album])
+        XCTAssertEqual(model.searchResult?.albums, [album])
+        XCTAssertNil(model.errorMessage)
+    }
 }
 
 private actor FakeMusicClient: MusicClientProviding {
+    private let album: Album
+
+    init(album: Album = Album(
+        id: "al-0",
+        name: "",
+        artist: nil,
+        artistId: nil,
+        coverArt: nil,
+        songCount: 0,
+        duration: 0,
+        year: nil,
+        genre: nil,
+        created: nil
+    )) {
+        self.album = album
+    }
+
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         SessionValue(server: server, user: user)
+    }
+
+    func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {
+        [album]
+    }
+
+    func search(query: String) async throws -> SearchResult {
+        SearchResult(artists: [], albums: [album], tracks: [])
     }
 }

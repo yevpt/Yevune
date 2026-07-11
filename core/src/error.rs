@@ -11,14 +11,16 @@ pub enum CoreError {
     NotAuthenticated,
     /// 服务端按 OpenSubsonic 信封报告的错误。
     Server { code: u32, message: String },
+    /// 成功信封缺少端点要求的业务数据。
+    InvalidResponse { message: String },
 }
 
 impl std::fmt::Display for CoreError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidServer { message } | Self::Network { message } => {
-                formatter.write_str(message)
-            }
+            Self::InvalidServer { message }
+            | Self::Network { message }
+            | Self::InvalidResponse { message } => formatter.write_str(message),
             Self::NotAuthenticated => formatter.write_str("尚未登录"),
             Self::Server { code, message } => write!(formatter, "服务端错误 {code}: {message}"),
         }

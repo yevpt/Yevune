@@ -1,0 +1,80 @@
+use std::sync::Arc;
+
+use music_core::{AlbumSort, MusicClient};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+
+#[tokio::test]
+async fn browse_and_search_decode_opensubsonic_json_payloads() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let observed = requests.clone();
+    let server = tokio::spawn(async move {
+        for _ in 0..5 {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 4096];
+            let bytes = socket.read(&mut request).await.unwrap();
+            let line = std::str::from_utf8(&request[..bytes])
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap()
+                .to_owned();
+            observed.lock().await.push(line.clone());
+            let body = response_for(&line);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        }
+    });
+
+    let client = MusicClient::new();
+    client
+        .login(
+            format!("http://{address}"),
+            "admin".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap();
+    let albums = client.list_albums(AlbumSort::Newest, 0, 50).await.unwrap();
+    let album = client.get_album("al-1".to_owned()).await.unwrap();
+    let artists = client.list_artists().await.unwrap();
+    let search = client.search("Blue".to_owned()).await.unwrap();
+    server.await.unwrap();
+
+    assert_eq!(albums[0].name, "Blue");
+    assert_eq!(album.tracks[0].title, "Blue Sky");
+    assert_eq!(artists[0].name, "Band");
+    assert_eq!(search.albums[0].id, "al-1");
+    let requests = requests.lock().await;
+    assert!(requests[1].contains("/rest/getAlbumList2?"));
+    assert!(requests[1].contains("type=newest"));
+    assert!(requests[2].contains("/rest/getAlbum?"));
+    assert!(requests[2].contains("id=al-1"));
+    assert!(requests[3].contains("/rest/getArtists?"));
+    assert!(requests[4].contains("/rest/search3?"));
+    assert!(requests[4].contains("query=Blue"));
+}
+
+fn response_for(request: &str) -> String {
+    let data = if request.contains("/rest/getAlbumList2") {
+        "\"albumList2\":{\"album\":[{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120}]}"
+    } else if request.contains("/rest/getAlbum?") {
+        "\"album\":{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120,\"song\":[{\"id\":\"tr-1\",\"title\":\"Blue Sky\",\"size\":42,\"duration\":120,\"bitRate\":320}]}"
+    } else if request.contains("/rest/getArtists") {
+        "\"artists\":{\"index\":[{\"name\":\"B\",\"artist\":[{\"id\":\"ar-1\",\"name\":\"Band\",\"albumCount\":1}]}]}"
+    } else if request.contains("/rest/search3") {
+        "\"searchResult3\":{\"artist\":[{\"id\":\"ar-1\",\"name\":\"Band\",\"albumCount\":1}],\"album\":[{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120}],\"song\":[{\"id\":\"tr-1\",\"title\":\"Blue Sky\",\"size\":42,\"duration\":120,\"bitRate\":320}]}"
+    } else {
+        ""
+    };
+    format!(
+        "{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true{comma}{data}}}}}",
+        comma = if data.is_empty() { "" } else { "," }
+    )
+}

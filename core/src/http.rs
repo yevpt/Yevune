@@ -1,5 +1,6 @@
 //! 带 OpenSubsonic 认证的 JSON HTTP 请求。
 
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use crate::auth::AuthenticatedSession;
@@ -12,16 +13,18 @@ pub(crate) struct HttpClient {
 }
 
 #[derive(Debug, Deserialize)]
-struct Envelope {
+struct Envelope<T> {
     #[serde(rename = "subsonic-response")]
-    response: ResponseBody,
+    response: ResponseBody<T>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ResponseBody {
+struct ResponseBody<T> {
     status: String,
     error: Option<ServerError>,
+    #[serde(flatten)]
+    data: T,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,8 +46,28 @@ impl HttpClient {
         auth: &AuthenticatedSession,
         endpoint: &str,
     ) -> Result<()> {
+        self.get_json::<EmptyPayload>(auth, endpoint, &[]).await?;
+        Ok(())
+    }
+
+    /// 发送认证 GET 请求并提取 OpenSubsonic 成功信封中的业务数据。
+    pub(crate) async fn get_json<T>(
+        &self,
+        auth: &AuthenticatedSession,
+        endpoint: &str,
+        parameters: &[(String, String)],
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
         let mut url = auth.config.endpoint(endpoint)?;
-        url.query_pairs_mut().extend_pairs(auth.query_pairs());
+        {
+            let mut query = url.query_pairs_mut();
+            query.extend_pairs(auth.query_pairs());
+            for (key, value) in parameters {
+                query.append_pair(key, value);
+            }
+        }
         let response = self
             .client
             .get(url)
@@ -53,9 +76,9 @@ impl HttpClient {
             .map_err(network_error)?
             .error_for_status()
             .map_err(network_error)?;
-        let envelope: Envelope = response.json().await.map_err(network_error)?;
+        let envelope: Envelope<T> = response.json().await.map_err(network_error)?;
         if envelope.response.status == "ok" {
-            return Ok(());
+            return Ok(envelope.response.data);
         }
         let error = envelope.response.error.unwrap_or(ServerError {
             code: 0,
@@ -67,6 +90,9 @@ impl HttpClient {
         })
     }
 }
+
+#[derive(Deserialize)]
+struct EmptyPayload {}
 
 fn network_error(error: reqwest::Error) -> CoreError {
     CoreError::Network {
