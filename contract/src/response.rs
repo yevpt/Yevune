@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const OPEN_SUBSONIC_API_VERSION: &str = "1.16.1";
 
 /// 响应状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ResponseStatus {
     /// 成功。
@@ -16,7 +16,7 @@ pub enum ResponseStatus {
 }
 
 /// 错误详情，对齐 OpenSubsonic error 对象。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SubsonicError {
     /// OpenSubsonic 错误码。
     pub code: u32,

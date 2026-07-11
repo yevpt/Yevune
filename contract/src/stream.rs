@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 播放/转码请求参数。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct StreamRequest {
     /// 目标曲目标识符。
     pub id: String,

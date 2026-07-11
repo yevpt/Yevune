@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 流派，对齐 OpenSubsonic `getGenres` 的 genre 元素。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Genre {
     /// 流派名（即取值）。
@@ -15,7 +15,7 @@ pub struct Genre {
 }
 
 /// 艺人，对齐 OpenSubsonic `ArtistID3` + 设计文档 §6 `artists` 列。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Artist {
     /// 不透明标识符。
@@ -33,7 +33,7 @@ pub struct Artist {
 }
 
 /// 专辑，对齐 OpenSubsonic `AlbumID3` + 设计文档 §6 `albums` 列。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Album {
     /// 不透明标识符。
@@ -61,7 +61,7 @@ pub struct Album {
 /// 曲目，对齐 OpenSubsonic `Child`(song) + 设计文档 §6 `tracks` 列。
 ///
 /// 面向客户端视图：不含 `object_key`/`etag`/`content_hash` 等对象存储内部字段。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Track {
     /// 不透明标识符。

@@ -1,0 +1,664 @@
+openapi: 3.1.0
+info:
+  title: 自托管家庭音乐服务端 API
+  description: OpenSubsonic 兼容子集 + 命名空间隔离的自研扩展（/rest/ext/*）。
+  license:
+    name: MIT OR Apache-2.0
+    identifier: MIT OR Apache-2.0
+  version: 0.1.0
+paths:
+  /rest/changePassword:
+    get:
+      summary: 改密码
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/createPlaylist:
+    get:
+      summary: 创建歌单
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/createUser:
+    get:
+      summary: 建用户
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/deletePlaylist:
+    get:
+      summary: 删除歌单
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/deleteUser:
+    get:
+      summary: 删用户
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/download:
+    get:
+      summary: 下载原始文件
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/getAccessRules:
+    get:
+      summary: 查询访问规则（扩展，仅管理员）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/getPlaylistTree:
+    get:
+      summary: 多级歌单树（扩展）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/getRoles:
+    get:
+      summary: 角色列表（扩展，仅管理员）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/setAccessRule:
+    get:
+      summary: 设置曲库访问规则（扩展，仅管理员）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/uploadTrack:
+    get:
+      summary: 上传曲目入库（扩展，multipart）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getAlbum:
+    get:
+      summary: 取单专辑及其曲目
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getAlbumList2:
+    get:
+      summary: 专辑列表
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getArtist:
+    get:
+      summary: 取单艺人及其专辑
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getArtists:
+    get:
+      summary: 浏览艺人（按访问控制过滤）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getCoverArt:
+    get:
+      summary: 封面图
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getGenres:
+    get:
+      summary: 流派列表
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getIndexes:
+    get:
+      summary: 艺人索引
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getLicense:
+    get:
+      summary: 许可信息
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getOpenSubsonicExtensions:
+    get:
+      summary: 声明自研扩展
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getPlaylist:
+    get:
+      summary: 取单歌单及展开曲目
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getPlaylists:
+    get:
+      summary: 当前用户歌单（扁平）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getScanStatus:
+    get:
+      summary: 扫描状态
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getSong:
+    get:
+      summary: 取单曲目
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getUser:
+    get:
+      summary: 取用户
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getUsers:
+    get:
+      summary: 列用户
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ping:
+    get:
+      summary: 存活探测
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/scrobble:
+    get:
+      summary: 播放上报
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/search3:
+    get:
+      summary: 全文搜索（FTS5）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/setRating:
+    get:
+      summary: 评分
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/star:
+    get:
+      summary: 收藏
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/startScan:
+    get:
+      summary: 触发扫描
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/stream:
+    get:
+      summary: 按需转码流（透传或转码）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/unstar:
+    get:
+      summary: 取消收藏
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/updatePlaylist:
+    get:
+      summary: 更新歌单
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/updateUser:
+    get:
+      summary: 改用户
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+components:
+  schemas:
+    AccessRule:
+      type: object
+      description: 一条访问规则：某作用域仅对允许名单内主体可见。
+      required:
+      - id
+      - scopeType
+      - scopeId
+      - grants
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Principal'
+          description: 允许访问的主体名单。
+        id:
+          type: string
+          description: 不透明标识符。
+        scopeId:
+          type: string
+          description: 作用域目标标识符（曲目/专辑/艺人 id，或流派名）。
+        scopeType:
+          $ref: '#/components/schemas/ScopeType'
+          description: 作用域类型。
+    Album:
+      type: object
+      description: 专辑，对齐 OpenSubsonic `AlbumID3` + 设计文档 §6 `albums` 列。
+      required:
+      - id
+      - name
+      - songCount
+      - duration
+      properties:
+        artist:
+          type:
+          - string
+          - 'null'
+          description: 艺人名（冗余，便于展示）。
+        artistId:
+          type:
+          - string
+          - 'null'
+          description: 艺人标识符。
+        coverArt:
+          type:
+          - string
+          - 'null'
+          description: 封面标识。
+        created:
+          type:
+          - string
+          - 'null'
+          description: 入库时间（ISO8601），对应 `added_at`。
+        duration:
+          type: integer
+          format: int32
+          description: 总时长（秒）。
+          minimum: 0
+        genre:
+          type:
+          - string
+          - 'null'
+          description: 流派名。
+        id:
+          type: string
+          description: 不透明标识符。
+        name:
+          type: string
+          description: 专辑名。
+        songCount:
+          type: integer
+          format: int32
+          description: 曲目数。
+          minimum: 0
+        year:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 发行年份。
+          minimum: 0
+    Artist:
+      type: object
+      description: 艺人，对齐 OpenSubsonic `ArtistID3` + 设计文档 §6 `artists` 列。
+      required:
+      - id
+      - name
+      - albumCount
+      properties:
+        albumCount:
+          type: integer
+          format: int32
+          description: 专辑数。
+          minimum: 0
+        coverArt:
+          type:
+          - string
+          - 'null'
+          description: 封面标识（对应内部 `cover_key`，客户端凭此调 `getCoverArt`）。
+        id:
+          type: string
+          description: 不透明标识符。
+        musicBrainzId:
+          type:
+          - string
+          - 'null'
+          description: MusicBrainz ID（可空）。
+        name:
+          type: string
+          description: 展示名。
+        sortName:
+          type:
+          - string
+          - 'null'
+          description: 排序名（可空）。
+    Genre:
+      type: object
+      description: 流派，对齐 OpenSubsonic `getGenres` 的 genre 元素。
+      required:
+      - value
+      - songCount
+      - albumCount
+      properties:
+        albumCount:
+          type: integer
+          format: int32
+          description: 该流派下专辑数。
+          minimum: 0
+        songCount:
+          type: integer
+          format: int32
+          description: 该流派下曲目数。
+          minimum: 0
+        value:
+          type: string
+          description: 流派名（即取值）。
+    Playlist:
+      type: object
+      description: 歌单（叶子节点），对应 `playlists` 表，默认私有。
+      required:
+      - id
+      - ownerId
+      - name
+      - position
+      - songCount
+      - duration
+      properties:
+        changed:
+          type:
+          - string
+          - 'null'
+          description: 最近修改时间（ISO8601）。
+        comment:
+          type:
+          - string
+          - 'null'
+          description: 备注。
+        created:
+          type:
+          - string
+          - 'null'
+          description: 创建时间（ISO8601）。
+        duration:
+          type: integer
+          format: int32
+          description: 总时长（秒）。
+          minimum: 0
+        folderId:
+          type:
+          - string
+          - 'null'
+          description: 所属文件夹标识符；`None` 表示根级。
+        id:
+          type: string
+          description: 不透明标识符。
+        name:
+          type: string
+          description: 歌单名。
+        ownerId:
+          type: string
+          description: 所有者用户标识符。
+        position:
+          type: integer
+          format: int32
+          description: 在同级中的位置。
+          minimum: 0
+        songCount:
+          type: integer
+          format: int32
+          description: 曲目数。
+          minimum: 0
+    PlaylistFolder:
+      type: object
+      description: 歌单文件夹（容器节点），对应 `playlist_folders` 表。
+      required:
+      - id
+      - ownerId
+      - name
+      - position
+      properties:
+        id:
+          type: string
+          description: 不透明标识符。
+        name:
+          type: string
+          description: 文件夹名。
+        ownerId:
+          type: string
+          description: 所有者用户标识符（隔离各用户的树）。
+        parentId:
+          type:
+          - string
+          - 'null'
+          description: 父文件夹标识符；`None` 表示顶级。
+        position:
+          type: integer
+          format: int32
+          description: 在同级中的位置。
+          minimum: 0
+    Principal:
+      type: object
+      description: 允许名单中的一个主体（用户或角色）。
+      required:
+      - type
+      - id
+      properties:
+        id:
+          type: string
+          description: 主体标识符。
+        type:
+          $ref: '#/components/schemas/PrincipalType'
+          description: 主体类型（JSON 字段名为 `type`）。
+    PrincipalType:
+      type: string
+      description: 被授权主体的类型。
+      enum:
+      - user
+      - role
+    ResponseStatus:
+      type: string
+      description: 响应状态。
+      enum:
+      - ok
+      - failed
+    Role:
+      type: object
+      description: 角色（内建 `admin`/`member` 或管理员自建）。
+      required:
+      - id
+      - name
+      - isBuiltin
+      properties:
+        id:
+          type: string
+          description: 不透明标识符。
+        isBuiltin:
+          type: boolean
+          description: 是否内建角色（内建不可删）。
+        name:
+          type: string
+          description: 角色名。
+    ScopeType:
+      type: string
+      description: 访问规则作用域类型，最具体优先（track > album > artist > genre）。
+      enum:
+      - track
+      - album
+      - artist
+      - genre
+    StreamRequest:
+      type: object
+      description: 播放/转码请求参数。
+      required:
+      - id
+      properties:
+        format:
+          type:
+          - string
+          - 'null'
+          description: 期望格式，如 `aac`/`opus`/`raw`；`None` 表示由服务端按默认策略决定。
+        id:
+          type: string
+          description: 目标曲目标识符。
+        maxBitRate:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 最大码率（kbps），对应 OpenSubsonic `maxBitRate`；`None` 表示不限。
+          minimum: 0
+    SubsonicError:
+      type: object
+      description: 错误详情，对齐 OpenSubsonic error 对象。
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: OpenSubsonic 错误码。
+          minimum: 0
+        message:
+          type: string
+          description: 人类可读错误信息。
+    Track:
+      type: object
+      description: |-
+        曲目，对齐 OpenSubsonic `Child`(song) + 设计文档 §6 `tracks` 列。
+
+        面向客户端视图：不含 `object_key`/`etag`/`content_hash` 等对象存储内部字段。
+      required:
+      - id
+      - title
+      - size
+      - duration
+      - bitRate
+      properties:
+        album:
+          type:
+          - string
+          - 'null'
+          description: 所属专辑名。
+        albumId:
+          type:
+          - string
+          - 'null'
+          description: 所属专辑标识符。
+        artist:
+          type:
+          - string
+          - 'null'
+          description: 艺人名。
+        artistId:
+          type:
+          - string
+          - 'null'
+          description: 艺人标识符。
+        bitRate:
+          type: integer
+          format: int32
+          description: 码率（kbps）。
+          minimum: 0
+        contentType:
+          type:
+          - string
+          - 'null'
+          description: MIME 类型，如 `audio/flac`。
+        coverArt:
+          type:
+          - string
+          - 'null'
+          description: 封面标识。
+        created:
+          type:
+          - string
+          - 'null'
+          description: 入库时间（ISO8601），对应 `added_at`。
+        discNumber:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 碟片号，对应 `disc_no`。
+          minimum: 0
+        duration:
+          type: integer
+          format: int32
+          description: 时长（秒）。
+          minimum: 0
+        genre:
+          type:
+          - string
+          - 'null'
+          description: 流派名。
+        id:
+          type: string
+          description: 不透明标识符。
+        size:
+          type: integer
+          format: int64
+          description: 文件大小（字节）。
+          minimum: 0
+        suffix:
+          type:
+          - string
+          - 'null'
+          description: 文件后缀/编码，如 `flac`。
+        title:
+          type: string
+          description: 标题。
+        track:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 曲目号，对应 `track_no`。
+          minimum: 0
+        year:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 发行年份。
+          minimum: 0
+    User:
+      type: object
+      description: 用户。
+      required:
+      - id
+      - name
+      - admin
+      - roles
+      properties:
+        admin:
+          type: boolean
+          description: 是否管理员（便于客户端；服务端仍以角色为准强制授权）。
+        created:
+          type:
+          - string
+          - 'null'
+          description: 创建时间（ISO8601），对应 `created_at`。
+        email:
+          type:
+          - string
+          - 'null'
+          description: 电子邮箱（OpenSubsonic 用户管理字段）。
+        id:
+          type: string
+          description: 不透明标识符。
+        name:
+          type: string
+          description: 用户名（OpenSubsonic 请求中的 `u`）。
+        roles:
+          type: array
+          items:
+            type: string
+          description: 所属角色名列表。

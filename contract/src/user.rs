@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 用户。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     /// 不透明标识符。
@@ -23,7 +23,7 @@ pub struct User {
 }
 
 /// 角色（内建 `admin`/`member` 或管理员自建）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Role {
     /// 不透明标识符。

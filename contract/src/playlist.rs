@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 歌单文件夹（容器节点），对应 `playlist_folders` 表。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistFolder {
     /// 不透明标识符。
@@ -21,7 +21,7 @@ pub struct PlaylistFolder {
 }
 
 /// 歌单（叶子节点），对应 `playlists` 表，默认私有。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Playlist {
     /// 不透明标识符。

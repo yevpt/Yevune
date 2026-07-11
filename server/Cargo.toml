@@ -38,6 +38,8 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 # 跨端共享 DTO
 contract = { path = "../contract" }
+# 由 contract DTO + API 端点生成 OpenAPI（供 web 端生成 TS 类型，全平台类型同源）
+utoipa = { version = "5", features = ["yaml"] }
 object_store = { version = "0.14.0", features = ["aws"] }
 # 读音频标签/内嵌封面（纯 Rust；仅解析文件头元数据，配合 ObjectStore Range 读，绝不整读音频）。
 lofty = "0.24"
