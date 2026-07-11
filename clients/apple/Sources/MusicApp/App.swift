@@ -5,12 +5,14 @@ struct MusicApp: App {
     @StateObject private var login: LoginViewModel
     @StateObject private var library: LibraryViewModel
     @StateObject private var upload: UploadViewModel
+    @StateObject private var scan: ScanStatusViewModel
 
     init() {
         let client = CoreMusicClient()
         _login = StateObject(wrappedValue: LoginViewModel(client: client))
         _library = StateObject(wrappedValue: LibraryViewModel(client: client))
         _upload = StateObject(wrappedValue: UploadViewModel(client: client))
+        _scan = StateObject(wrappedValue: ScanStatusViewModel(client: client))
     }
 
     var body: some Scene {
@@ -26,6 +28,10 @@ struct MusicApp: App {
         WindowGroup("上传曲目") {
             UploadView(model: upload)
                 .frame(minWidth: 420, minHeight: 260)
+        }
+        WindowGroup("曲库扫描") {
+            ScanStatusView(model: scan)
+                .frame(minWidth: 360, minHeight: 220)
         }
     }
 }

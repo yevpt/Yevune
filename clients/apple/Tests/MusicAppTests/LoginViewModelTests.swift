@@ -65,6 +65,16 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertTrue(model.didSave)
         XCTAssertNil(model.errorMessage)
     }
+
+    func testScanStatusRefreshPublishesCoreStatus() async {
+        let model = ScanStatusViewModel(client: FakeMusicClient())
+
+        await model.start()
+        await model.refresh()
+
+        XCTAssertEqual(model.status, ScanStatus(scanning: true, count: 12))
+        XCTAssertNil(model.errorMessage)
+    }
 }
 
 private actor FakeMusicClient: MusicClientProviding {
@@ -105,4 +115,6 @@ private actor FakeMusicClient: MusicClientProviding {
     func updateTags(id: String, update: TagUpdate) async throws {}
     func deleteTrack(id: String) async throws {}
     func moveTrack(id: String, key: String) async throws {}
+    func startScan() async throws -> ScanStatus { ScanStatus(scanning: true, count: 0) }
+    func scanStatus() async throws -> ScanStatus { ScanStatus(scanning: true, count: 12) }
 }

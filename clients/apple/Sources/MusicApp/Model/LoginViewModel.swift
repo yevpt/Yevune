@@ -14,6 +14,8 @@ protocol MusicClientProviding: Sendable {
     func updateTags(id: String, update: TagUpdate) async throws
     func deleteTrack(id: String) async throws
     func moveTrack(id: String, key: String) async throws
+    func startScan() async throws -> ScanStatus
+    func scanStatus() async throws -> ScanStatus
 }
 
 @MainActor
