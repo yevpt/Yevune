@@ -27,6 +27,11 @@ jobs:
         with:
           cache-workspaces: ${{ matrix.crate }}
 
+      # 转码集成测试以子进程调用真实 FFmpeg；仅 server crate 需要。
+      - name: 安装 FFmpeg
+        if: matrix.crate == 'server'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: 格式检查
         working-directory: ${{ matrix.crate }}
         run: cargo fmt --check

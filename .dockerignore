@@ -1,0 +1,8 @@
+# 加速构建上下文：排除编译产物与本地数据/工作区。
+**/target
+music-worktrees
+data
+.git
+clients
+docs
+*.md

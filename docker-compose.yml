@@ -1,9 +1,11 @@
-# 一键部署骨架（T0）：server + garage 两服务。
-# FFmpeg 与 musl 静态构建的 Dockerfile 由后续任务（T10）补齐；
-# 本文件当前用于本地起 Garage 依赖，server 服务的 build 待 Dockerfile 就绪后可用。
+# 一键部署：server + garage 两容器；FFmpeg 打包进 server 镜像（按需转码子进程，非常驻服务）。
+# 启动：`docker compose up -d`。首次需初始化 Garage（建 bucket + 密钥），见 README「快速上手」。
+#
+# 敏感值从同目录 .env 读取（见 .env.example）：MUSIC_APP_SECRET / GARAGE_ACCESS_KEY /
+# GARAGE_SECRET_KEY / MUSIC_ADMIN_PASSWORD。默认明文 HTTP，TLS/反代为进阶可选。
 
 services:
-  # 兼容 S3 的对象存储，音频文件与转码缓存的唯一源。
+  # 兼容 S3 的对象存储：音频文件与转码缓存的唯一源（source of truth）。
   garage:
     image: dxflrs/garage:v2.3.0
     restart: unless-stopped
@@ -15,23 +17,33 @@ services:
       - "3900:3900" # S3 API
       - "3903:3903" # admin API
 
-  # Rust 音乐服务端。Dockerfile 由 T10 提供（musl 静态构建 + FFmpeg）。
+  # Rust 音乐服务端（musl 静态单二进制 + 内置 FFmpeg）。
   server:
     build:
-      context: ./server
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       - garage
     ports:
       - "4533:4533"
     environment:
-      # 环境变量覆盖配置（前缀 MUSIC，分隔符 __）
+      # 监听（明文 HTTP）
       MUSIC__SERVER__HOST: "0.0.0.0"
       MUSIC__SERVER__PORT: "4533"
+      # 对象存储（容器内通过服务名访问 garage）
       MUSIC__GARAGE__ENDPOINT: "http://garage:3900"
       MUSIC__GARAGE__BUCKET: "music"
       MUSIC__GARAGE__REGION: "garage"
+      MUSIC__GARAGE__ACCESS_KEY: "${GARAGE_ACCESS_KEY}"
+      MUSIC__GARAGE__SECRET_KEY: "${GARAGE_SECRET_KEY}"
+      # SQLite 索引落服务器本地磁盘（红线：严禁放对象存储）
       MUSIC__DATABASE__PATH: "/data/music.sqlite"
+      # 密码加密 + 会话签名密钥（务必设为随机长串）
+      MUSIC_APP_SECRET: "${MUSIC_APP_SECRET}"
+      # 首启建管理员：留空 MUSIC__SETUP__ADMIN_PASSWORD 则自动生成并打印在启动日志
+      MUSIC__SETUP__ADMIN_USERNAME: "${MUSIC_ADMIN_USERNAME:-admin}"
+      MUSIC__SETUP__ADMIN_PASSWORD: "${MUSIC_ADMIN_PASSWORD:-}"
     volumes:
       # SQLite 索引落服务器本地磁盘（红线：严禁放对象存储）
       - server-data:/data
