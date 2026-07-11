@@ -8,6 +8,7 @@ pub mod auth;
 pub mod config;
 pub mod index;
 pub mod scanner;
+pub mod setup;
 pub mod storage;
 pub mod transcode;
 

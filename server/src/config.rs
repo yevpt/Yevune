@@ -22,10 +22,31 @@ pub struct Config {
     pub transcode: TranscodeConfig,
     /// 扫描间隔。
     pub scan: ScanConfig,
+    /// 首启建管理员引导。
+    pub setup: SetupConfig,
     /// 可选 TLS 证书（默认明文 HTTP）。
     pub tls: Option<TlsConfig>,
     /// 日志级别。
     pub log: LogConfig,
+}
+
+/// 首启引导：无用户时创建管理员（设计文档 §11）。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SetupConfig {
+    /// 首启管理员用户名。
+    pub admin_username: String,
+    /// 首启管理员密码；留空则服务端生成随机密码并在启动日志中打印一次。
+    pub admin_password: Option<String>,
+}
+
+impl Default for SetupConfig {
+    fn default() -> Self {
+        Self {
+            admin_username: "admin".to_string(),
+            admin_password: None,
+        }
+    }
 }
 
 /// 监听地址与端口。

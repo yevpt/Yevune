@@ -6,6 +6,7 @@ use std::sync::Arc;
 use music_server::api::AppState;
 use music_server::config::Config;
 use music_server::index::Index;
+use music_server::setup::{ensure_admin, AdminSeed, SetupOutcome};
 use music_server::storage::{GarageConfig, GarageStore, ObjectStore};
 
 #[tokio::main]
@@ -38,6 +39,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+
+    // 首启引导：无用户时创建管理员（幂等）。
+    let seed = AdminSeed {
+        username: config.setup.admin_username.clone(),
+        password: config.setup.admin_password.clone(),
+    };
+    match ensure_admin(&index, &app_secret, &seed).await? {
+        SetupOutcome::AlreadyInitialized => {}
+        SetupOutcome::AdminCreated {
+            username,
+            generated_password: Some(password),
+        } => tracing::warn!(
+            %username,
+            %password,
+            "首启已创建管理员；请立即登录并修改此随机密码（仅此一次显示）"
+        ),
+        SetupOutcome::AdminCreated { username, .. } => {
+            tracing::info!(%username, "首启已按配置创建管理员")
+        }
+    }
+
     let state = AppState::with_transcode_defaults(
         index,
         store,
