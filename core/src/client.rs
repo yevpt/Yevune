@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
+use crate::api::scan::{self, ScanStatus};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
 use crate::error::{CoreError, Result};
@@ -132,6 +133,12 @@ impl MusicClient {
     /// 移动曲目到新的 `library/` 对象键。
     pub async fn move_track(&self, id: String, key: String) -> Result<()> {
         manage::move_track(&self.http, &self.authenticated_session().await?, id, key).await
+    }
+    pub async fn start_scan(&self) -> Result<ScanStatus> {
+        scan::start(&self.http, &self.authenticated_session().await?).await
+    }
+    pub async fn scan_status(&self) -> Result<ScanStatus> {
+        scan::status(&self.http, &self.authenticated_session().await?).await
     }
 }
 

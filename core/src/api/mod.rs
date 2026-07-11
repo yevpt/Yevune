@@ -2,3 +2,4 @@
 
 pub(crate) mod browse;
 pub(crate) mod manage;
+pub(crate) mod scan;
