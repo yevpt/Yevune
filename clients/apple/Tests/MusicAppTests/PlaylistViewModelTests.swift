@@ -71,6 +71,15 @@ final class PlaylistViewModelTests: XCTestCase {
         XCTAssertEqual(fake.calls.filter { $0 == "detail:playlist:5" }.count, 2) // 打开 + 备注后刷新
     }
 
+    func testAddTracksSubmitsAllSelectedTrackIDsInOneCall() async {
+        let fake = FakePlaylistClient()
+        let model = PlaylistViewModel(client: fake)
+
+        await model.addTracks(playlistID: "playlist:5", songIDs: ["track:1", "track:2"])
+
+        XCTAssertTrue(fake.calls.contains("add:playlist:5:track:1,track:2"))
+    }
+
     func testDeleteFolderPropagatesError() async {
         let fake = ThrowingPlaylistClient()
         let model = PlaylistViewModel(client: fake)

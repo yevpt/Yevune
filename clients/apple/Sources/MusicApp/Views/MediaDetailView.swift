@@ -6,6 +6,10 @@ struct MediaDetailView: View {
     @ObservedObject var model: MediaViewModel
     @ObservedObject var playlists: PlaylistViewModel
     @State private var importing = false
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var tagEditor: TagEditorViewModel?
+    @State private var batchTagTrackIDs: [String]?
+    @State private var pendingDeletion: [String]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,21 +23,74 @@ struct MediaDetailView: View {
                 }
             }
             if let detail = model.detail {
-                List(detail.tracks, id: \.id) { track in
+                List(detail.tracks, id: \.id, selection: $selectedTrackIDs) { track in
                     HStack { Text(track.title); Spacer(); Button(model.playingTrackID == track.id ? "暂停" : "试听") { Task { await model.toggle(track: track) } } }
                         .contextMenu {
+                            Button("编辑标签…") { tagEditor = model.makeTagEditor(for: track) }
+                            Button("移动…") { tagEditor = model.makeTagEditor(for: track) }
                             Menu("加入歌单") {
                                 ForEach(playlists.tree?.playlists ?? [], id: \.id) { pl in
                                     Button(pl.name) { Task { await playlists.addTracks(playlistID: pl.id, songIDs: [track.id]) } }
                                 }
                             }
+                            Divider()
+                            Button("删除", role: .destructive) { pendingDeletion = [track.id] }
                         }
                 }
             }
-            if let error = model.errorMessage { Text(error).foregroundStyle(.red) }
+            if !selectedTrackIDs.isEmpty {
+                HStack {
+                    Text("已选择 \(selectedTrackIDs.count) 首")
+                    Button("批量改标签…") { batchTagTrackIDs = selectedTrackIDs.sorted() }
+                    Menu("加入歌单") {
+                        ForEach(playlists.tree?.playlists ?? [], id: \.id) { playlist in
+                            Button(playlist.name) {
+                                let trackIDs = selectedTrackIDs.sorted()
+                                Task {
+                                    await playlists.addTracks(playlistID: playlist.id, songIDs: trackIDs)
+                                    if playlists.errorMessage == nil {
+                                        await model.refresh(album: album, successMessage: "已加入歌单")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Button("批量删除", role: .destructive) { pendingDeletion = selectedTrackIDs.sorted() }
+                }
+            }
+            if let message = model.operationMessage { Text(message).foregroundStyle(.green) }
+            if let error = model.errorMessage ?? playlists.errorMessage { Text(error).foregroundStyle(.red) }
         }.padding().task(id: album.id) { await model.load(album: album) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result { Task { await model.replaceCover(albumID: album.id, path: url.path) } }
         }
+        .sheet(isPresented: Binding(get: { tagEditor != nil }, set: { if !$0 { tagEditor = nil } })) {
+            if let tagEditor {
+                TagEditorView(model: tagEditor) { message in
+                    self.tagEditor = nil
+                    Task { await model.refresh(album: album, successMessage: message) }
+                }
+            }
+        }
+        .sheet(isPresented: Binding(get: { batchTagTrackIDs != nil }, set: { if !$0 { batchTagTrackIDs = nil } })) {
+            if let trackIDs = batchTagTrackIDs {
+                BatchTagEditorView(album: album, trackIDs: trackIDs, model: model) {
+                    batchTagTrackIDs = nil
+                }
+            }
+        }
+        .confirmationDialog("确定删除所选曲目吗？", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                let trackIDs = pendingDeletion ?? []
+                Task {
+                    _ = await model.deleteTracks(ids: trackIDs, album: album)
+                    selectedTrackIDs.subtract(trackIDs)
+                    pendingDeletion = nil
+                }
+            }
+        } message: {
+            Text("将删除 \(pendingDeletion?.count ?? 0) 首曲目，此操作无法撤销。")
+        }
+        .onChange(of: album.id) { _, _ in selectedTrackIDs.removeAll() }
     }
 }
