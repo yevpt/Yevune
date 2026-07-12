@@ -45,6 +45,7 @@ pub struct Track {
     pub duration: u32,
     pub bit_rate: u32,
     pub created: Option<String>,
+    pub path: Option<String>,
 }
 
 #[uniffi::remote(Record)]

@@ -109,6 +109,7 @@ fn track_往返且字段名对齐() {
         duration: 269,
         bit_rate: 1024,
         created: Some("2026-07-10T00:00:00Z".into()),
+        path: Some("library/jay/qingtian.flac".into()),
     };
     assert_roundtrip(
         &t,

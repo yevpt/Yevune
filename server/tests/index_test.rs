@@ -165,6 +165,7 @@ async fn media_upsert_track_并读取_dto() {
     assert_eq!(track.artist.as_deref(), Some("周杰伦"));
     assert_eq!(track.suffix.as_deref(), Some("flac"));
     assert_eq!(track.duration, 200);
+    assert_eq!(track.path.as_deref(), Some("music/jay/qingtian.flac"));
 }
 
 #[tokio::test]

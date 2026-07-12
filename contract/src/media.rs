@@ -98,4 +98,6 @@ pub struct Track {
     pub bit_rate: u32,
     /// 入库时间（ISO8601），对应 `added_at`。
     pub created: Option<String>,
+    /// Garage 原始对象键（`library/...`），OpenSubsonic `path`；客户端整理/移动时的当前定位。
+    pub path: Option<String>,
 }

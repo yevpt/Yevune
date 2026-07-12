@@ -58,6 +58,7 @@ struct TrackRow {
     size: Option<i64>,
     cover_key: Option<String>,
     added_at: String,
+    object_key: String,
 }
 
 impl From<TrackRow> for Track {
@@ -80,6 +81,7 @@ impl From<TrackRow> for Track {
             duration: r.duration.unwrap_or(0) as u32,
             bit_rate: r.bitrate.unwrap_or(0) as u32,
             created: Some(r.added_at),
+            path: Some(r.object_key),
         }
     }
 }
@@ -117,7 +119,7 @@ SELECT t.id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id A
        COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no) AS track_no, \
        COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='year') AS INTEGER), t.year) AS year, \
        COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='genre'), t.genre) AS genre, \
-       t.duration, t.codec, t.bitrate, t.size, a.cover_key AS cover_key, t.added_at \
+       t.duration, t.codec, t.bitrate, t.size, a.cover_key AS cover_key, t.added_at, t.object_key \
 FROM tracks t \
 LEFT JOIN albums a ON t.album_id = a.id \
 LEFT JOIN artists ar ON t.artist_id = ar.id";

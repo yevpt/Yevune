@@ -608,6 +608,11 @@ components:
         id:
           type: string
           description: 不透明标识符。
+        path:
+          type:
+          - string
+          - 'null'
+          description: Garage 原始对象键（`library/...`），OpenSubsonic `path`；客户端整理/移动时的当前定位。
         size:
           type: integer
           format: int64
