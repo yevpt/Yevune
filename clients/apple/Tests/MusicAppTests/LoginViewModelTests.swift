@@ -154,7 +154,7 @@ private actor FakeMusicClient: MusicClientProviding {
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
         progress.onProgress(sentBytes: 16, totalBytes: 32)
         progress.onProgress(sentBytes: 32, totalBytes: 32)
-        return Track(id: "tr-1", title: "Song", album: nil, albumId: nil, artist: nil, artistId: nil, track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil)
+        return Track(id: "tr-1", title: "Song", album: nil, albumId: nil, artist: nil, artistId: nil, track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil, path: nil)
     }
 
     func updateTags(id: String, update: TagUpdate) async throws {}
@@ -164,7 +164,7 @@ private actor FakeMusicClient: MusicClientProviding {
     func scanStatus() async throws -> ScanStatus { ScanStatus(scanning: true, count: 12) }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult {
         if scanFails { throw CocoaError(.fileReadUnknown) }
-        let track = Track(id: "tr-1", title: "Song", album: "Album", albumId: "al-1", artist: "Artist", artistId: "ar-1", track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: "flac", duration: 0, bitRate: 0, created: nil)
+        let track = Track(id: "tr-1", title: "Song", album: "Album", albumId: "al-1", artist: "Artist", artistId: "ar-1", track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: "flac", duration: 0, bitRate: 0, created: nil, path: nil)
         return DetailedScanResult(added: 1, updated: 0, deleted: 0, unchanged: 0, changes: [ScanChange(action: .added, objectKey: "library/Song.flac", track: track)], changesTruncated: false)
     }
 }

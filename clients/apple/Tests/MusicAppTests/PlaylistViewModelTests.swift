@@ -90,7 +90,7 @@ func playlistFixture(id: String, name: String, folderID: String?) -> Playlist {
 func trackFixture(id: String, title: String) -> Track {
     Track(id: id, title: title, album: nil, albumId: nil, artist: nil, artistId: nil,
           track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 0,
-          contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil)
+          contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil, path: nil)
 }
 
 /// 记录调用并返回预设值的歌单假客户端。其余协议方法走默认 featureUnsupported 实现。
