@@ -86,6 +86,28 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.status, ScanStatus(scanning: true, count: 12))
         XCTAssertNil(model.errorMessage)
     }
+
+    func testWorkbenchShowsUploadSuccessThenScansAndRefreshesLibrary() async {
+        let client = FakeMusicClient()
+        let library = LibraryViewModel(client: client)
+        let model = LibraryWorkflowViewModel(client: client, library: library)
+
+        await model.importFiles([URL(fileURLWithPath: "/tmp/Song.flac")])
+
+        XCTAssertEqual(model.imports.first?.state, .succeeded)
+        XCTAssertEqual(model.imports.first?.track?.title, "Song")
+        XCTAssertEqual(model.scanResult?.added, 1)
+        XCTAssertEqual(model.scanResult?.changes.first?.track.title, "Song")
+        XCTAssertFalse(library.albums.isEmpty)
+    }
+
+    func testWorkbenchKeepsUploadSuccessWhenAutomaticScanFails() async {
+        let client = FakeMusicClient(scanFails: true)
+        let model = LibraryWorkflowViewModel(client: client, library: LibraryViewModel(client: client))
+        await model.importFiles([URL(fileURLWithPath: "/tmp/Song.flac")])
+        XCTAssertEqual(model.imports.first?.state, .succeeded)
+        XCTAssertNotNil(model.scanError)
+    }
 }
 
 @MainActor
@@ -98,6 +120,7 @@ private final class FakeApplicationActivation: ApplicationActivating {
 
 private actor FakeMusicClient: MusicClientProviding {
     private let album: Album
+    private let scanFails: Bool
 
     init(album: Album = Album(
         id: "al-0",
@@ -110,8 +133,9 @@ private actor FakeMusicClient: MusicClientProviding {
         year: nil,
         genre: nil,
         created: nil
-    )) {
+    ), scanFails: Bool = false) {
         self.album = album
+        self.scanFails = scanFails
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
@@ -137,4 +161,9 @@ private actor FakeMusicClient: MusicClientProviding {
     func moveTrack(id: String, key: String) async throws {}
     func startScan() async throws -> ScanStatus { ScanStatus(scanning: true, count: 0) }
     func scanStatus() async throws -> ScanStatus { ScanStatus(scanning: true, count: 12) }
+    func scanPrefix(_ prefix: String) async throws -> DetailedScanResult {
+        if scanFails { throw CocoaError(.fileReadUnknown) }
+        let track = Track(id: "tr-1", title: "Song", album: "Album", albumId: "al-1", artist: "Artist", artistId: "ar-1", track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: "flac", duration: 0, bitRate: 0, created: nil)
+        return DetailedScanResult(added: 1, updated: 0, deleted: 0, unchanged: 0, changes: [ScanChange(action: .added, objectKey: "library/Song.flac", track: track)], changesTruncated: false)
+    }
 }
