@@ -46,6 +46,49 @@ pub(crate) async fn playlist_detail(
     })
 }
 
+pub(crate) async fn create_playlist(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    name: String,
+    folder_id: Option<String>,
+    song_ids: Vec<String>,
+) -> Result<Playlist> {
+    let mut params = vec![("name".to_owned(), name)];
+    for song in song_ids {
+        params.push(("songId".to_owned(), song));
+    }
+    let payload: DetailPayload = http.get_json(auth, "createPlaylist", &params).await?;
+    let mut playlist = payload.playlist.playlist;
+    if let Some(folder_id) = folder_id {
+        move_playlist(http, auth, playlist.id.clone(), Some(folder_id.clone())).await?;
+        playlist.folder_id = Some(folder_id);
+    }
+    Ok(playlist)
+}
+
+pub(crate) async fn move_playlist(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    folder_id: Option<String>,
+) -> Result<()> {
+    let mut params = vec![("id".to_owned(), id)];
+    if let Some(folder_id) = folder_id {
+        params.push(("folderId".to_owned(), folder_id));
+    }
+    http.get_empty_with_params(auth, "ext/movePlaylist", &params)
+        .await
+}
+
+pub(crate) async fn delete_playlist(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+) -> Result<()> {
+    http.get_empty_with_params(auth, "deletePlaylist", &[("id".to_owned(), id)])
+        .await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TreePayload {

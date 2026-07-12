@@ -173,6 +173,39 @@ impl MusicClient {
     pub async fn playlist_detail(&self, id: String) -> Result<PlaylistDetail> {
         playlist::playlist_detail(&self.http, &self.authenticated_session().await?, id).await
     }
+
+    /// 创建歌单；`folder_id` 非空时创建后移动到该文件夹。
+    pub async fn create_playlist(
+        &self,
+        name: String,
+        folder_id: Option<String>,
+        song_ids: Vec<String>,
+    ) -> Result<contract::Playlist> {
+        playlist::create_playlist(
+            &self.http,
+            &self.authenticated_session().await?,
+            name,
+            folder_id,
+            song_ids,
+        )
+        .await
+    }
+
+    /// 把歌单移动到指定文件夹；`folder_id` 为 `None` 表示移到根。
+    pub async fn move_playlist(&self, id: String, folder_id: Option<String>) -> Result<()> {
+        playlist::move_playlist(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            folder_id,
+        )
+        .await
+    }
+
+    /// 删除歌单。
+    pub async fn delete_playlist(&self, id: String) -> Result<()> {
+        playlist::delete_playlist(&self.http, &self.authenticated_session().await?, id).await
+    }
 }
 
 impl MusicClient {

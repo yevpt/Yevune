@@ -89,3 +89,58 @@ async fn playlist_detail_decodes_playlist_and_entries() {
     assert!(req.contains("/rest/getPlaylist?"));
     assert!(req.contains("id=playlist%3A5"));
 }
+
+#[tokio::test]
+async fn create_playlist_without_folder_sends_single_request() {
+    let created = "\"playlist\":{\"id\":\"playlist:7\",\"ownerId\":\"user:1\",\"name\":\"New\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":0,\"duration\":0,\"created\":null,\"changed\":null,\"entry\":[]}";
+    let (address, requests, handle) = mock_server(vec![ok(""), ok(created)]).await;
+    let client = logged_in(address).await;
+
+    let playlist = client
+        .create_playlist("New".into(), None, vec![])
+        .await
+        .unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(playlist.id, "playlist:7");
+    let reqs = requests.lock().await;
+    assert_eq!(reqs.len(), 2); // ping + createPlaylist，无 move
+    assert!(reqs[1].contains("/rest/createPlaylist?"));
+    assert!(reqs[1].contains("name=New"));
+}
+
+#[tokio::test]
+async fn create_playlist_with_folder_creates_then_moves() {
+    let created = "\"playlist\":{\"id\":\"playlist:7\",\"ownerId\":\"user:1\",\"name\":\"New\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":0,\"duration\":0,\"created\":null,\"changed\":null,\"entry\":[]}";
+    let (address, requests, handle) = mock_server(vec![ok(""), ok(created), ok("")]).await;
+    let client = logged_in(address).await;
+
+    let playlist = client
+        .create_playlist(
+            "New".into(),
+            Some("folder:2".into()),
+            vec!["track:1".into()],
+        )
+        .await
+        .unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(playlist.folder_id.as_deref(), Some("folder:2"));
+    let reqs = requests.lock().await;
+    assert_eq!(reqs.len(), 3); // ping + create + move
+    assert!(reqs[1].contains("songId=track%3A1"));
+    assert!(reqs[2].contains("/rest/ext/movePlaylist?"));
+    assert!(reqs[2].contains("id=playlist%3A7"));
+    assert!(reqs[2].contains("folderId=folder%3A2"));
+}
+
+#[tokio::test]
+async fn delete_playlist_hits_endpoint() {
+    let (address, requests, handle) = mock_server(vec![ok(""), ok("")]).await;
+    let client = logged_in(address).await;
+
+    client.delete_playlist("playlist:7".into()).await.unwrap();
+    handle.await.unwrap();
+
+    assert!(requests.lock().await[1].contains("/rest/deletePlaylist?"));
+}
