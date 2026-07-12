@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
+use crate::api::playlist::{self, PlaylistTree};
 use crate::api::scan::DetailedScanResult;
 use crate::api::scan::{self, ScanStatus};
 use crate::auth::AuthenticatedSession;
@@ -161,6 +162,11 @@ impl MusicClient {
     /// 生成交给平台播放器的认证流媒体 URL。
     pub async fn stream_url(&self, track_id: String) -> Result<String> {
         media::stream_url(&self.authenticated_session().await?, track_id)
+    }
+
+    /// 读取当前用户的歌单文件夹树与叶子歌单。
+    pub async fn playlist_tree(&self) -> Result<PlaylistTree> {
+        playlist::playlist_tree(&self.http, &self.authenticated_session().await?).await
     }
 }
 

@@ -1,6 +1,6 @@
 //! 为 `contract` 中既有 DTO 声明 UniFFI 外部记录，避免复制跨端数据模型。
 
-use contract::{Album, Artist, Track};
+use contract::{Album, Artist, Playlist, PlaylistFolder, Track};
 
 #[uniffi::remote(Record)]
 pub struct Album {
@@ -45,4 +45,27 @@ pub struct Track {
     pub duration: u32,
     pub bit_rate: u32,
     pub created: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct PlaylistFolder {
+    pub id: String,
+    pub owner_id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub position: u32,
+}
+
+#[uniffi::remote(Record)]
+pub struct Playlist {
+    pub id: String,
+    pub owner_id: String,
+    pub name: String,
+    pub comment: Option<String>,
+    pub folder_id: Option<String>,
+    pub position: u32,
+    pub song_count: u32,
+    pub duration: u32,
+    pub created: Option<String>,
+    pub changed: Option<String>,
 }

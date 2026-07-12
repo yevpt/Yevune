@@ -3,4 +3,5 @@
 pub(crate) mod browse;
 pub(crate) mod manage;
 pub(crate) mod media;
+pub(crate) mod playlist;
 pub(crate) mod scan;
