@@ -21,6 +21,19 @@ protocol MusicClientProviding: Sendable {
     func setCoverArt(albumID: String, localPath: String) async throws
     func streamURL(trackID: String) async throws -> String
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult
+    func playlistTree() async throws -> PlaylistTree
+    func playlistDetail(id: String) async throws -> PlaylistDetail
+    func createPlaylist(name: String, folderID: String?, songIDs: [String]) async throws -> Playlist
+    func renamePlaylist(id: String, name: String) async throws
+    func setPlaylistComment(id: String, comment: String) async throws
+    func addTracks(id: String, songIDs: [String]) async throws
+    func removeTrackAt(id: String, index: Int64) async throws
+    func deletePlaylist(id: String) async throws
+    func movePlaylist(id: String, folderID: String?) async throws
+    func createFolder(name: String, parentID: String?) async throws -> PlaylistFolder
+    func renameFolder(id: String, name: String) async throws
+    func deleteFolder(id: String) async throws
+    func moveFolder(id: String, parentID: String?) async throws
 }
 
 extension MusicClientProviding {
@@ -29,6 +42,19 @@ extension MusicClientProviding {
     func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
     func streamURL(trackID: String) async throws -> String { throw CocoaError(.featureUnsupported) }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { throw CocoaError(.featureUnsupported) }
+    func playlistTree() async throws -> PlaylistTree { throw CocoaError(.featureUnsupported) }
+    func playlistDetail(id: String) async throws -> PlaylistDetail { throw CocoaError(.featureUnsupported) }
+    func createPlaylist(name: String, folderID: String?, songIDs: [String]) async throws -> Playlist { throw CocoaError(.featureUnsupported) }
+    func renamePlaylist(id: String, name: String) async throws { throw CocoaError(.featureUnsupported) }
+    func setPlaylistComment(id: String, comment: String) async throws { throw CocoaError(.featureUnsupported) }
+    func addTracks(id: String, songIDs: [String]) async throws { throw CocoaError(.featureUnsupported) }
+    func removeTrackAt(id: String, index: Int64) async throws { throw CocoaError(.featureUnsupported) }
+    func deletePlaylist(id: String) async throws { throw CocoaError(.featureUnsupported) }
+    func movePlaylist(id: String, folderID: String?) async throws { throw CocoaError(.featureUnsupported) }
+    func createFolder(name: String, parentID: String?) async throws -> PlaylistFolder { throw CocoaError(.featureUnsupported) }
+    func renameFolder(id: String, name: String) async throws { throw CocoaError(.featureUnsupported) }
+    func deleteFolder(id: String) async throws { throw CocoaError(.featureUnsupported) }
+    func moveFolder(id: String, parentID: String?) async throws { throw CocoaError(.featureUnsupported) }
 }
 
 @MainActor
