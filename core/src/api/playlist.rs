@@ -151,6 +151,65 @@ pub(crate) async fn remove_track_at(
     .await
 }
 
+pub(crate) async fn create_folder(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    name: String,
+    parent_id: Option<String>,
+) -> Result<PlaylistFolder> {
+    let mut params = vec![("name".to_owned(), name)];
+    if let Some(parent_id) = parent_id {
+        params.push(("parentId".to_owned(), parent_id));
+    }
+    let payload: FolderPayload = http
+        .get_json(auth, "ext/createPlaylistFolder", &params)
+        .await?;
+    Ok(payload.playlist_folder)
+}
+
+pub(crate) async fn rename_folder(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    name: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "ext/updatePlaylistFolder",
+        &[("id".to_owned(), id), ("name".to_owned(), name)],
+    )
+    .await
+}
+
+pub(crate) async fn delete_folder(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+) -> Result<()> {
+    http.get_empty_with_params(auth, "ext/deletePlaylistFolder", &[("id".to_owned(), id)])
+        .await
+}
+
+pub(crate) async fn move_folder(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    parent_id: Option<String>,
+) -> Result<()> {
+    let mut params = vec![("id".to_owned(), id)];
+    if let Some(parent_id) = parent_id {
+        params.push(("parentId".to_owned(), parent_id));
+    }
+    http.get_empty_with_params(auth, "ext/moveFolder", &params)
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderPayload {
+    playlist_folder: PlaylistFolder,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TreePayload {

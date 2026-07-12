@@ -238,6 +238,42 @@ impl MusicClient {
     pub async fn remove_track_at(&self, id: String, index: i64) -> Result<()> {
         playlist::remove_track_at(&self.http, &self.authenticated_session().await?, id, index).await
     }
+
+    /// 创建歌单文件夹；`parent_id` 非空时挂到该父文件夹下。
+    pub async fn create_folder(
+        &self,
+        name: String,
+        parent_id: Option<String>,
+    ) -> Result<contract::PlaylistFolder> {
+        playlist::create_folder(
+            &self.http,
+            &self.authenticated_session().await?,
+            name,
+            parent_id,
+        )
+        .await
+    }
+
+    /// 重命名歌单文件夹。
+    pub async fn rename_folder(&self, id: String, name: String) -> Result<()> {
+        playlist::rename_folder(&self.http, &self.authenticated_session().await?, id, name).await
+    }
+
+    /// 删除歌单文件夹（服务端会一并移除其内歌单）。
+    pub async fn delete_folder(&self, id: String) -> Result<()> {
+        playlist::delete_folder(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 把文件夹移动到新父文件夹；`parent_id` 为 `None` 表示移到根。服务端拒绝成环。
+    pub async fn move_folder(&self, id: String, parent_id: Option<String>) -> Result<()> {
+        playlist::move_folder(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            parent_id,
+        )
+        .await
+    }
 }
 
 impl MusicClient {

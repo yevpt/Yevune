@@ -175,3 +175,33 @@ async fn rename_and_add_and_remove_encode_params() {
     assert!(reqs[2].contains("songIdToAdd=track%3A2"));
     assert!(reqs[3].contains("songIndexToRemove=3"));
 }
+
+#[tokio::test]
+async fn create_folder_decodes_and_move_encodes() {
+    let folder = "\"playlistFolder\":{\"id\":\"folder:3\",\"ownerId\":\"user:1\",\"name\":\"Jazz\",\"parentId\":\"folder:1\",\"position\":0}";
+    let (address, requests, handle) =
+        mock_server(vec![ok(""), ok(folder), ok(""), ok(""), ok("")]).await;
+    let client = logged_in(address).await;
+
+    let created = client
+        .create_folder("Jazz".into(), Some("folder:1".into()))
+        .await
+        .unwrap();
+    client
+        .rename_folder("folder:3".into(), "Bebop".into())
+        .await
+        .unwrap();
+    client.move_folder("folder:3".into(), None).await.unwrap();
+    client.delete_folder("folder:3".into()).await.unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(created.name, "Jazz");
+    assert_eq!(created.parent_id.as_deref(), Some("folder:1"));
+    let reqs = requests.lock().await;
+    assert!(reqs[1].contains("/rest/ext/createPlaylistFolder?"));
+    assert!(reqs[1].contains("parentId=folder%3A1"));
+    assert!(reqs[2].contains("/rest/ext/updatePlaylistFolder?"));
+    assert!(reqs[3].contains("/rest/ext/moveFolder?"));
+    assert!(!reqs[3].contains("parentId=")); // 移到根不带 parentId
+    assert!(reqs[4].contains("/rest/ext/deletePlaylistFolder?"));
+}
