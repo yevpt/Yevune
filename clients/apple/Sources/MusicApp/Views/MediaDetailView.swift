@@ -4,6 +4,7 @@ import SwiftUI
 struct MediaDetailView: View {
     let album: Album
     @ObservedObject var model: MediaViewModel
+    @ObservedObject var playlists: PlaylistViewModel
     @State private var importing = false
 
     var body: some View {
@@ -20,6 +21,13 @@ struct MediaDetailView: View {
             if let detail = model.detail {
                 List(detail.tracks, id: \.id) { track in
                     HStack { Text(track.title); Spacer(); Button(model.playingTrackID == track.id ? "暂停" : "试听") { Task { await model.toggle(track: track) } } }
+                        .contextMenu {
+                            Menu("加入歌单") {
+                                ForEach(playlists.tree?.playlists ?? [], id: \.id) { pl in
+                                    Button(pl.name) { Task { await playlists.addTracks(playlistID: pl.id, songIDs: [track.id]) } }
+                                }
+                            }
+                        }
                 }
             }
             if let error = model.errorMessage { Text(error).foregroundStyle(.red) }

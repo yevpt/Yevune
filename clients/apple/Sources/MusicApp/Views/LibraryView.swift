@@ -172,7 +172,7 @@ struct LibraryView: View {
             Divider()
 
             if let selection = model.album(id: selectedAlbumID) {
-                MediaDetailView(album: selection, model: media)
+                MediaDetailView(album: selection, model: media, playlists: playlists)
             } else {
                 VStack(spacing: 18) {
                     TextField("搜索艺人、专辑或曲目", text: $query)
@@ -220,7 +220,7 @@ struct PlaylistTreeOutline: View {
                 FolderNode(folder: folder, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
             }
             ForEach(tree.playlists.filter { $0.folderId == nil }, id: \.id) { playlist in
-                PlaylistLeaf(playlist: playlist, onRename: onRename, onDelete: onDelete)
+                PlaylistLeaf(playlist: playlist, playlists: playlists, onRename: onRename, onDelete: onDelete)
             }
         } else {
             Text("加载中…").foregroundStyle(.secondary)
@@ -241,12 +241,18 @@ struct FolderNode: View {
                 FolderNode(folder: child, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
             }
             ForEach(tree.playlists.filter { $0.folderId == folder.id }, id: \.id) { playlist in
-                PlaylistLeaf(playlist: playlist, onRename: onRename, onDelete: onDelete)
+                PlaylistLeaf(playlist: playlist, playlists: playlists, onRename: onRename, onDelete: onDelete)
             }
         } label: {
             Label(folder.name, systemImage: "folder")
                 .contextMenu {
                     Button("重命名") { onRename(.folder(folder.id), folder.name) }
+                    Menu("移动到…") {
+                        Button("根目录") { Task { await playlists.moveFolder(id: folder.id, parentID: nil) } }
+                        ForEach(playlists.tree?.folders ?? [], id: \.id) { target in
+                            Button(target.name) { Task { await playlists.moveFolder(id: folder.id, parentID: target.id) } }
+                        }
+                    }
                     Button("删除", role: .destructive) { onDelete(.folder(folder.id)) }
                 }
         }
@@ -255,6 +261,7 @@ struct FolderNode: View {
 
 struct PlaylistLeaf: View {
     let playlist: Playlist
+    @ObservedObject var playlists: PlaylistViewModel
     let onRename: (RenameTarget, String) -> Void
     let onDelete: (DeleteTarget) -> Void
 
@@ -263,6 +270,12 @@ struct PlaylistLeaf: View {
             .tag(SidebarSelection.playlist(playlist.id))
             .contextMenu {
                 Button("重命名") { onRename(.playlist(playlist.id), playlist.name) }
+                Menu("移动到…") {
+                    Button("根目录") { Task { await playlists.move(playlistID: playlist.id, folderID: nil) } }
+                    ForEach(playlists.tree?.folders ?? [], id: \.id) { target in
+                        Button(target.name) { Task { await playlists.move(playlistID: playlist.id, folderID: target.id) } }
+                    }
+                }
                 Button("删除", role: .destructive) { onDelete(.playlist(playlist.id)) }
             }
     }
