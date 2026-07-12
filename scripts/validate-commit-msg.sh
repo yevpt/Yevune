@@ -22,8 +22,8 @@ subject_line="$(
   ' "$msg_file"
 )"
 
-# 放行 merge / revert
-if [[ -z "$subject_line" ]] || [[ "$subject_line" =~ ^(Merge|Revert)\b ]]; then
+# 放行 merge / revert（避免用 \b：macOS 自带 bash 3.2 的 [[ =~ ]] 不支持词边界）
+if [[ -z "$subject_line" ]] || [[ "$subject_line" =~ ^(Merge|Revert)([^a-zA-Z]|$) ]]; then
   exit 0
 fi
 
