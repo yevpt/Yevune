@@ -110,7 +110,10 @@ pub(crate) async fn list_albums(
     Ok(payload.album_list2.album)
 }
 
-pub(crate) async fn list_genres(http: &HttpClient, auth: &AuthenticatedSession) -> Result<Vec<Genre>> {
+pub(crate) async fn list_genres(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+) -> Result<Vec<Genre>> {
     let payload: GenresPayload = http.get_json(auth, "getGenres", &[]).await?;
     Ok(payload.genres.genre)
 }
