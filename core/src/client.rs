@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
+use crate::api::scan::DetailedScanResult;
 use crate::api::scan::{self, ScanStatus};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
@@ -140,6 +141,11 @@ impl MusicClient {
     }
     pub async fn scan_status(&self) -> Result<ScanStatus> {
         scan::status(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 同步扫描指定对象键前缀并返回详细变更。
+    pub async fn scan_prefix(&self, prefix: String) -> Result<DetailedScanResult> {
+        scan::prefix(&self.http, &self.authenticated_session().await?, prefix).await
     }
 
     /// 生成带当前认证参数的封面 URL。

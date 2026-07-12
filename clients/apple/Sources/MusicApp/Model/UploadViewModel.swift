@@ -24,7 +24,7 @@ final class UploadViewModel: ObservableObject {
             }
         }
         do {
-            try await client.upload(localPath: localPath, libraryKey: libraryKey, progress: sink)
+            _ = try await client.upload(localPath: localPath, libraryKey: libraryKey, progress: sink)
         } catch {
             errorMessage = error.localizedDescription
         }

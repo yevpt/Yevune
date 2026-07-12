@@ -126,9 +126,10 @@ private actor FakeMusicClient: MusicClientProviding {
         SearchResult(artists: [], albums: [album], tracks: [])
     }
 
-    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws {
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
         progress.onProgress(sentBytes: 16, totalBytes: 32)
         progress.onProgress(sentBytes: 32, totalBytes: 32)
+        return Track(id: "tr-1", title: "Song", album: nil, albumId: nil, artist: nil, artistId: nil, track: nil, discNumber: nil, year: nil, genre: nil, coverArt: nil, size: 32, contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil)
     }
 
     func updateTags(id: String, update: TagUpdate) async throws {}

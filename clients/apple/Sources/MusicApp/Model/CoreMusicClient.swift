@@ -16,8 +16,8 @@ actor CoreMusicClient: MusicClientProviding {
         try await client.search(query: query)
     }
 
-    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws {
-        _ = try await client.uploadTrack(
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
+        try await client.uploadTrack(
             localPath: localPath,
             metadata: UploadMetadata(libraryKey: libraryKey),
             progress: progress
@@ -36,4 +36,5 @@ actor CoreMusicClient: MusicClientProviding {
     func coverArtURL(id: String, size: UInt32?) async throws -> String { try await client.coverArtUrl(id: id, size: size) }
     func setCoverArt(albumID: String, localPath: String) async throws { try await client.setCoverArt(albumId: albumID, localPath: localPath) }
     func streamURL(trackID: String) async throws -> String { try await client.streamUrl(trackId: trackID) }
+    func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { try await client.scanPrefix(prefix: prefix) }
 }

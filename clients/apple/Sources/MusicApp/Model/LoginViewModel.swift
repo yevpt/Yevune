@@ -10,7 +10,7 @@ protocol MusicClientProviding: Sendable {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
     func search(query: String) async throws -> SearchResult
-    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track
     func updateTags(id: String, update: TagUpdate) async throws
     func deleteTrack(id: String) async throws
     func moveTrack(id: String, key: String) async throws
@@ -20,6 +20,7 @@ protocol MusicClientProviding: Sendable {
     func coverArtURL(id: String, size: UInt32?) async throws -> String
     func setCoverArt(albumID: String, localPath: String) async throws
     func streamURL(trackID: String) async throws -> String
+    func scanPrefix(_ prefix: String) async throws -> DetailedScanResult
 }
 
 extension MusicClientProviding {
@@ -27,6 +28,7 @@ extension MusicClientProviding {
     func coverArtURL(id: String, size: UInt32?) async throws -> String { throw CocoaError(.featureUnsupported) }
     func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
     func streamURL(trackID: String) async throws -> String { throw CocoaError(.featureUnsupported) }
+    func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { throw CocoaError(.featureUnsupported) }
 }
 
 @MainActor
