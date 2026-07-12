@@ -144,3 +144,34 @@ async fn delete_playlist_hits_endpoint() {
 
     assert!(requests.lock().await[1].contains("/rest/deletePlaylist?"));
 }
+
+#[tokio::test]
+async fn rename_and_add_and_remove_encode_params() {
+    let (address, requests, handle) = mock_server(vec![ok(""), ok(""), ok(""), ok("")]).await;
+    let client = logged_in(address).await;
+
+    client
+        .rename_playlist("playlist:5".into(), "Renamed".into())
+        .await
+        .unwrap();
+    client
+        .add_tracks(
+            "playlist:5".into(),
+            vec!["track:1".into(), "track:2".into()],
+        )
+        .await
+        .unwrap();
+    client
+        .remove_track_at("playlist:5".into(), 3)
+        .await
+        .unwrap();
+    handle.await.unwrap();
+
+    let reqs = requests.lock().await;
+    assert!(reqs[1].contains("/rest/updatePlaylist?"));
+    assert!(reqs[1].contains("playlistId=playlist%3A5"));
+    assert!(reqs[1].contains("name=Renamed"));
+    assert!(reqs[2].contains("songIdToAdd=track%3A1"));
+    assert!(reqs[2].contains("songIdToAdd=track%3A2"));
+    assert!(reqs[3].contains("songIndexToRemove=3"));
+}

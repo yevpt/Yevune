@@ -206,6 +206,38 @@ impl MusicClient {
     pub async fn delete_playlist(&self, id: String) -> Result<()> {
         playlist::delete_playlist(&self.http, &self.authenticated_session().await?, id).await
     }
+
+    /// 重命名歌单。
+    pub async fn rename_playlist(&self, id: String, name: String) -> Result<()> {
+        playlist::rename_playlist(&self.http, &self.authenticated_session().await?, id, name).await
+    }
+
+    /// 设置歌单备注。
+    pub async fn set_playlist_comment(&self, id: String, comment: String) -> Result<()> {
+        playlist::set_playlist_comment(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            comment,
+        )
+        .await
+    }
+
+    /// 向歌单追加曲目。
+    pub async fn add_tracks(&self, id: String, song_ids: Vec<String>) -> Result<()> {
+        playlist::add_tracks(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            song_ids,
+        )
+        .await
+    }
+
+    /// 按索引移除歌单中的一条曲目。
+    pub async fn remove_track_at(&self, id: String, index: i64) -> Result<()> {
+        playlist::remove_track_at(&self.http, &self.authenticated_session().await?, id, index).await
+    }
 }
 
 impl MusicClient {

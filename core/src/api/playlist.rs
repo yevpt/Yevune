@@ -89,6 +89,68 @@ pub(crate) async fn delete_playlist(
         .await
 }
 
+pub(crate) async fn rename_playlist(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    name: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "updatePlaylist",
+        &[("playlistId".to_owned(), id), ("name".to_owned(), name)],
+    )
+    .await
+}
+
+pub(crate) async fn set_playlist_comment(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    comment: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "updatePlaylist",
+        &[
+            ("playlistId".to_owned(), id),
+            ("comment".to_owned(), comment),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn add_tracks(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    song_ids: Vec<String>,
+) -> Result<()> {
+    let mut params = vec![("playlistId".to_owned(), id)];
+    for song in song_ids {
+        params.push(("songIdToAdd".to_owned(), song));
+    }
+    http.get_empty_with_params(auth, "updatePlaylist", &params)
+        .await
+}
+
+pub(crate) async fn remove_track_at(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    index: i64,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "updatePlaylist",
+        &[
+            ("playlistId".to_owned(), id),
+            ("songIndexToRemove".to_owned(), index.to_string()),
+        ],
+    )
+    .await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TreePayload {
