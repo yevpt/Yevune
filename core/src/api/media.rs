@@ -95,7 +95,7 @@ fn file_error(error: std::io::Error) -> CoreError {
 }
 fn network_error(error: reqwest::Error) -> CoreError {
     CoreError::Network {
-        message: error.to_string(),
+        message: error.without_url().to_string(),
     }
 }
 

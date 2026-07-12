@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     @State private var query = ""
-    @State private var selection: Album?
+    @State private var selectedAlbumID: String?
     @StateObject private var media: MediaViewModel
     @StateObject private var workflow: LibraryWorkflowViewModel
     @State private var importing = false
@@ -19,17 +19,18 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(model.albums, id: \.id, selection: $selection) { album in
+            List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack { Text(album.name).font(.headline); if workflow.newAlbumIDs.contains(album.id) { Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule()) } }
                     Text(album.artist ?? "未知艺人")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                .tag(album.id)
             }
             .navigationTitle("曲库")
         } detail: {
-            if let selection { MediaDetailView(album: selection, model: media) } else {
+            if let selection = model.album(id: selectedAlbumID) { MediaDetailView(album: selection, model: media) } else {
             VStack(spacing: 18) {
                 TextField("搜索艺人、专辑或曲目", text: $query)
                     .textFieldStyle(.roundedBorder)

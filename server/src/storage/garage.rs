@@ -94,6 +94,43 @@ fn to_storage_err(e: object_store::Error) -> StorageError {
     }
 }
 
+/// Garage 的 ListObjectsV2 使用 `encoding-type=url` 返回键；object_store 0.14
+/// 未替 Garage 解码响应键，必须在交给后续 get/head 前解码一次。
+fn decode_list_key(encoded: &str) -> Result<String> {
+    let bytes = encoded.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return Err(StorageError::Backend(
+                    "Garage 返回了损坏的 URL 编码对象键".into(),
+                ));
+            }
+            let high = hex_digit(bytes[index + 1])?;
+            let low = hex_digit(bytes[index + 2])?;
+            decoded.push(high << 4 | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded)
+        .map_err(|_| StorageError::Backend("Garage 返回了非 UTF-8 对象键".into()))
+}
+
+fn hex_digit(value: u8) -> Result<u8> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => Err(StorageError::Backend(
+            "Garage 返回了损坏的 URL 编码对象键".into(),
+        )),
+    }
+}
+
 const MULTIPART_CHUNK_SIZE: usize = 5 * 1024 * 1024;
 
 struct MultipartAbortGuard {
@@ -215,7 +252,7 @@ impl ObjectStore for GarageStore {
                 break;
             }
             entries.push(ListEntry {
-                key: meta.location.to_string(),
+                key: decode_list_key(meta.location.as_ref())?,
                 etag: meta.e_tag,
                 size: meta.size,
             });
@@ -310,7 +347,19 @@ mod tests {
 
     use object_store::{MultipartUpload, PutPayload, PutResult, UploadPart};
 
-    use super::upload_multipart_file;
+    use super::{decode_list_key, upload_multipart_file};
+
+    #[test]
+    fn list_key_decodes_s3_url_encoding_once() {
+        assert_eq!(
+            decode_list_key("library/01%20%E7%BB%A9%E6%95%88.m4a").unwrap(),
+            "library/01 绩效.m4a"
+        );
+        assert_eq!(
+            decode_list_key("library/100%25.m4a").unwrap(),
+            "library/100%.m4a"
+        );
+    }
 
     #[derive(Debug)]
     struct FailingUpload {

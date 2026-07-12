@@ -110,7 +110,24 @@ impl HttpClient {
             .map_err(network_error)?
             .error_for_status()
             .map_err(network_error)?;
-        let envelope: Envelope<T> = response.json().await.map_err(network_error)?;
+        let value: serde_json::Value = response.json().await.map_err(network_error)?;
+        let body = &value["subsonic-response"];
+        if body["status"] != "ok" {
+            let error = serde_json::from_value::<ServerError>(body["error"].clone()).unwrap_or(
+                ServerError {
+                    code: 0,
+                    message: "服务端返回未知失败".to_owned(),
+                },
+            );
+            return Err(CoreError::Server {
+                code: error.code,
+                message: error.message,
+            });
+        }
+        let envelope: Envelope<T> =
+            serde_json::from_value(value).map_err(|error| CoreError::InvalidResponse {
+                message: format!("服务端成功响应格式不正确: {error}"),
+            })?;
         if envelope.response.status == "ok" {
             return Ok(envelope.response.data);
         }
@@ -130,6 +147,6 @@ struct EmptyPayload {}
 
 fn network_error(error: reqwest::Error) -> CoreError {
     CoreError::Network {
-        message: error.to_string(),
+        message: error.without_url().to_string(),
     }
 }

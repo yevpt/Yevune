@@ -55,6 +55,7 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.albums, [album])
         XCTAssertEqual(model.searchResult?.albums, [album])
         XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.album(id: "al-1"), album)
     }
 
     func testUploadPublishesCallbackProgress() async {

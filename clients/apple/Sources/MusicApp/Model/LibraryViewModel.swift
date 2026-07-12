@@ -40,4 +40,9 @@ final class LibraryViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func album(id: String?) -> Album? {
+        guard let id else { return nil }
+        return albums.first { $0.id == id }
+    }
 }
