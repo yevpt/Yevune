@@ -450,6 +450,9 @@ struct Ingest {
 
 /// 依扩展名判断是否为可入库音频。
 fn is_audio(key: &str) -> bool {
+    if key.starts_with("transcode/") || key.starts_with("covers/") {
+        return false;
+    }
     match key.rsplit_once('.') {
         Some((_, ext)) => {
             let ext = ext.to_ascii_lowercase();

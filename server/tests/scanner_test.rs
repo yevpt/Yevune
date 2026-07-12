@@ -40,6 +40,10 @@ async fn store_with_two_tracks() -> Arc<MemoryStore> {
     store.put("music/a.flac", fixture("a.flac")).await.unwrap();
     store.put("music/b.flac", fixture("b.flac")).await.unwrap();
     store
+        .put("transcode/1/opus_96.opus", fixture("a.flac"))
+        .await
+        .unwrap();
+    store
 }
 
 #[tokio::test]
