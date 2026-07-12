@@ -31,7 +31,7 @@ extension MusicClientProviding {
 
 @MainActor
 final class LoginViewModel: ObservableObject {
-    @Published var server = ""
+    @Published var server = "http://localhost:4533"
     @Published var user = ""
     @Published var password = ""
     @Published private(set) var session: SessionValue?

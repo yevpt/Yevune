@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct MusicApp: App {
+    @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @StateObject private var login: LoginViewModel
     @StateObject private var library: LibraryViewModel
     @StateObject private var upload: UploadViewModel

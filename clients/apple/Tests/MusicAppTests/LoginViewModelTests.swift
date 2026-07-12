@@ -4,6 +4,17 @@ import CoreFFI
 
 @MainActor
 final class LoginViewModelTests: XCTestCase {
+    func testLoginDefaultsToLocalServer() {
+        let model = LoginViewModel(client: FakeMusicClient())
+        XCTAssertEqual(model.server, "http://localhost:4533")
+    }
+
+    func testLaunchCoordinatorMakesApplicationVisibleAndActive() {
+        let application = FakeApplicationActivation()
+        LaunchCoordinator.activate(application)
+        XCTAssertTrue(application.didSetRegularPolicy)
+        XCTAssertTrue(application.didActivateIgnoringOtherApps)
+    }
     func testProductionBridgeConformsToViewModelProtocol() {
         let client: any MusicClientProviding = CoreMusicClient()
         XCTAssertNotNil(client as AnyObject)
@@ -75,6 +86,14 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.status, ScanStatus(scanning: true, count: 12))
         XCTAssertNil(model.errorMessage)
     }
+}
+
+@MainActor
+private final class FakeApplicationActivation: ApplicationActivating {
+    var didSetRegularPolicy = false
+    var didActivateIgnoringOtherApps = false
+    func setRegularActivationPolicy() { didSetRegularPolicy = true }
+    func activateIgnoringOtherApps() { didActivateIgnoringOtherApps = true }
 }
 
 private actor FakeMusicClient: MusicClientProviding {
