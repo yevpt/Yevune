@@ -2,56 +2,80 @@ import SwiftUI
 import CoreFFI
 import UniformTypeIdentifiers
 
+enum SidebarSelection: Hashable {
+    case library
+    case playlist(String)
+}
+
+/// 重命名目标：区分歌单与文件夹。
+enum RenameTarget: Hashable {
+    case playlist(String)
+    case folder(String)
+}
+
+/// 删除目标：区分歌单与文件夹，供二次确认使用。
+enum DeleteTarget: Hashable {
+    case playlist(String)
+    case folder(String)
+}
+
 struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     @State private var query = ""
+    @State private var selection: SidebarSelection? = .library
     @State private var selectedAlbumID: String?
     @StateObject private var media: MediaViewModel
     @StateObject private var workflow: LibraryWorkflowViewModel
+    @StateObject private var playlists: PlaylistViewModel
     @State private var importing = false
     @State private var isDropTargeted = false
+
+    // 新建 / 重命名 / 删除 弹窗状态（集中在顶层驱动，节点内菜单只设置这些 @State）。
+    @State private var newPlaylistPrompt = false
+    @State private var newFolderPrompt = false
+    @State private var createText = ""
+    @State private var renameTarget: RenameTarget?
+    @State private var renameText = ""
+    @State private var deleteTarget: DeleteTarget?
 
     init(model: LibraryViewModel) {
         self.model = model
         _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
         _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
+        _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
     }
 
     var body: some View {
         NavigationSplitView {
-            List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack { Text(album.name).font(.headline); if workflow.newAlbumIDs.contains(album.id) { Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule()) } }
-                    Text(album.artist ?? "未知艺人")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            List(selection: $selection) {
+                Section("资料库") {
+                    Label("曲库", systemImage: "square.stack").tag(SidebarSelection.library)
                 }
-                .tag(album.id)
+                Section("歌单") {
+                    PlaylistTreeOutline(
+                        playlists: playlists,
+                        onRename: { target, currentName in
+                            renameTarget = target
+                            renameText = currentName
+                        },
+                        onDelete: { target in deleteTarget = target }
+                    )
+                }
             }
-            .navigationTitle("曲库")
+            .navigationTitle("音乐")
+            .toolbar {
+                Menu {
+                    Button("新建歌单") { createText = ""; newPlaylistPrompt = true }
+                    Button("新建文件夹") { createText = ""; newFolderPrompt = true }
+                } label: { Label("新建", systemImage: "plus") }
+            }
         } detail: {
-            if let selection = model.album(id: selectedAlbumID) { MediaDetailView(album: selection, model: media) } else {
-            VStack(spacing: 18) {
-                TextField("搜索艺人、专辑或曲目", text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await model.search(query: query) } }
-                if let result = model.searchResult {
-                    List(result.albums, id: \.id) { album in
-                        Text(album.name)
-                    }
-                } else if model.isLoading {
-                    ProgressView("正在加载曲库…")
-                } else if let errorMessage = model.errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                } else {
-                    Text("选择专辑以查看曲目")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-            }
+            detailContent
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            await playlists.loadTree()
+        }
         .toolbar {
             Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
             Button { Task { await workflow.scanLibrary() } } label: { Label("扫描曲库", systemImage: "arrow.clockwise") }
@@ -65,5 +89,181 @@ struct LibraryView: View {
         } isTargeted: { isDropTargeted = $0 }
         .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 18).fill(.indigo.opacity(0.2)).overlay { Label("松开以导入音乐", systemImage: "square.and.arrow.down").font(.title2.bold()) } } }
         .safeAreaInset(edge: .bottom, spacing: 0) { if workflow.isDrawerPresented { TaskDrawerView(model: workflow).frame(maxHeight: 300) } }
+        .alert("新建歌单", isPresented: $newPlaylistPrompt) {
+            TextField("歌单名称", text: $createText)
+            Button("取消", role: .cancel) {}
+            Button("创建") {
+                let name = createText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { Task { await playlists.createPlaylist(name: name, folderID: nil) } }
+            }
+        }
+        .alert("新建文件夹", isPresented: $newFolderPrompt) {
+            TextField("文件夹名称", text: $createText)
+            Button("取消", role: .cancel) {}
+            Button("创建") {
+                let name = createText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { Task { await playlists.createFolder(name: name, parentID: nil) } }
+            }
+        }
+        .alert("重命名", isPresented: renameIsPresented) {
+            TextField("新名称", text: $renameText)
+            Button("取消", role: .cancel) { renameTarget = nil }
+            Button("确定") {
+                let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let target = renameTarget, !name.isEmpty {
+                    Task {
+                        switch target {
+                        case .playlist(let id): await playlists.rename(playlistID: id, name: name)
+                        case .folder(let id): await playlists.renameFolder(id: id, name: name)
+                        }
+                    }
+                }
+                renameTarget = nil
+            }
+        }
+        .confirmationDialog("确认删除？此操作不可撤销。", isPresented: deleteIsPresented, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                if let target = deleteTarget {
+                    Task {
+                        switch target {
+                        case .playlist(let id): await playlists.delete(playlistID: id)
+                        case .folder(let id): await playlists.deleteFolder(id: id)
+                        }
+                    }
+                }
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        }
+    }
+
+    @ViewBuilder private var detailContent: some View {
+        switch selection {
+        case .playlist(let id):
+            if let detail = playlists.detail, detail.playlist.id == id {
+                PlaylistDetailView(detail: detail, playlists: playlists, media: media)
+            } else {
+                ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
+            }
+        case .library, .none:
+            libraryDetail
+        }
+    }
+
+    /// 资料库详情：专辑列表（含「新增」标记）+ 搜索 + 专辑详情，保留原有全部行为。
+    @ViewBuilder private var libraryDetail: some View {
+        HStack(spacing: 0) {
+            List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(album.name).font(.headline)
+                        if workflow.newAlbumIDs.contains(album.id) {
+                            Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule())
+                        }
+                    }
+                    Text(album.artist ?? "未知艺人")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .tag(album.id)
+            }
+            .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
+
+            Divider()
+
+            if let selection = model.album(id: selectedAlbumID) {
+                MediaDetailView(album: selection, model: media)
+            } else {
+                VStack(spacing: 18) {
+                    TextField("搜索艺人、专辑或曲目", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { Task { await model.search(query: query) } }
+                    if let result = model.searchResult {
+                        List(result.albums, id: \.id) { album in
+                            Text(album.name)
+                        }
+                    } else if model.isLoading {
+                        ProgressView("正在加载曲库…")
+                    } else if let errorMessage = model.errorMessage {
+                        Text(errorMessage).foregroundStyle(.red)
+                    } else {
+                        Text("选择专辑以查看曲目")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            }
+        }
+    }
+
+    private var renameIsPresented: Binding<Bool> {
+        Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
+    }
+
+    private var deleteIsPresented: Binding<Bool> {
+        Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
+    }
+}
+
+// MARK: - 歌单树递归视图
+
+struct PlaylistTreeOutline: View {
+    @ObservedObject var playlists: PlaylistViewModel
+    let onRename: (RenameTarget, String) -> Void
+    let onDelete: (DeleteTarget) -> Void
+
+    var body: some View {
+        if let tree = playlists.tree {
+            let roots = tree.folders.filter { $0.parentId == nil }
+            ForEach(roots, id: \.id) { folder in
+                FolderNode(folder: folder, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
+            }
+            ForEach(tree.playlists.filter { $0.folderId == nil }, id: \.id) { playlist in
+                PlaylistLeaf(playlist: playlist, onRename: onRename, onDelete: onDelete)
+            }
+        } else {
+            Text("加载中…").foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct FolderNode: View {
+    let folder: PlaylistFolder
+    let tree: PlaylistTree
+    @ObservedObject var playlists: PlaylistViewModel
+    let onRename: (RenameTarget, String) -> Void
+    let onDelete: (DeleteTarget) -> Void
+
+    var body: some View {
+        DisclosureGroup {
+            ForEach(tree.folders.filter { $0.parentId == folder.id }, id: \.id) { child in
+                FolderNode(folder: child, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
+            }
+            ForEach(tree.playlists.filter { $0.folderId == folder.id }, id: \.id) { playlist in
+                PlaylistLeaf(playlist: playlist, onRename: onRename, onDelete: onDelete)
+            }
+        } label: {
+            Label(folder.name, systemImage: "folder")
+                .contextMenu {
+                    Button("重命名") { onRename(.folder(folder.id), folder.name) }
+                    Button("删除", role: .destructive) { onDelete(.folder(folder.id)) }
+                }
+        }
+    }
+}
+
+struct PlaylistLeaf: View {
+    let playlist: Playlist
+    let onRename: (RenameTarget, String) -> Void
+    let onDelete: (DeleteTarget) -> Void
+
+    var body: some View {
+        Label(playlist.name, systemImage: "music.note.list")
+            .tag(SidebarSelection.playlist(playlist.id))
+            .contextMenu {
+                Button("重命名") { onRename(.playlist(playlist.id), playlist.name) }
+                Button("删除", role: .destructive) { onDelete(.playlist(playlist.id)) }
+            }
     }
 }
