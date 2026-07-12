@@ -30,4 +30,56 @@ final class PlaylistViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func createPlaylist(name: String, folderID: String?) async {
+        await mutateTree { try await self.client.createPlaylist(name: name, folderID: folderID, songIDs: []) }
+    }
+    func createFolder(name: String, parentID: String?) async {
+        await mutateTree { _ = try await self.client.createFolder(name: name, parentID: parentID) }
+    }
+    func rename(playlistID: String, name: String) async {
+        await mutateTree { try await self.client.renamePlaylist(id: playlistID, name: name) }
+    }
+    func renameFolder(id: String, name: String) async {
+        await mutateTree { try await self.client.renameFolder(id: id, name: name) }
+    }
+    func delete(playlistID: String) async {
+        await mutateTree { try await self.client.deletePlaylist(id: playlistID) }
+    }
+    func deleteFolder(id: String) async {
+        await mutateTree { try await self.client.deleteFolder(id: id) }
+    }
+    func move(playlistID: String, folderID: String?) async {
+        await mutateTree { try await self.client.movePlaylist(id: playlistID, folderID: folderID) }
+    }
+    func moveFolder(id: String, parentID: String?) async {
+        await mutateTree { try await self.client.moveFolder(id: id, parentID: parentID) }
+    }
+    func addTracks(playlistID: String, songIDs: [String]) async {
+        await mutateDetail(playlistID: playlistID) { try await self.client.addTracks(id: playlistID, songIDs: songIDs) }
+    }
+    func removeTrack(playlistID: String, index: Int64) async {
+        await mutateDetail(playlistID: playlistID) { try await self.client.removeTrackAt(id: playlistID, index: index) }
+    }
+
+    private func mutateTree(_ action: () async throws -> Void) async {
+        errorMessage = nil
+        do {
+            try await action()
+            await loadTree()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func mutateDetail(playlistID: String, _ action: () async throws -> Void) async {
+        errorMessage = nil
+        do {
+            try await action()
+            if detail?.playlist.id == playlistID { await openPlaylist(id: playlistID) }
+            await loadTree() // songCount/duration 可能变化
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }

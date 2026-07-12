@@ -29,6 +29,41 @@ final class PlaylistViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.detail?.tracks.first?.title, "Song")
     }
+
+    func testCreatePlaylistCallsClientThenReloadsTree() async {
+        let fake = FakePlaylistClient()
+        let model = PlaylistViewModel(client: fake)
+
+        await model.createPlaylist(name: "New", folderID: "folder:1")
+
+        XCTAssertTrue(fake.calls.contains("create:New:folder:1"))
+        XCTAssertEqual(fake.calls.last, "tree") // 创建后整树刷新
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testRemoveTrackReloadsOpenDetail() async {
+        let detail = PlaylistDetail(
+            playlist: playlistFixture(id: "playlist:5", name: "Mix", folderID: nil),
+            tracks: [trackFixture(id: "track:9", title: "Song")]
+        )
+        let fake = FakePlaylistClient(detail: detail)
+        let model = PlaylistViewModel(client: fake)
+        await model.openPlaylist(id: "playlist:5")
+
+        await model.removeTrack(playlistID: "playlist:5", index: 0)
+
+        XCTAssertTrue(fake.calls.contains("remove:playlist:5:0"))
+        XCTAssertEqual(fake.calls.filter { $0 == "detail:playlist:5" }.count, 2) // 打开 + 移除后刷新
+    }
+
+    func testDeleteFolderPropagatesError() async {
+        let fake = ThrowingPlaylistClient()
+        let model = PlaylistViewModel(client: fake)
+
+        await model.deleteFolder(id: "folder:1")
+
+        XCTAssertNotNil(model.errorMessage)
+    }
 }
 
 @MainActor
@@ -91,4 +126,21 @@ final class FakePlaylistClient: MusicClientProviding, @unchecked Sendable {
     func renameFolder(id: String, name: String) async throws { calls.append("renameFolder:\(id):\(name)") }
     func deleteFolder(id: String) async throws { calls.append("deleteFolder:\(id)") }
     func moveFolder(id: String, parentID: String?) async throws { calls.append("moveFolder:\(id):\(parentID ?? "-")") }
+}
+
+final class ThrowingPlaylistClient: MusicClientProviding, @unchecked Sendable {
+    func login(server: String, user: String, password: String) async throws -> SessionValue {
+        SessionValue(server: server, user: user)
+    }
+    func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] { [] }
+    func search(query: String) async throws -> SearchResult { SearchResult(artists: [], albums: [], tracks: []) }
+    func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track { throw CocoaError(.featureUnsupported) }
+    func updateTags(id: String, update: TagUpdate) async throws {}
+    func deleteTrack(id: String) async throws {}
+    func moveTrack(id: String, key: String) async throws {}
+    func startScan() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }
+    func scanStatus() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }
+    func playlistTree() async throws -> PlaylistTree { PlaylistTree(folders: [], playlists: []) }
+    func deleteFolder(id: String) async throws { throw CocoaError(.featureUnsupported) }
+    // 其余方法走协议默认 featureUnsupported 实现。
 }
