@@ -1,6 +1,6 @@
-import CoreFFI
+import YevuneCoreFFI
 import XCTest
-@testable import MusicApp
+@testable import Yevune
 
 @MainActor
 final class TagEditorViewModelTests: XCTestCase {

@@ -1,6 +1,6 @@
-import CoreFFI
+import YevuneCoreFFI
 import XCTest
-@testable import MusicApp
+@testable import Yevune
 
 final class AlbumGridViewTests: XCTestCase {
     func testCoverArtIDUsesAlbumCoverArt() {

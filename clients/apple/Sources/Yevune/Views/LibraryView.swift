@@ -1,5 +1,5 @@
 import SwiftUI
-import CoreFFI
+import YevuneCoreFFI
 import UniformTypeIdentifiers
 
 enum SidebarSelection: Hashable {

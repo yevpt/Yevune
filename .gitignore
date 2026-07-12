@@ -10,10 +10,10 @@
 **/target
 Cargo.lock.bak
 
-# SwiftPM 与 UniFFI 本地构建产物（由 clients/apple/Packages/CoreFFI/scripts/build-core.sh 生成）
+# SwiftPM 与 UniFFI 本地构建产物（由 clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh 生成）
 /clients/apple/.build/
-/clients/apple/Packages/CoreFFI/Sources/CoreFFI/
-/clients/apple/Packages/CoreFFI/MusicCoreFFI.xcframework/
+/clients/apple/Packages/YevuneCoreFFI/Sources/YevuneCoreFFI/
+/clients/apple/Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework/
 
 # 本地配置与运行时
 *.local.toml

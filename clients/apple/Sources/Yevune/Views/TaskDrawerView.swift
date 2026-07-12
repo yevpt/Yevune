@@ -1,5 +1,5 @@
 import SwiftUI
-import CoreFFI
+import YevuneCoreFFI
 
 struct TaskDrawerView: View {
     @ObservedObject var model: LibraryWorkflowViewModel

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use yevune_core::{AlbumFilter, AlbumSort, MusicClient};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use yevune_core::{AlbumFilter, AlbumSort, MusicClient};
 
 #[tokio::test]
 async fn browse_and_search_decode_opensubsonic_json_payloads() {

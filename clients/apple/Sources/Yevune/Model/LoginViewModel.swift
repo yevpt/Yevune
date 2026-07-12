@@ -1,5 +1,5 @@
 import Foundation
-import CoreFFI
+import YevuneCoreFFI
 
 struct SessionValue: Equatable {
     let server: String

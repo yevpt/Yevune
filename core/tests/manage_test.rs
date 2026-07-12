@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use yevune_core::{MusicClient, TagUpdate};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use yevune_core::{MusicClient, TagUpdate};
 
 #[tokio::test]
 async fn update_tags_sends_only_requested_override_fields() {

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use yevune_core::MusicClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use yevune_core::MusicClient;
 
 #[tokio::test]
 async fn login_pings_with_subsonic_credentials() {

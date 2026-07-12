@@ -20,13 +20,13 @@ fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 log="$tmp/calls"
-mkdir -p "$tmp/bin" "$tmp/repo/scripts" "$tmp/repo/clients/apple/Packages/CoreFFI/scripts" \
-  "$tmp/repo/clients/apple/Packages/CoreFFI/MusicCoreFFI.xcframework" "$tmp/repo/core/src"
+mkdir -p "$tmp/bin" "$tmp/repo/scripts" "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/scripts" \
+  "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework" "$tmp/repo/core/src"
 cp "$LAUNCHER" "$tmp/repo/scripts/run-mac-client.sh"
 printf 'input' > "$tmp/repo/core/src/lib.rs"
-printf 'output' > "$tmp/repo/clients/apple/Packages/CoreFFI/MusicCoreFFI.xcframework/Info.plist"
+printf 'output' > "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework/Info.plist"
 touch -t 202601010000 "$tmp/repo/core/src/lib.rs"
-touch -t 202601020000 "$tmp/repo/clients/apple/Packages/CoreFFI/MusicCoreFFI.xcframework/Info.plist"
+touch -t 202601020000 "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework/Info.plist"
 
 for command in cargo swift docker; do
   cat > "$tmp/bin/$command" <<EOF
@@ -40,14 +40,14 @@ cat > "$tmp/bin/uname" <<'EOF'
 echo Darwin
 EOF
 chmod +x "$tmp/bin/uname"
-cat > "$tmp/repo/clients/apple/Packages/CoreFFI/scripts/build-core.sh" <<EOF
+cat > "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh" <<EOF
 #!/bin/sh
 echo "build-core" >> "$log"
 EOF
-chmod +x "$tmp/repo/clients/apple/Packages/CoreFFI/scripts/build-core.sh"
+chmod +x "$tmp/repo/clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh"
 
 PATH="$tmp/bin:$PATH" "$tmp/repo/scripts/run-mac-client.sh"
-grep -q '^swift run --package-path clients/apple MusicApp$' "$log"
+grep -q '^swift run --package-path clients/apple Yevune$' "$log"
 if grep -q '^build-core$' "$log"; then
   echo "FAIL: fresh bindings rebuilt" >&2
   exit 1
@@ -58,6 +58,6 @@ touch "$tmp/repo/core/src/lib.rs"
 PATH="$tmp/bin:$PATH" "$tmp/repo/scripts/run-mac-client.sh" --with-server
 grep -q '^docker compose up -d$' "$log"
 grep -q '^build-core$' "$log"
-grep -q '^swift run --package-path clients/apple MusicApp$' "$log"
+grep -q '^swift run --package-path clients/apple Yevune$' "$log"
 
 echo "run-mac-client tests: PASS"

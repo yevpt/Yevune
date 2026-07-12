@@ -1,4 +1,4 @@
-import CoreFFI
+import YevuneCoreFFI
 import Foundation
 
 enum ImportTaskState: Equatable { case waiting, uploading, succeeded, failed }

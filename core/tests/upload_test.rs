@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use yevune_core::{MusicClient, UploadMetadata, UploadProgress};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use yevune_core::{MusicClient, UploadMetadata, UploadProgress};
 
 #[tokio::test]
 async fn upload_streams_a_local_file_and_reports_progress() {

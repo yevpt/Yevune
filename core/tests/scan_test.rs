@@ -1,6 +1,6 @@
-use yevune_core::MusicClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use yevune_core::MusicClient;
 
 #[tokio::test]
 async fn scan_operations_require_login() {

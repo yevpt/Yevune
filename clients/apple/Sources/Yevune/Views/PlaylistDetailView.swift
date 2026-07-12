@@ -1,5 +1,5 @@
 import SwiftUI
-import CoreFFI
+import YevuneCoreFFI
 
 struct PlaylistDetailView: View {
     let detail: PlaylistDetail

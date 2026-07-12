@@ -45,7 +45,7 @@ if $with_server; then
   docker compose up -d
 fi
 
-framework=clients/apple/Packages/CoreFFI/MusicCoreFFI.xcframework/Info.plist
+framework=clients/apple/Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework/Info.plist
 needs_build=false
 if [ ! -f "$framework" ]; then
   needs_build=true
@@ -56,7 +56,7 @@ fi
 
 if $needs_build; then
   echo "Rust core 或绑定已更新，正在生成 xcframework…"
-  ./clients/apple/Packages/CoreFFI/scripts/build-core.sh
+  ./clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh
 fi
 
-exec swift run --package-path clients/apple MusicApp
+exec swift run --package-path clients/apple Yevune

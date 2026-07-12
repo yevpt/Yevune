@@ -1,4 +1,4 @@
-import CoreFFI
+import YevuneCoreFFI
 import SwiftUI
 
 func coverArtID(for album: Album) -> String? {

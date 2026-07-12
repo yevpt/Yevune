@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "MusicApp",
+    name: "Yevune",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "MusicApp", targets: ["MusicApp"])],
+    products: [.executable(name: "Yevune", targets: ["Yevune"])],
     targets: [
-        .binaryTarget(name: "MusicCoreFFI", path: "Packages/CoreFFI/MusicCoreFFI.xcframework"),
+        .binaryTarget(name: "YevuneCoreFFIBinary", path: "Packages/YevuneCoreFFI/YevuneCoreFFI.xcframework"),
         .target(
-            name: "CoreFFI",
-            dependencies: ["MusicCoreFFI"],
-            path: "Packages/CoreFFI/Sources/CoreFFI"
+            name: "YevuneCoreFFI",
+            dependencies: ["YevuneCoreFFIBinary"],
+            path: "Packages/YevuneCoreFFI/Sources/YevuneCoreFFI"
         ),
-        .executableTarget(name: "MusicApp", dependencies: ["CoreFFI"], path: "Sources/MusicApp"),
-        .testTarget(name: "MusicAppTests", dependencies: ["MusicApp"], path: "Tests/MusicAppTests"),
+        .executableTarget(name: "Yevune", dependencies: ["YevuneCoreFFI"], path: "Sources/Yevune"),
+        .testTarget(name: "YevuneTests", dependencies: ["Yevune"], path: "Tests/YevuneTests"),
     ]
 )

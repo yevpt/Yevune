@@ -1,7 +1,7 @@
-import CoreFFI
+import YevuneCoreFFI
 
 actor CoreMusicClient: MusicClientProviding {
-    private let client = CoreFFI.MusicClient()
+    private let client = YevuneCoreFFI.MusicClient()
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         let session = try await client.login(server: server, user: user, password: password)

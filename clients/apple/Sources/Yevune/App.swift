@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MusicApp: App {
+struct YevuneApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @StateObject private var login: LoginViewModel
     @StateObject private var library: LibraryViewModel

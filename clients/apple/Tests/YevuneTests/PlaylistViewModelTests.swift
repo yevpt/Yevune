@@ -1,6 +1,6 @@
 import XCTest
-import CoreFFI
-@testable import MusicApp
+import YevuneCoreFFI
+@testable import Yevune
 
 @MainActor
 final class PlaylistViewModelTests: XCTestCase {

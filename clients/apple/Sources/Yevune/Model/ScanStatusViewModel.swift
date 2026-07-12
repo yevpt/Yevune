@@ -1,4 +1,4 @@
-import CoreFFI
+import YevuneCoreFFI
 import Foundation
 
 @MainActor

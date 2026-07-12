@@ -1,4 +1,4 @@
-import CoreFFI
+import YevuneCoreFFI
 import SwiftUI
 
 struct BatchTagEditorView: View {
