@@ -34,3 +34,6 @@ docker-compose.override.yml
 
 # Superpowers 视觉设计会话本地产物
 /.superpowers/
+
+# AI 隔离工作区
+/.worktrees/
