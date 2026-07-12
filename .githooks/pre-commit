@@ -2,4 +2,5 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
+"$ROOT/scripts/validate-no-merge-commit.sh"
 exec "$ROOT/scripts/validate-commit-author.sh"
