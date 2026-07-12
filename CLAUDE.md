@@ -6,7 +6,7 @@
 
 ## 权威文档
 
-- 设计（权威）：`docs/superpowers/specs/2026-07-10-music-server-design.md`
+- 设计（权威）：`docs/superpowers/specs/2026-07-10-yevune-server-design.md`
 - 实现计划 + 交接提示词：`docs/superpowers/plans/`
 - 架构决策理由：`docs/adr/`
 

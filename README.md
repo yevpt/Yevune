@@ -4,7 +4,7 @@
 **OpenSubsonic 兼容**——现成客户端（Amperfy、play:Sub 等）可直接连。多用户、每人独立歌单空间、
 管理员可按曲目/专辑/艺人/流派限制曲库可见性。默认明文 HTTP，局域网开箱即用。
 
-> 权威设计见 [`docs/superpowers/specs/2026-07-10-music-server-design.md`](docs/superpowers/specs/2026-07-10-music-server-design.md)，
+> 权威设计见 [`docs/superpowers/specs/2026-07-10-yevune-server-design.md`](docs/superpowers/specs/2026-07-10-yevune-server-design.md)，
 > 编码约束见 [`AGENTS.md`](AGENTS.md)。
 
 ## 特性

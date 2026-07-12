@@ -5,21 +5,21 @@
 
 ## 目标
 
-把本仓库及其可部署产物从 `music`/`MusicApp` 完整迁移为 **Yevune**。这是一次破坏性品牌迁移；现有测试数据、对象存储 bucket、SQLite 文件和环境变量不需要兼容。
+本仓库及其可部署产物统一采用 **Yevune** 品牌。这是一次破坏性品牌迁移；现有测试数据、对象存储 bucket、SQLite 文件和环境变量不需要兼容。
 
-## 命名映射
+## 当前命名
 
-| 范围 | 旧名称 | 新名称 |
-|---|---|---|
-| 仓库目录 | `music` | `Yevune` |
-| 服务端 Cargo 包/二进制/库 | `music-server` / `music_server` | `yevune-server` / `yevune_server` |
-| 客户端核心 Cargo 包/库 | `music-core` / `music_core` | `yevune-core` / `yevune_core` |
-| UniFFI Swift 模块与产物 | `CoreFFI` / `MusicCoreFFI` | `YevuneCoreFFI` |
-| Apple Swift 包、可执行 Target、App 类型、测试 Target | `MusicApp` / `MusicAppTests` | `Yevune` / `YevuneTests` |
-| Apple FFI 目录 | `Packages/CoreFFI` | `Packages/YevuneCoreFFI` |
-| Docker Compose 服务、volume、环境变量、SQLite 路径 | `server`、`server-data`、`MUSIC_*`、`music.sqlite` | `yevune`、`yevune-data`、`YEVUNE_*`、`yevune.sqlite` |
-| Garage bucket 与测试对象键前缀 | `music` / `music/` | `yevune` / `library/` |
-| OpenSubsonic 响应 `type` | `music-server` | `yevune-server` |
+| 范围 | 标准名称 |
+|---|---|
+| 仓库目录 | `Yevune` |
+| 服务端 Cargo 包/二进制/库 | `yevune-server` / `yevune_server` |
+| 客户端核心 Cargo 包/库 | `yevune-core` / `yevune_core` |
+| UniFFI Swift 模块与产物 | `YevuneCoreFFI` |
+| Apple Swift 包、可执行 Target、App 类型、测试 Target | `Yevune` / `YevuneTests` |
+| Apple FFI 目录 | `Packages/YevuneCoreFFI` |
+| Docker Compose 服务、volume、环境变量、SQLite 路径 | `yevune`、`yevune-data`、`YEVUNE_*`、`yevune.sqlite` |
+| Garage bucket 与正式对象键前缀 | `yevune` / `library/` |
+| OpenSubsonic 响应 `type` | `yevune-server` |
 
 OpenSubsonic 端点、响应结构、认证参数和扩展命名空间保持不变；品牌迁移不得破坏协议兼容性。
 

@@ -29,11 +29,11 @@
 | `core/src/client.rs` | 可供 UniFFI 调用的 `MusicClient` 门面。 |
 | `core/tests/*.rs` | 对本地 axum mock 的协议、URL 与流式上传集成测试。 |
 | `clients/apple/Package.swift` | macOS App 与 XCTest targets。 |
-| `clients/apple/Packages/CoreFFI` | 生成绑定的 binary target、生成脚本和 xcframework。 |
-| `clients/apple/Sources/MusicApp/Model` | 仅调用可 mock `MusicClientProviding` 的视图模型。 |
-| `clients/apple/Sources/MusicApp/Views` | 原生 SwiftUI 管理界面。 |
-| `clients/apple/Sources/MusicApp/Audio/PreviewPlayer.swift` | 只消费 `stream_url` 的 AVPlayer 封装。 |
-| `clients/apple/Tests/MusicAppTests` | 视图模型与试听器 XCTest。 |
+| `clients/apple/Packages/YevuneCoreFFI` | 生成绑定的 binary target、生成脚本和 xcframework。 |
+| `clients/apple/Sources/Yevune/Model` | 仅调用可 mock `MusicClientProviding` 的视图模型。 |
+| `clients/apple/Sources/Yevune/Views` | 原生 SwiftUI 管理界面。 |
+| `clients/apple/Sources/Yevune/Audio/PreviewPlayer.swift` | 只消费 `stream_url` 的 AVPlayer 封装。 |
+| `clients/apple/Tests/YevuneTests` | 视图模型与试听器 XCTest。 |
 | `server/src/api/ext/cover.rs` | `setCoverArt` 的流式图片上传与关联。 |
 | `server/tests/ext_test.rs` | 新扩展的授权、流式与索引行为测试。 |
 
@@ -41,7 +41,7 @@
 
 **Files:**
 - Create: `core/Cargo.toml`, `core/build.rs`, `core/src/lib.rs`, `core/src/config.rs`, `core/src/auth.rs`, `core/src/http.rs`, `core/src/error.rs`, `core/src/client.rs`, `core/tests/login_test.rs`
-- Create: `clients/apple/Package.swift`, `clients/apple/Sources/MusicApp/App.swift`, `clients/apple/Sources/MusicApp/Model/LoginViewModel.swift`, `clients/apple/Sources/MusicApp/Views/LoginView.swift`, `clients/apple/Tests/MusicAppTests/LoginViewModelTests.swift`, `clients/apple/Packages/CoreFFI/scripts/build-core.sh`
+- Create: `clients/apple/Package.swift`, `clients/apple/Sources/Yevune/App.swift`, `clients/apple/Sources/Yevune/Model/LoginViewModel.swift`, `clients/apple/Sources/Yevune/Views/LoginView.swift`, `clients/apple/Tests/YevuneTests/LoginViewModelTests.swift`, `clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh`
 - Modify: `README.md`
 
 **Interfaces:**
@@ -77,7 +77,7 @@ pub async fn login(&self, server: String, user: String, password: String) -> Res
 
 - [ ] **Step 4: Verify green and bindings**
 
-Run: `cargo test --manifest-path core/Cargo.toml --test login_test && clients/apple/Packages/CoreFFI/scripts/build-core.sh && swift test --package-path clients/apple`
+Run: `cargo test --manifest-path core/Cargo.toml --test login_test && clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh && swift test --package-path clients/apple`
 
 Expected: login mock sees `u`, `p`, `v=1.16.1`, `c=music-mac`, `f=json`; Swift target imports generated module.
 
@@ -92,8 +92,8 @@ git commit -m "feat(core): 打通 Mac 登录与 UniFFI 构建链路"
 
 **Files:**
 - Create: `core/src/api/browse.rs`, `core/tests/browse_test.rs`
-- Create: `clients/apple/Sources/MusicApp/Model/LibraryViewModel.swift`, `clients/apple/Sources/MusicApp/Views/LibraryView.swift`, `clients/apple/Sources/MusicApp/Views/AlbumDetailView.swift`, `clients/apple/Tests/MusicAppTests/LibraryViewModelTests.swift`
-- Modify: `core/src/client.rs`, `clients/apple/Sources/MusicApp/App.swift`
+- Create: `clients/apple/Sources/Yevune/Model/LibraryViewModel.swift`, `clients/apple/Sources/Yevune/Views/LibraryView.swift`, `clients/apple/Sources/Yevune/Views/AlbumDetailView.swift`, `clients/apple/Tests/YevuneTests/LibraryViewModelTests.swift`
+- Modify: `core/src/client.rs`, `clients/apple/Sources/Yevune/App.swift`
 
 **Interfaces:**
 - Produces `list_artists()`, `list_albums(sort, offset, size)`, `get_artist(id)`, `get_album(id)`, `get_song(id)`, and `search(query)`.
@@ -145,8 +145,8 @@ git commit -m "feat(mac): 浏览曲库并支持搜索"
 
 **Files:**
 - Create: `core/src/api/manage.rs`, `core/tests/upload_test.rs`
-- Create: `clients/apple/Sources/MusicApp/Model/UploadViewModel.swift`, `clients/apple/Sources/MusicApp/Views/UploadView.swift`, `clients/apple/Tests/MusicAppTests/UploadViewModelTests.swift`
-- Modify: `core/src/client.rs`, `clients/apple/Sources/MusicApp/Views/LibraryView.swift`
+- Create: `clients/apple/Sources/Yevune/Model/UploadViewModel.swift`, `clients/apple/Sources/Yevune/Views/UploadView.swift`, `clients/apple/Tests/YevuneTests/UploadViewModelTests.swift`
+- Modify: `core/src/client.rs`, `clients/apple/Sources/Yevune/Views/LibraryView.swift`
 
 **Interfaces:**
 - Produces `upload_track(path, key, progress) -> Track`; `UploadProgress` reports `(sent_bytes, total_bytes)`.
@@ -192,8 +192,8 @@ git commit -m "feat(mac): 支持流式拖拽上传曲目"
 ### Task 4: S3/S4 — 标签覆盖、删除与移动
 
 **Files:**
-- Create: `core/tests/manage_test.rs`, `clients/apple/Sources/MusicApp/Model/TrackEditorViewModel.swift`, `clients/apple/Sources/MusicApp/Views/TagEditorView.swift`, `clients/apple/Tests/MusicAppTests/TrackEditorViewModelTests.swift`
-- Modify: `core/src/api/manage.rs`, `core/src/client.rs`, `clients/apple/Sources/MusicApp/Views/AlbumDetailView.swift`
+- Create: `core/tests/manage_test.rs`, `clients/apple/Sources/Yevune/Model/TrackEditorViewModel.swift`, `clients/apple/Sources/Yevune/Views/TagEditorView.swift`, `clients/apple/Tests/YevuneTests/TrackEditorViewModelTests.swift`
+- Modify: `core/src/api/manage.rs`, `core/src/client.rs`, `clients/apple/Sources/Yevune/Views/AlbumDetailView.swift`
 
 **Interfaces:**
 - Produces `update_tags(id, TagUpdate)`, `delete_track(id)`, `move_track(id, key)`.
@@ -240,8 +240,8 @@ git commit -m "feat(mac): 支持标签编辑删除与移动"
 ### Task 5: S5 — 扫描状态
 
 **Files:**
-- Create: `core/src/api/scan.rs`, `core/tests/scan_test.rs`, `clients/apple/Sources/MusicApp/Model/ScanStatusViewModel.swift`, `clients/apple/Sources/MusicApp/Views/ScanStatusView.swift`, `clients/apple/Tests/MusicAppTests/ScanStatusViewModelTests.swift`
-- Modify: `core/src/client.rs`, `clients/apple/Sources/MusicApp/Views/LibraryView.swift`
+- Create: `core/src/api/scan.rs`, `core/tests/scan_test.rs`, `clients/apple/Sources/Yevune/Model/ScanStatusViewModel.swift`, `clients/apple/Sources/Yevune/Views/ScanStatusView.swift`, `clients/apple/Tests/YevuneTests/ScanStatusViewModelTests.swift`
+- Modify: `core/src/client.rs`, `clients/apple/Sources/Yevune/Views/LibraryView.swift`
 
 **Interfaces:**
 - Produces `start_scan(prefix: Option<String>) -> ScanStatus` and `scan_status() -> ScanStatus`.
@@ -288,8 +288,8 @@ git commit -m "feat(mac): 触发并监控曲库扫描"
 ### Task 6: S6 — 封面显示与替换
 
 **Files:**
-- Create: `server/src/api/ext/cover.rs`, `core/src/api/media.rs`, `core/tests/media_test.rs`, `clients/apple/Sources/MusicApp/Model/CoverViewModel.swift`, `clients/apple/Sources/MusicApp/Views/CoverView.swift`, `clients/apple/Tests/MusicAppTests/CoverViewModelTests.swift`
-- Modify: `server/src/api/ext/mod.rs`, `server/src/api/system.rs`, `server/tests/ext_test.rs`, `core/src/client.rs`, `clients/apple/Sources/MusicApp/Views/AlbumDetailView.swift`, `openapi.yaml`
+- Create: `server/src/api/ext/cover.rs`, `core/src/api/media.rs`, `core/tests/media_test.rs`, `clients/apple/Sources/Yevune/Model/CoverViewModel.swift`, `clients/apple/Sources/Yevune/Views/CoverView.swift`, `clients/apple/Tests/YevuneTests/CoverViewModelTests.swift`
+- Modify: `server/src/api/ext/mod.rs`, `server/src/api/system.rs`, `server/tests/ext_test.rs`, `core/src/client.rs`, `clients/apple/Sources/Yevune/Views/AlbumDetailView.swift`, `openapi.yaml`
 
 **Interfaces:**
 - Produces `set_cover_art(album_id, local_path) -> ()` and `cover_art_url(cover_key, size) -> String`.
@@ -332,8 +332,8 @@ git commit -m "feat(media): 支持替换曲库封面"
 ### Task 7: S7 — AVFoundation 试听与 M1 验证
 
 **Files:**
-- Create: `clients/apple/Sources/MusicApp/Audio/PreviewPlayer.swift`, `clients/apple/Tests/MusicAppTests/PreviewPlayerTests.swift`
-- Modify: `core/src/api/media.rs`, `core/src/client.rs`, `clients/apple/Sources/MusicApp/Views/AlbumDetailView.swift`, `README.md`
+- Create: `clients/apple/Sources/Yevune/Audio/PreviewPlayer.swift`, `clients/apple/Tests/YevuneTests/PreviewPlayerTests.swift`
+- Modify: `core/src/api/media.rs`, `core/src/client.rs`, `clients/apple/Sources/Yevune/Views/AlbumDetailView.swift`, `README.md`
 
 **Interfaces:**
 - Produces `stream_url(track_id, format, max_bitrate) -> String`.

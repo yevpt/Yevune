@@ -20,7 +20,7 @@
 
 **协议契合**：OpenSubsonic 协议原生多用户（每请求带 `u=用户名`，歌单、收藏、播放计数天然按用户隔离），因此"独立歌单空间"零阻力贴合协议。真正的自研扩展只有**曲库访问控制**。
 
-**存储**：兼容 S3 的对象存储，实际采用 **Garage**。Garage 的权威 `music` bucket 是原始音频唯一源（source of truth），正式原始音频键统一位于 `library/` 前缀。该 bucket 只向**单个服务端实例**授予写/删凭据；客户端不得直写。外部直传使用独立的非权威 inbox bucket/凭据，后续由受控导入流程转入权威 bucket。
+**存储**：兼容 S3 的对象存储，实际采用 **Garage**。Garage 的权威 `yevune` bucket 是原始音频唯一源（source of truth），正式原始音频键统一位于 `library/` 前缀。该 bucket 只向**单个服务端实例**授予写/删凭据；客户端不得直写。外部直传使用独立的非权威 inbox bucket/凭据，后续由受控导入流程转入权威 bucket。
 
 **转码诉求**：音乐库以无损（FLAC/ALAC）为主，需在移动端/外网播放时**实时转成 AAC/Opus 省流量**。
 
@@ -73,7 +73,7 @@
 单 monorepo，物理放一起，各子项目用各自工具链（Cargo / SwiftPM+Xcode / npm）。核心动机：**API 契约在服务端与客户端间严格同步**，改接口一次原子提交。
 
 ```
-music/
+Yevune/
 ├── server/          # 【1】Rust 服务端 (axum)
 │   ├── Cargo.toml   # Rust workspace 根
 │   └── src/         # 先用模块划分，长大再提升为独立 crate（YAGNI）
@@ -173,7 +173,7 @@ music/
 
 Garage 是唯一源，且其 bucket 事件通知能力有限，故采用**主动扫描** + **客户端管理 API** 双路径，共用同一套入库逻辑（读标签 → 抽封面 → 写索引）。
 
-**单写者边界**（见 ADR-0006）：Garage v2.3 的 DeleteObject 是无条件删除，不能用 ETag 做原子 compare-and-delete。权威 `music` bucket 因而只允许一个服务端实例写/删，服务端用共享逐键锁 + SQLite CAS 串行化正式键变更。多实例部署前必须先引入跨实例协调，不能直接复用当前写路径。外部直传只能进入独立 inbox bucket；inbox 是非权威暂存，当前阶段不提供 inbox 消费接口。
+**单写者边界**（见 ADR-0006）：Garage v2.3 的 DeleteObject 是无条件删除，不能用 ETag 做原子 compare-and-delete。权威 `yevune` bucket 因而只允许一个服务端实例写/删，服务端用共享逐键锁 + SQLite CAS 串行化正式键变更。多实例部署前必须先引入跨实例协调，不能直接复用当前写路径。外部直传只能进入独立 inbox bucket；inbox 是非权威暂存，当前阶段不提供 inbox 消费接口。
 
 | 路径 | 用途 | 时机 |
 |---|---|---|

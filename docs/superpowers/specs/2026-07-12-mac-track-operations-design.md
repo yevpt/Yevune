@@ -6,7 +6,7 @@
 
 ## 2. 范围与并行边界
 
-- **独占文件**：`clients/apple/Sources/MusicApp/Views/MediaDetailView.swift`、`clients/apple/Sources/MusicApp/Views/TagEditorView.swift`、`clients/apple/Sources/MusicApp/Model/TagEditorViewModel.swift`，以及本任务新建的文件与测试。
+- **独占文件**：`clients/apple/Sources/Yevune/Views/MediaDetailView.swift`、`clients/apple/Sources/Yevune/Views/TagEditorView.swift`、`clients/apple/Sources/Yevune/Model/TagEditorViewModel.swift`，以及本任务新建的文件与测试。
 - **纯 Swift**：core 已有 `update_tags`/`delete_track`/`move_track`；曲目对象键已由共享 prep 暴露为 `Track.path`（`contract::Track`）。**本任务不改 core、不改 `contract`、不改 server。**
 - **不得改动**（归并行任务 B 或公共）：`LibraryView.swift`、`LibraryViewModel.swift`、`LoginViewModel.swift`（`MusicClientProviding` 协议）、`CoreMusicClient.swift`、`PlaylistViewModel.swift`、`core/*`。
 - **关键约束**：**保持 `MediaDetailView` 的初始化签名不变**（当前 `init(album:model:playlists:)`），任务 B 会改它的调用点，签名一变即冲突。曲目管理所需的客户端访问一律经 `MediaViewModel`（它已持有 `client` 与专辑详情，并有 `load(album:)` 刷新）路由——例如给 `MediaViewModel` 加一个 `makeTagEditor(for:) -> TagEditorViewModel` 工厂或直接加 `updateTags/deleteTrack/moveTrack/reload` 方法，避免把 `client` 塞进 `MediaDetailView` 的构造参数。

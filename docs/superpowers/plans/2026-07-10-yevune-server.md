@@ -1,6 +1,6 @@
 # 音乐服务端 实现计划（任务分解 + 交接提示词）
 
-> **本计划的用法**：服务端拆成 11 个任务，按"波次"组织。每个任务附一份**自包含交接提示词**，可直接复制交给不同的 AI 工具（Claude Code / Codex / Cursor 等）另起会话执行。所有任务共同遵守 [`AGENTS.md`](../../../AGENTS.md) 与设计文档 [`specs/2026-07-10-music-server-design.md`](../specs/2026-07-10-music-server-design.md)。
+> **本计划的用法**：服务端拆成 11 个任务，按"波次"组织。每个任务附一份**自包含交接提示词**，可直接复制交给不同的 AI 工具（Claude Code / Codex / Cursor 等）另起会话执行。所有任务共同遵守 [`AGENTS.md`](../../../AGENTS.md) 与设计文档 [`specs/2026-07-10-yevune-server-design.md`](../specs/2026-07-10-yevune-server-design.md)。
 
 **Goal**：交付一个 Rust 音乐流媒体服务端——从 Garage 拉取音频、建索引、按需转码、OpenSubsonic 兼容 + 自研扩展、家庭多用户 + 曲库访问控制、docker-compose 一键部署。
 
@@ -60,8 +60,8 @@
 > ```
 > 你在为一个自托管音乐服务的 Rust 服务端工作。开始前必须：
 > 1. 读完仓库根 AGENTS.md（项目宪法，含红线与强制工作流）。
-> 2. 读设计文档 docs/superpowers/specs/2026-07-10-music-server-design.md。
-> 3. 读本任务在 docs/superpowers/plans/2026-07-10-music-server.md 中的条目。
+> 2. 读设计文档 docs/superpowers/specs/2026-07-10-yevune-server-design.md。
+> 3. 读本任务在 docs/superpowers/plans/2026-07-10-yevune-server.md 中的条目。
 > 强制 TDD：每个行为先写失败测试→跑红→最小实现→跑绿→提交（Conventional Commits）。
 > 只做本任务范围内的事；越界问题记 TODO 不擅自扩大。
 > 完成前 cargo test / cargo clippy -- -D warnings / cargo fmt --check 必须全绿。

@@ -2,7 +2,7 @@
 
 > 本文件是 Claude Code、Codex、Cursor 等**所有** AI 编码工具在本仓库工作时的最高约束。
 > 开始任何编码前**必须读完本文件**。与本文件冲突的做法一律不被接受。
-> 权威设计见 [`docs/superpowers/specs/2026-07-10-music-server-design.md`](docs/superpowers/specs/2026-07-10-music-server-design.md)，决策理由见 [`docs/adr/`](docs/adr/)。
+> 权威设计见 [`docs/superpowers/specs/2026-07-10-yevune-server-design.md`](docs/superpowers/specs/2026-07-10-yevune-server-design.md)，决策理由见 [`docs/adr/`](docs/adr/)。
 
 ---
 
@@ -48,7 +48,7 @@
 ## 4. 仓库布局
 
 ```
-music/
+Yevune/
 ├── AGENTS.md / CLAUDE.md        # 本宪法（Claude 版引用本文件）
 ├── .agents/skills/              # AI skills（权威）；.claude/.cursor 下为符号链接
 ├── .githooks/                   # 版本化 git hooks（core.hooksPath）

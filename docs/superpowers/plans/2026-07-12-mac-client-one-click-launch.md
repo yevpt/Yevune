@@ -24,12 +24,12 @@
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `clients/apple/Packages/CoreFFI/scripts/build-core.sh`
+- Consumes: `clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh`
 - Produces: `scripts/run-mac-client.sh [--with-server|--help]`
 
 - [x] **Step 1: Write the failing shell test**
 
-测试在临时目录放置 `uname`、`cargo`、`swift`、`docker` 假命令，把调用写入日志；断言默认运行 `swift run --package-path clients/apple MusicApp`，`--with-server` 先调用 `docker compose up -d`，未知参数失败，并通过设置输入/产物时间验证按需调用 `build-core.sh`。
+测试在临时目录放置 `uname`、`cargo`、`swift`、`docker` 假命令，把调用写入日志；断言默认运行 `swift run --package-path clients/apple Yevune`，`--with-server` 先调用 `docker compose up -d`，未知参数失败，并通过设置输入/产物时间验证按需调用 `build-core.sh`。
 
 - [x] **Step 2: Run test to verify it fails**
 
@@ -38,7 +38,7 @@ Expected: FAIL，因为 `scripts/run-mac-client.sh` 不存在。
 
 - [x] **Step 3: Write minimal launcher**
 
-脚本解析两个公开参数、检查 macOS/cargo/swift（以及可选 docker）、以 `find ... -newer` 判断绑定是否过期、按需调用现有构建脚本，最后 `exec swift run --package-path clients/apple MusicApp`。
+脚本解析两个公开参数、检查 macOS/cargo/swift（以及可选 docker）、以 `find ... -newer` 判断绑定是否过期、按需调用现有构建脚本，最后 `exec swift run --package-path clients/apple Yevune`。
 
 - [x] **Step 4: Run automated and real verification**
 

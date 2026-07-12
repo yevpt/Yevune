@@ -6,7 +6,7 @@
 
 **决策**：
 
-- 权威 `music` bucket 只向**单个服务端实例**授予写/删凭据，该实例是唯一 writer。
+- 权威 `yevune` bucket 只向**单个服务端实例**授予写/删凭据，该实例是唯一 writer。
 - 正式原始音频键统一使用非空 `library/...` 前缀；`uploadTrack` 与 `moveTrack` 拒绝 `inbox/...`、其它前缀和空相对路径。
 - 服务端实例内以共享逐键锁串行化 track、源键、目标键，并用旧 `object_key + etag` 做 SQLite CAS。单写者前提下，补偿可在持锁且当前 ETag 匹配本次 put 后执行普通删除。
 - 外部直传使用独立 inbox bucket 与独立凭据。inbox 仅是非权威暂存，不能直接进入权威 bucket；本阶段不新增 inbox 消费接口。

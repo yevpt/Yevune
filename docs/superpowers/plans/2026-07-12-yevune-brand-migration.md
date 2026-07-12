@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rename the repository and every deployable project identifier from Music to Yevune without retaining data compatibility.
+**Goal:** Use Yevune for the repository and every deployable project identifier, without retaining data compatibility.
 
 **Architecture:** The migration changes package/module identifiers first, then deployment and storage defaults, then the Apple FFI boundary and documentation. OpenSubsonic routes and response schema remain intact; only the server `type` value changes to `yevune-server`. The filesystem root moves only after all tracked changes are committed and verified.
 
@@ -42,11 +42,11 @@ Update `server/src/config.rs` tests to assert `bucket == "yevune"`, `path == "./
 
 Run: `cargo test --manifest-path server/Cargo.toml config::tests::默认值合理 --lib && cargo test --manifest-path contract/Cargo.toml --test response_test`
 
-Expected: assertions report legacy `music`, `music.sqlite`, or `music-server` values.
+Expected: target assertions fail until the current identifiers are applied.
 
 - [ ] **Step 3: Apply the exact identifier mapping.**
 
-Set package names in both Cargo manifests, replace Rust imports from `music_server`/`music_core`, set the UniFFI module and filename to `YevuneCoreFFI`, set `SERVER_TYPE` to `"yevune-server"`, and change config defaults/environment prefix to `YEVUNE`. Update Dockerfile binary selection, Compose service/volume/environment names, `.env.example`, Garage setup commands, test SQLite paths, and test object-key fixtures from `music/` to `library/`.
+Set Cargo package names to `yevune-server` and `yevune-core`, Rust imports to `yevune_server` and `yevune_core`, the UniFFI module and filename to `YevuneCoreFFI`, and `SERVER_TYPE` to `"yevune-server"`. Use `YEVUNE` configuration, the `yevune` Garage bucket, `yevune.sqlite`, and `library/` formal object keys in deployment files and fixtures.
 
 - [ ] **Step 4: Verify Rust and deployment behavior.**
 
@@ -61,9 +61,9 @@ Run: `git add server core contract Dockerfile docker-compose.yml .env.example RE
 ### Task 2: Rename Apple and UniFFI integration
 
 **Files:**
-- Move: `clients/apple/Packages/CoreFFI` → `clients/apple/Packages/YevuneCoreFFI`.
-- Move: `clients/apple/Sources/MusicApp` → `clients/apple/Sources/Yevune`.
-- Move: `clients/apple/Tests/MusicAppTests` → `clients/apple/Tests/YevuneTests`.
+- Apple FFI package: `clients/apple/Packages/YevuneCoreFFI`.
+- Apple application sources: `clients/apple/Sources/Yevune`.
+- Apple tests: `clients/apple/Tests/YevuneTests`.
 - Modify: `clients/apple/Package.swift`, all moved Swift source/tests, `clients/apple/Packages/YevuneCoreFFI/scripts/build-core.sh`, `.gitignore`, `scripts/run-mac-client.sh`, `scripts/tests/run-mac-client-test.sh`.
 
 **Interfaces:**
@@ -78,13 +78,11 @@ Change `scripts/tests/run-mac-client-test.sh` assertions to require `YevuneCoreF
 
 Run: `scripts/tests/run-mac-client-test.sh`
 
-Expected: the expected `Yevune` command is absent because the launcher still emits `MusicApp`.
+Expected: the test rejects a launcher that does not emit the `Yevune` command.
 
-- [ ] **Step 3: Move paths and update module identifiers.**
+- [ ] **Step 3: Apply target paths and module identifiers.**
 
-Run: `git mv clients/apple/Packages/CoreFFI clients/apple/Packages/YevuneCoreFFI && git mv clients/apple/Sources/MusicApp clients/apple/Sources/Yevune && git mv clients/apple/Tests/MusicAppTests clients/apple/Tests/YevuneTests`
-
-Set SwiftPM package/product/executable/test target names to `Yevune`/`YevuneTests`; set the binary and wrapper target names to `YevuneCoreFFI`; replace each `import CoreFFI` with `import YevuneCoreFFI`; replace `@testable import MusicApp` with `@testable import Yevune`; rename `MusicApp` entry struct to `YevuneApp`; update generator paths and library names to `libyevune_core`.
+Use the `YevuneCoreFFI`, `Sources/Yevune`, and `Tests/YevuneTests` directories. Set SwiftPM package/product/executable/test target names to `Yevune`/`YevuneTests`; use `import YevuneCoreFFI` and `@testable import Yevune`; name the entry struct `YevuneApp`; and use `libyevune_core` in the binding generator.
 
 - [ ] **Step 4: Build bindings and verify the Apple client.**
 
@@ -107,7 +105,7 @@ Run: `git add clients/apple .gitignore scripts/run-mac-client.sh scripts/tests/r
 
 - [ ] **Step 1: Add a failing repository-brand check.**
 
-Add `scripts/tests/test-yevune-brand.sh` that runs `rg -n 'MusicApp|music-server|music_core|music-server|MUSIC__|MUSIC_APP_SECRET|Packages/CoreFFI|Sources/MusicApp|Tests/MusicAppTests'` over tracked configuration/source/documentation files and exits nonzero for any match.
+Add `scripts/tests/test-yevune-brand.sh` to search tracked configuration, source, and documentation files for prohibited legacy project identifiers. Exclude the check script itself and exit nonzero when a match is found.
 
 - [ ] **Step 2: Run the check and verify it fails on legacy references.**
 
@@ -129,24 +127,24 @@ Expected: the brand check finds no legacy project identifier and the builds rema
 
 Run: `git add AGENTS.md CLAUDE.md README.md docs openapi.yaml scripts/tests/test-yevune-brand.sh && git commit -m 'docs(rename): 更新 Yevune 项目说明'`
 
-### Task 4: Move the repository directory and restore hooks
+### Task 4: Confirm the repository directory and restore hooks
 
 **Files:**
-- Modify: parent filesystem path `/Users/vpt/Documents/Codes/music` → `/Users/vpt/Documents/Codes/Yevune`; Git worktree metadata and local hooks configuration.
+- Modify: Git worktree metadata and local hooks configuration after the repository is located at `/Users/vpt/Documents/Codes/Yevune`.
 
 **Interfaces:**
 - Consumes: clean `main` after Tasks 1–3.
 - Produces: a repository opened from `/Users/vpt/Documents/Codes/Yevune` with `core.hooksPath=.githooks`.
 
-- [ ] **Step 1: Verify a clean, linear repository before moving it.**
+- [ ] **Step 1: Verify a clean, linear repository.**
 
 Run: `git status --short && test -z "$(git rev-list --merges HEAD)" && git worktree list`
 
-Expected: no tracked or untracked changes and no merge commits; any linked worktree is re-homed or removed before the move.
+Expected: no tracked or untracked changes and no merge commits; any linked worktree is already re-homed or removed.
 
-- [ ] **Step 2: Move the root from its parent directory.**
+- [ ] **Step 2: Restore hooks from the Yevune root.**
 
-Run from `/Users/vpt/Documents/Codes`: `mv music Yevune && cd Yevune && git config core.hooksPath .githooks && ./scripts/setup-git-hooks.sh`
+Run: `cd /Users/vpt/Documents/Codes/Yevune && git config core.hooksPath .githooks && ./scripts/setup-git-hooks.sh`
 
 Expected: `pwd` is `/Users/vpt/Documents/Codes/Yevune` and Git resolves hooks from `Yevune/.githooks`.
 

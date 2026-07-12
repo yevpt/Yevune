@@ -39,8 +39,8 @@
 - Modify: `core/src/client.rs`
 - Modify: `core/src/lib.rs`
 - Modify: `core/tests/scan_test.rs`
-- Modify: `clients/apple/Sources/MusicApp/Model/LoginViewModel.swift`
-- Modify: `clients/apple/Sources/MusicApp/Model/CoreMusicClient.swift`
+- Modify: `clients/apple/Sources/Yevune/Model/LoginViewModel.swift`
+- Modify: `clients/apple/Sources/Yevune/Model/CoreMusicClient.swift`
 
 **Interfaces:**
 - Produces: `DetailedScanResult`、`ScanChange`、`ScanAction`
@@ -55,12 +55,12 @@
 ### Task 3: 单窗口导入与扫描工作流
 
 **Files:**
-- Create: `clients/apple/Sources/MusicApp/Model/LibraryWorkflowViewModel.swift`
-- Create: `clients/apple/Sources/MusicApp/Views/TaskDrawerView.swift`
-- Modify: `clients/apple/Sources/MusicApp/Views/LibraryView.swift`
-- Modify: `clients/apple/Sources/MusicApp/Model/LibraryViewModel.swift`
-- Modify: `clients/apple/Sources/MusicApp/App.swift`
-- Modify: `clients/apple/Tests/MusicAppTests/LoginViewModelTests.swift`
+- Create: `clients/apple/Sources/Yevune/Model/LibraryWorkflowViewModel.swift`
+- Create: `clients/apple/Sources/Yevune/Views/TaskDrawerView.swift`
+- Modify: `clients/apple/Sources/Yevune/Views/LibraryView.swift`
+- Modify: `clients/apple/Sources/Yevune/Model/LibraryViewModel.swift`
+- Modify: `clients/apple/Sources/Yevune/App.swift`
+- Modify: `clients/apple/Tests/YevuneTests/LoginViewModelTests.swift`
 
 **Interfaces:**
 - Produces: `ImportTask` 逐文件状态、`ScanTask` 汇总/明细、`importFiles(_:)`、`scanLibrary()`
