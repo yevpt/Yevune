@@ -153,51 +153,119 @@ struct LibraryView: View {
         }
     }
 
-    /// 资料库详情：专辑列表（含「新增」标记）+ 搜索 + 专辑详情，保留原有全部行为。
+    /// 资料库详情：浏览工具条 + 专辑网格/列表（含「新增」标记）+ 搜索 + 专辑详情，保留原有全部行为。
     @ViewBuilder private var libraryDetail: some View {
-        HStack(spacing: 0) {
-            List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(album.name).font(.headline)
-                        if workflow.newAlbumIDs.contains(album.id) {
-                            Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule())
-                        }
-                    }
-                    Text(album.artist ?? "未知艺人")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .tag(album.id)
-            }
-            .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
-
+        VStack(spacing: 0) {
+            browseToolbar
             Divider()
-
-            if let selection = model.album(id: selectedAlbumID) {
-                MediaDetailView(album: selection, model: media, playlists: playlists)
-            } else {
-                VStack(spacing: 18) {
-                    TextField("搜索艺人、专辑或曲目", text: $query)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { Task { await model.search(query: query) } }
-                    if let result = model.searchResult {
-                        List(result.albums, id: \.id) { album in
-                            Text(album.name)
-                        }
-                    } else if model.isLoading {
-                        ProgressView("正在加载曲库…")
-                    } else if let errorMessage = model.errorMessage {
-                        Text(errorMessage).foregroundStyle(.red)
+            HStack(spacing: 0) {
+                Group {
+                    if model.viewMode == .grid {
+                        AlbumGridView(
+                            albums: model.albums,
+                            client: model.clientForViews,
+                            newAlbumIDs: workflow.newAlbumIDs,
+                            onSelect: { selectedAlbumID = $0.id }
+                        )
                     } else {
-                        Text("选择专辑以查看曲目")
-                            .foregroundStyle(.secondary)
+                        List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(album.name).font(.headline)
+                                    if workflow.newAlbumIDs.contains(album.id) {
+                                        Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule())
+                                    }
+                                }
+                                Text(album.artist ?? "未知艺人")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .tag(album.id)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
+                .frame(minWidth: 260, idealWidth: 340, maxWidth: model.viewMode == .grid ? .infinity : 320)
+
+                Divider()
+
+                if let selection = model.album(id: selectedAlbumID) {
+                    MediaDetailView(album: selection, model: media, playlists: playlists)
+                } else {
+                    VStack(spacing: 18) {
+                        TextField("搜索艺人、专辑或曲目", text: $query)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { Task { await model.search(query: query) } }
+                        if let result = model.searchResult {
+                            List(result.albums, id: \.id) { album in
+                                Text(album.name)
+                            }
+                        } else if model.isLoading {
+                            ProgressView("正在加载曲库…")
+                        } else if let errorMessage = model.errorMessage {
+                            Text(errorMessage).foregroundStyle(.red)
+                        } else {
+                            Text("选择专辑以查看曲目")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+                }
             }
         }
+        .task { await model.loadGenres() }
+    }
+
+    @ViewBuilder private var browseToolbar: some View {
+        HStack(spacing: 16) {
+            Picker("排序", selection: $model.sort) {
+                Text("最近入库").tag(AlbumSort.newest)
+                Text("按专辑名").tag(AlbumSort.alphabeticalByName)
+                Text("按艺人名").tag(AlbumSort.alphabeticalByArtist)
+                Text("最常播放").tag(AlbumSort.frequent)
+                Text("最近播放").tag(AlbumSort.recent)
+            }
+            .frame(maxWidth: 160)
+            .disabled(model.genreFilter != nil || model.yearFilterEnabled)
+
+            Picker("流派", selection: genreBinding) {
+                Text("全部").tag(String?.none)
+                ForEach(model.genres, id: \.value) { genre in
+                    Text(genre.value).tag(String?.some(genre.value))
+                }
+            }
+            .frame(maxWidth: 160)
+
+            Toggle("按年份", isOn: $model.yearFilterEnabled)
+            if model.yearFilterEnabled {
+                Stepper("从 \(model.fromYear)", value: yearBinding(\.fromYear), in: 1900...2100)
+                Stepper("到 \(model.toYear)", value: yearBinding(\.toYear), in: 1900...2100)
+            }
+
+            Spacer()
+
+            Picker("视图", selection: $model.viewMode) {
+                ForEach(LibraryViewMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 160)
+        }
+        .padding()
+        .onChange(of: model.sort) { _, _ in Task { await model.load() } }
+        .onChange(of: model.genreFilter) { _, _ in Task { await model.load() } }
+        .onChange(of: model.yearFilterEnabled) { _, _ in Task { await model.load() } }
+        .onChange(of: model.fromYear) { _, _ in if model.yearFilterEnabled { Task { await model.load() } } }
+        .onChange(of: model.toYear) { _, _ in if model.yearFilterEnabled { Task { await model.load() } } }
+    }
+
+    private var genreBinding: Binding<String?> {
+        Binding(get: { model.genreFilter }, set: { model.genreFilter = $0 })
+    }
+
+    private func yearBinding(_ keyPath: ReferenceWritableKeyPath<LibraryViewModel, UInt32>) -> Binding<UInt32> {
+        Binding(get: { model[keyPath: keyPath] }, set: { model[keyPath: keyPath] = $0 })
     }
 
     private var renameIsPresented: Binding<Bool> {
