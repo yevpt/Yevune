@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
-use crate::api::playlist::{self, PlaylistTree};
+use crate::api::playlist::{self, PlaylistDetail, PlaylistTree};
 use crate::api::scan::DetailedScanResult;
 use crate::api::scan::{self, ScanStatus};
 use crate::auth::AuthenticatedSession;
@@ -167,6 +167,11 @@ impl MusicClient {
     /// 读取当前用户的歌单文件夹树与叶子歌单。
     pub async fn playlist_tree(&self) -> Result<PlaylistTree> {
         playlist::playlist_tree(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 读取单个歌单及其曲目。
+    pub async fn playlist_detail(&self, id: String) -> Result<PlaylistDetail> {
+        playlist::playlist_detail(&self.http, &self.authenticated_session().await?, id).await
     }
 }
 

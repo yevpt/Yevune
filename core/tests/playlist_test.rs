@@ -68,3 +68,24 @@ async fn playlist_tree_decodes_folders_and_playlists() {
     assert_eq!(result.playlists[0].folder_id.as_deref(), Some("folder:1"));
     assert!(requests.lock().await[1].contains("/rest/ext/getPlaylistTree?"));
 }
+
+#[tokio::test]
+async fn playlist_detail_decodes_playlist_and_entries() {
+    let track =
+        "{\"id\":\"track:9\",\"title\":\"Song\",\"size\":10,\"duration\":180,\"bitRate\":320}";
+    let body = format!(
+        "\"playlist\":{{\"id\":\"playlist:5\",\"ownerId\":\"user:1\",\"name\":\"Mix\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":1,\"duration\":180,\"created\":null,\"changed\":null,\"entry\":[{track}]}}"
+    );
+    let (address, requests, handle) = mock_server(vec![ok(""), ok(&body)]).await;
+    let client = logged_in(address).await;
+
+    let detail = client.playlist_detail("playlist:5".into()).await.unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(detail.playlist.name, "Mix");
+    assert_eq!(detail.tracks.len(), 1);
+    assert_eq!(detail.tracks[0].title, "Song");
+    let req = requests.lock().await[1].clone();
+    assert!(req.contains("/rest/getPlaylist?"));
+    assert!(req.contains("id=playlist%3A5"));
+}

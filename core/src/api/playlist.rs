@@ -1,6 +1,6 @@
 //! 当前用户多级歌单：树读取、详情、增删改查与组织。
 
-use contract::{Playlist, PlaylistFolder};
+use contract::{Playlist, PlaylistFolder, Track};
 use serde::Deserialize;
 
 use crate::auth::AuthenticatedSession;
@@ -25,6 +25,27 @@ pub(crate) async fn playlist_tree(
     })
 }
 
+/// 歌单及其（经服务端访问控制过滤后的）曲目。
+#[derive(Clone, uniffi::Record)]
+pub struct PlaylistDetail {
+    pub playlist: Playlist,
+    pub tracks: Vec<Track>,
+}
+
+pub(crate) async fn playlist_detail(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+) -> Result<PlaylistDetail> {
+    let payload: DetailPayload = http
+        .get_json(auth, "getPlaylist", &[("id".to_owned(), id)])
+        .await?;
+    Ok(PlaylistDetail {
+        playlist: payload.playlist.playlist,
+        tracks: payload.playlist.entry,
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TreePayload {
@@ -37,4 +58,17 @@ struct TreeBody {
     folders: Vec<PlaylistFolder>,
     #[serde(default)]
     playlists: Vec<Playlist>,
+}
+
+#[derive(Deserialize)]
+struct DetailPayload {
+    playlist: PlaylistWithEntries,
+}
+
+#[derive(Deserialize)]
+struct PlaylistWithEntries {
+    #[serde(flatten)]
+    playlist: Playlist,
+    #[serde(default)]
+    entry: Vec<Track>,
 }
