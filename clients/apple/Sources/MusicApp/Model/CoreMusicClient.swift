@@ -9,7 +9,15 @@ actor CoreMusicClient: MusicClientProviding {
     }
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {
-        try await client.listAlbums(sort: .newest, offset: offset, size: size)
+        try await client.listAlbums(filter: .sort(.newest), offset: offset, size: size)
+    }
+
+    func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] {
+        try await client.listAlbums(filter: filter, offset: offset, size: size)
+    }
+
+    func listGenres() async throws -> [Genre] {
+        try await client.listGenres()
     }
 
     func search(query: String) async throws -> SearchResult {

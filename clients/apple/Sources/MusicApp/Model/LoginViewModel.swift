@@ -9,6 +9,8 @@ struct SessionValue: Equatable {
 protocol MusicClientProviding: Sendable {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
+    func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album]
+    func listGenres() async throws -> [Genre]
     func search(query: String) async throws -> SearchResult
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track
     func updateTags(id: String, update: TagUpdate) async throws
@@ -37,6 +39,8 @@ protocol MusicClientProviding: Sendable {
 }
 
 extension MusicClientProviding {
+    func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] { throw CocoaError(.featureUnsupported) }
+    func listGenres() async throws -> [Genre] { throw CocoaError(.featureUnsupported) }
     func getAlbum(id: String) async throws -> AlbumDetail { throw CocoaError(.featureUnsupported) }
     func coverArtURL(id: String, size: UInt32?) async throws -> String { throw CocoaError(.featureUnsupported) }
     func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
