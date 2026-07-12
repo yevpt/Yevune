@@ -9,7 +9,7 @@ fn main() -> std::io::Result<()> {
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("../openapi.yaml"));
-    std::fs::write(&out, music_server::openapi::to_yaml())?;
+    std::fs::write(&out, yevune_server::openapi::to_yaml())?;
     println!("已写出 OpenAPI 文档：{}", out.display());
     Ok(())
 }

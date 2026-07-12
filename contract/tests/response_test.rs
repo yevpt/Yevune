@@ -12,13 +12,13 @@ struct ArtistsPayload {
 
 #[test]
 fn ok_信封形状对齐_opensubsonic() {
-    let resp = SubsonicResponse::ok("music-server", "0.1.0", ArtistsPayload { artist_count: 3 });
+    let resp = SubsonicResponse::ok("yevune-server", "0.1.0", ArtistsPayload { artist_count: 3 });
     let json = serde_json::to_value(&resp).unwrap();
 
     let body = &json["subsonic-response"];
     assert!(body.is_object(), "顶层应有 subsonic-response 对象：{json}");
     assert_eq!(body["status"], "ok");
-    assert_eq!(body["type"], "music-server");
+    assert_eq!(body["type"], "yevune-server");
     assert_eq!(body["serverVersion"], "0.1.0");
     assert_eq!(body["version"], "1.16.1");
     assert_eq!(body["openSubsonic"], true);
@@ -30,7 +30,7 @@ fn ok_信封形状对齐_opensubsonic() {
 #[test]
 fn failed_信封含_error() {
     let resp = SubsonicResponse::<ArtistsPayload>::failed(
-        "music-server",
+        "yevune-server",
         "0.1.0",
         SubsonicError {
             code: 40,
@@ -47,7 +47,7 @@ fn failed_信封含_error() {
 
 #[test]
 fn 信封往返() {
-    let resp = SubsonicResponse::ok("music-server", "0.1.0", ArtistsPayload { artist_count: 7 });
+    let resp = SubsonicResponse::ok("yevune-server", "0.1.0", ArtistsPayload { artist_count: 7 });
     let text = serde_json::to_string(&resp).unwrap();
     let back: SubsonicResponse<ArtistsPayload> = serde_json::from_str(&text).unwrap();
     assert_eq!(back, resp);

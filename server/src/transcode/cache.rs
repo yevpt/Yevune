@@ -178,7 +178,7 @@ mod tests {
             .media()
             .upsert_track(&NewTrack {
                 title: "gone".into(),
-                object_key: "music/gone.flac".into(),
+                object_key: "library/gone.flac".into(),
                 ..Default::default()
             })
             .await
@@ -254,7 +254,7 @@ mod tests {
             .media()
             .upsert_track(&NewTrack {
                 title: "locked".into(),
-                object_key: "music/locked.flac".into(),
+                object_key: "library/locked.flac".into(),
                 ..Default::default()
             })
             .await

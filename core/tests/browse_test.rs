@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use music_core::{AlbumFilter, AlbumSort, MusicClient};
+use yevune_core::{AlbumFilter, AlbumSort, MusicClient};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -79,7 +79,7 @@ fn response_for(request: &str) -> String {
         ""
     };
     format!(
-        "{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true{comma}{data}}}}}",
+        "{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true{comma}{data}}}}}",
         comma = if data.is_empty() { "" } else { "," }
     )
 }

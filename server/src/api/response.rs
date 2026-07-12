@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::auth::AuthError;
 
-pub const SERVER_TYPE: &str = "music-server";
+pub const SERVER_TYPE: &str = "yevune-server";
 pub const API_VERSION: &str = contract::response::OPEN_SUBSONIC_API_VERSION;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

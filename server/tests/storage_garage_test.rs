@@ -4,21 +4,21 @@
 //! 本地验证：起一个 MinIO/Garage 后设置下列变量再 `cargo test`：
 //!
 //! ```text
-//! MUSIC_TEST_S3_ENDPOINT=http://127.0.0.1:9000
-//! MUSIC_TEST_S3_BUCKET=music
-//! MUSIC_TEST_S3_ACCESS_KEY=...
-//! MUSIC_TEST_S3_SECRET_KEY=...
+//! YEVUNE_TEST_S3_ENDPOINT=http://127.0.0.1:9000
+//! YEVUNE_TEST_S3_BUCKET=yevune
+//! YEVUNE_TEST_S3_ACCESS_KEY=...
+//! YEVUNE_TEST_S3_SECRET_KEY=...
 //! ```
 
 use bytes::Bytes;
-use music_server::storage::{GarageConfig, GarageStore, ObjectStore, StorageError};
+use yevune_server::storage::{GarageConfig, GarageStore, ObjectStore, StorageError};
 
 /// 从环境变量构造配置；未配置端点时返回 None（调用方跳过）。
 fn config_from_env() -> Option<GarageConfig> {
-    let endpoint = std::env::var("MUSIC_TEST_S3_ENDPOINT").ok()?;
-    let bucket = std::env::var("MUSIC_TEST_S3_BUCKET").unwrap_or_else(|_| "music".to_string());
-    let access_key = std::env::var("MUSIC_TEST_S3_ACCESS_KEY").unwrap_or_default();
-    let secret_key = std::env::var("MUSIC_TEST_S3_SECRET_KEY").unwrap_or_default();
+    let endpoint = std::env::var("YEVUNE_TEST_S3_ENDPOINT").ok()?;
+    let bucket = std::env::var("YEVUNE_TEST_S3_BUCKET").unwrap_or_else(|_| "yevune".to_string());
+    let access_key = std::env::var("YEVUNE_TEST_S3_ACCESS_KEY").unwrap_or_default();
+    let secret_key = std::env::var("YEVUNE_TEST_S3_SECRET_KEY").unwrap_or_default();
     Some(GarageConfig::new(endpoint, bucket, access_key, secret_key))
 }
 
@@ -31,7 +31,7 @@ fn store_from_env() -> Option<GarageStore> {
 #[tokio::test]
 async fn garage_往返_put_head_get_range_list_delete() {
     let Some(store) = store_from_env() else {
-        eprintln!("跳过：未设置 MUSIC_TEST_S3_ENDPOINT（无本地 S3 后端）");
+        eprintln!("跳过：未设置 YEVUNE_TEST_S3_ENDPOINT（无本地 S3 后端）");
         return;
     };
 
@@ -77,7 +77,7 @@ async fn garage_往返_put_head_get_range_list_delete() {
 #[tokio::test]
 async fn garage_分页_用_token_翻页且不重不漏() {
     let Some(mut config) = config_from_env() else {
-        eprintln!("跳过：未设置 MUSIC_TEST_S3_ENDPOINT（无本地 S3 后端）");
+        eprintln!("跳过：未设置 YEVUNE_TEST_S3_ENDPOINT（无本地 S3 后端）");
         return;
     };
     // 小页大小以真实触发 list_with_offset 续页路径。
@@ -115,7 +115,7 @@ async fn garage_分页_用_token_翻页且不重不漏() {
 #[tokio::test]
 async fn garage_put_file_大于单_part_可往返并删除() {
     let Some(store) = store_from_env() else {
-        eprintln!("跳过：未设置 MUSIC_TEST_S3_ENDPOINT（无本地 S3 后端）");
+        eprintln!("跳过：未设置 YEVUNE_TEST_S3_ENDPOINT（无本地 S3 后端）");
         return;
     };
     let dir = tempfile::tempdir().unwrap();

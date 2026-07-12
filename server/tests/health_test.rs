@@ -4,17 +4,17 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use music_server::api::AppState;
-use music_server::index::Index;
-use music_server::storage::{MemoryStore, ObjectStore};
 use tower::ServiceExt;
+use yevune_server::api::AppState;
+use yevune_server::index::Index;
+use yevune_server::storage::{MemoryStore, ObjectStore};
 
 async fn test_app() -> axum::Router {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.keep().join("health.sqlite");
     let index = Index::connect(&path).await.unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(MemoryStore::new());
-    music_server::app(AppState::new(index, store, "test", "/missing/ffmpeg"))
+    yevune_server::app(AppState::new(index, store, "test", "/missing/ffmpeg"))
 }
 
 #[tokio::test]

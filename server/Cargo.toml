@@ -2,7 +2,7 @@
 resolver = "2"
 
 [package]
-name = "music-server"
+name = "yevune-server"
 version = "0.1.0"
 edition = "2021"
 description = "自托管家庭音乐流媒体服务端（OpenSubsonic 兼容）"

@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use music_core::{MusicClient, UploadMetadata, UploadProgress};
+use yevune_core::{MusicClient, UploadMetadata, UploadProgress};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 #[tokio::test]
 async fn upload_streams_a_local_file_and_reports_progress() {
-    let path = std::env::temp_dir().join(format!("music-core-upload-{}.flac", std::process::id()));
+    let path = std::env::temp_dir().join(format!("yevune-core-upload-{}.flac", std::process::id()));
     std::fs::write(&path, b"small but complete audio fixture").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -15,13 +15,13 @@ async fn upload_streams_a_local_file_and_reports_progress() {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_request(&mut socket).await;
             let body = if request_number == 0 {
-                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}".to_owned()
+                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}".to_owned()
             } else {
                 assert!(request.starts_with("POST /rest/ext/uploadTrack?"));
                 assert!(request.contains("name=\"key\""));
                 assert!(request.contains("library/imported.flac"));
                 assert!(request.contains("small but complete audio fixture"));
-                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true,\"track\":{\"id\":\"tr-1\",\"title\":\"Imported\",\"size\":32,\"duration\":120,\"bitRate\":320}}}".to_owned()
+                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true,\"track\":{\"id\":\"tr-1\",\"title\":\"Imported\",\"size\":32,\"duration\":120,\"bitRate\":320}}}".to_owned()
             };
             let response = format!(
                 "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",

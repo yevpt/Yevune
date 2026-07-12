@@ -1,4 +1,4 @@
-use music_core::MusicClient;
+use yevune_core::MusicClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 

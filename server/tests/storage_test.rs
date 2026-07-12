@@ -4,7 +4,7 @@
 //! 也供下游（scanner/transcode）测试直接复用假实现。
 
 use bytes::Bytes;
-use music_server::storage::{MemoryStore, ObjectStore, StorageError, STREAM_CHUNK_SIZE};
+use yevune_server::storage::{MemoryStore, ObjectStore, StorageError, STREAM_CHUNK_SIZE};
 
 fn payload(s: &str) -> Bytes {
     Bytes::from(s.as_bytes().to_vec())
@@ -33,11 +33,11 @@ async fn put_file_以有界分块上传完整文件() {
 #[tokio::test]
 async fn put_然后_head_返回_size_与_etag() {
     let store = MemoryStore::new();
-    let meta = store.put("music/a.flac", payload("hello")).await.unwrap();
+    let meta = store.put("library/a.flac", payload("hello")).await.unwrap();
     assert_eq!(meta.size, 5);
     assert!(meta.etag.is_some(), "put 应返回 etag");
 
-    let head = store.head("music/a.flac").await.unwrap();
+    let head = store.head("library/a.flac").await.unwrap();
     assert_eq!(head.size, 5);
     assert_eq!(head.etag, meta.etag, "head 的 etag 应与 put 一致");
 }
@@ -99,13 +99,13 @@ async fn delete_不存在的_key_幂等() {
 #[tokio::test]
 async fn list_按前缀过滤_并按_key_升序() {
     let store = MemoryStore::new();
-    store.put("music/b.flac", payload("2")).await.unwrap();
-    store.put("music/a.flac", payload("1")).await.unwrap();
+    store.put("library/b.flac", payload("2")).await.unwrap();
+    store.put("library/a.flac", payload("1")).await.unwrap();
     store.put("covers/x.jpg", payload("3")).await.unwrap();
 
-    let page = store.list("music/", None).await.unwrap();
+    let page = store.list("library/", None).await.unwrap();
     let keys: Vec<_> = page.entries.iter().map(|e| e.key.clone()).collect();
-    assert_eq!(keys, vec!["music/a.flac", "music/b.flac"]);
+    assert_eq!(keys, vec!["library/a.flac", "library/b.flac"]);
     assert!(page.next_token.is_none(), "结果未满一页，不应有续页 token");
     // 元数据随列举一并返回。
     assert_eq!(page.entries[0].size, 1);

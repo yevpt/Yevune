@@ -8,13 +8,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use music_server::index::Index;
-use music_server::scanner::{Scanner, HEADER_READ_CAP};
-use music_server::storage::{
-    ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StoreResult,
-};
 use tempfile::TempDir;
 use tokio::sync::Notify;
+use yevune_server::index::Index;
+use yevune_server::scanner::{Scanner, HEADER_READ_CAP};
+use yevune_server::storage::{
+    ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StoreResult,
+};
 
 /// 读取 fixture FLAC 的原始字节。
 fn fixture(name: &str) -> Bytes {
@@ -37,8 +37,14 @@ async fn temp_index() -> (Index, TempDir) {
 /// 装入两首带标签 + 封面的 FLAC 的内存存储。
 async fn store_with_two_tracks() -> Arc<MemoryStore> {
     let store = Arc::new(MemoryStore::new());
-    store.put("music/a.flac", fixture("a.flac")).await.unwrap();
-    store.put("music/b.flac", fixture("b.flac")).await.unwrap();
+    store
+        .put("library/a.flac", fixture("a.flac"))
+        .await
+        .unwrap();
+    store
+        .put("library/b.flac", fixture("b.flac"))
+        .await
+        .unwrap();
     store
         .put("transcode/1/opus_96.opus", fixture("a.flac"))
         .await
@@ -113,7 +119,7 @@ async fn deleted_object_marks_track_removed() {
 
     scanner.scan(None).await.unwrap();
     // 源文件消失。
-    store.delete("music/b.flac").await.unwrap();
+    store.delete("library/b.flac").await.unwrap();
     let report = scanner.scan(None).await.unwrap();
 
     assert_eq!(report.deleted, 1, "b.flac 消失应删除 1 首");
@@ -125,7 +131,7 @@ async fn deleted_object_marks_track_removed() {
         .unwrap();
     assert_eq!(count, 1, "应只剩 a.flac");
     let gone: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE object_key = 'music/b.flac'")
+        sqlx::query_scalar("SELECT id FROM tracks WHERE object_key = 'library/b.flac'")
             .fetch_optional(index.pool())
             .await
             .unwrap();
@@ -135,19 +141,25 @@ async fn deleted_object_marks_track_removed() {
 #[tokio::test]
 async fn etag_change_updates_track_in_place() {
     let store = Arc::new(MemoryStore::new());
-    store.put("music/a.flac", fixture("a.flac")).await.unwrap();
+    store
+        .put("library/a.flac", fixture("a.flac"))
+        .await
+        .unwrap();
     let (index, _dir) = temp_index().await;
     let scanner = Scanner::new(store.clone(), index.clone());
 
     scanner.scan(None).await.unwrap();
     let id_before: i64 =
-        sqlx::query_scalar("SELECT id FROM tracks WHERE object_key = 'music/a.flac'")
+        sqlx::query_scalar("SELECT id FROM tracks WHERE object_key = 'library/a.flac'")
             .fetch_one(index.pool())
             .await
             .unwrap();
 
     // 同一 key 覆盖为不同内容（b.flac 标签/etag 不同）。
-    store.put("music/a.flac", fixture("b.flac")).await.unwrap();
+    store
+        .put("library/a.flac", fixture("b.flac"))
+        .await
+        .unwrap();
     let report = scanner.scan(None).await.unwrap();
 
     assert_eq!(report.updated, 1, "etag 变化应更新 1 首");
@@ -156,7 +168,7 @@ async fn etag_change_updates_track_in_place() {
 
     // 原地更新：主键不变，标题变为 b 的标题。
     let (id_after, title): (i64, String) =
-        sqlx::query_as("SELECT id, title FROM tracks WHERE object_key = 'music/a.flac'")
+        sqlx::query_as("SELECT id, title FROM tracks WHERE object_key = 'library/a.flac'")
             .fetch_one(index.pool())
             .await
             .unwrap();
@@ -215,7 +227,7 @@ async fn scan_reads_only_header_not_whole_file() {
     );
 
     let store = Arc::new(CountingStore::new());
-    store.put("music/large.flac", big).await.unwrap();
+    store.put("library/large.flac", big).await.unwrap();
     let (index, _dir) = temp_index().await;
     let scanner = Scanner::new(store.clone(), index.clone());
 
@@ -232,7 +244,7 @@ async fn scan_reads_only_header_not_whole_file() {
 
     // 且标签仍被正确解析。
     let title: String =
-        sqlx::query_scalar("SELECT title FROM tracks WHERE object_key = 'music/large.flac'")
+        sqlx::query_scalar("SELECT title FROM tracks WHERE object_key = 'library/large.flac'")
             .fetch_one(index.pool())
             .await
             .unwrap();

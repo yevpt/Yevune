@@ -10,13 +10,13 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use music_server::api::AppState;
-use music_server::auth::{Encryptor, UserAdmin};
-use music_server::index::{Index, NewTrack};
-use music_server::storage::{
+use tower::ServiceExt;
+use yevune_server::api::AppState;
+use yevune_server::auth::{Encryptor, UserAdmin};
+use yevune_server::index::{Index, NewTrack};
+use yevune_server::storage::{
     ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StoreResult,
 };
-use tower::ServiceExt;
 
 struct Fixture {
     state: AppState,
@@ -33,7 +33,7 @@ struct Fixture {
 impl Fixture {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let index = Index::connect(&dir.path().join("music.sqlite"))
+        let index = Index::connect(&dir.path().join("yevune.sqlite"))
             .await
             .unwrap();
         let encryptor = Encryptor::new("pwd:test-secret");
@@ -61,7 +61,7 @@ impl Fixture {
                 codec: Some("flac".into()),
                 bitrate: Some(900),
                 size: Some(11),
-                object_key: "music/test.flac".into(),
+                object_key: "library/test.flac".into(),
                 ..NewTrack::default()
             })
             .await
@@ -84,7 +84,10 @@ impl Fixture {
 
         let store = Arc::new(MemoryStore::new());
         store
-            .put("music/test.flac", bytes::Bytes::from_static(b"hello-audio"))
+            .put(
+                "library/test.flac",
+                bytes::Bytes::from_static(b"hello-audio"),
+            )
             .await
             .unwrap();
         store
@@ -117,7 +120,7 @@ impl Fixture {
     }
 
     async fn get(&self, uri: &str) -> axum::response::Response {
-        music_server::app(self.state.clone())
+        yevune_server::app(self.state.clone())
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -459,7 +462,7 @@ async fn media_errors_use_protocol_envelope_and_do_not_leak_storage_details() {
         .upsert_track(&NewTrack {
             title: "Missing Object".into(),
             codec: Some("flac".into()),
-            object_key: "music/missing.flac".into(),
+            object_key: "library/missing.flac".into(),
             ..NewTrack::default()
         })
         .await
@@ -660,7 +663,7 @@ async fn direct_media_honors_single_http_range_without_buffering_whole_object() 
         format!("/rest/stream?id={}&format=raw", fixture.track_id),
         format!("/rest/download?id={}", fixture.track_id),
     ] {
-        let response = music_server::app(fixture.state.clone())
+        let response = yevune_server::app(fixture.state.clone())
             .oneshot(
                 Request::builder()
                     .uri(fixture.uri(&path))
@@ -896,7 +899,7 @@ async fn cover_art_resize_expensive_stage_is_limited_to_two_requests() {
 
     let mut requests = Vec::new();
     for _ in 0..3 {
-        let app = music_server::app(state.clone());
+        let app = yevune_server::app(state.clone());
         let uri = fixture.uri("/rest/getCoverArt?id=covers/concurrent.png&size=10");
         requests.push(tokio::spawn(async move {
             app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -1097,7 +1100,7 @@ async fn song_content_type_uses_standard_mime_mapping() {
         .upsert_track(&NewTrack {
             title: "MP3 Song".into(),
             codec: Some("mp3".into()),
-            object_key: "music/test.mp3".into(),
+            object_key: "library/test.mp3".into(),
             ..NewTrack::default()
         })
         .await
@@ -1122,7 +1125,7 @@ async fn search_treats_punctuation_as_literal_text() {
         .media()
         .upsert_track(&NewTrack {
             title: "AC/DC Song".into(),
-            object_key: "music/acdc.flac".into(),
+            object_key: "library/acdc.flac".into(),
             ..NewTrack::default()
         })
         .await

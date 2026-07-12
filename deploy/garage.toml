@@ -1,4 +1,4 @@
-# Garage 最小配置（本地/家庭单节点骨架）。
+# Yevune 的 Garage 最小配置（本地/家庭单节点骨架）。
 # 生产部署请重新生成 rpc_secret 与访问密钥；详见 https://garagehq.deuxfleurs.fr/
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"

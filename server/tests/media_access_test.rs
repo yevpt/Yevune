@@ -6,7 +6,7 @@ mod common;
 
 use bytes::Bytes;
 use contract::{Principal, PrincipalType, ScopeType};
-use music_server::storage::ObjectStore;
+use yevune_server::storage::ObjectStore;
 
 /// 播种：一张 album1（公开曲目 open + 受限曲目 secret）与全受限 album2；音频与封面写入存储。
 struct Media {

@@ -1,6 +1,6 @@
 //! OpenAPI 生成：覆盖主要端点与 contract 组件 schema，且产物与实现一致（计划 T10）。
 
-use music_server::openapi::{document, to_yaml};
+use yevune_server::openapi::{document, to_yaml};
 
 #[test]
 fn 文档覆盖主要端点() {

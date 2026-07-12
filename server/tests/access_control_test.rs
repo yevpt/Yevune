@@ -4,12 +4,12 @@
 //! 查询时评估（新入库曲目自动继承专辑/艺人规则）。用临时 SQLite 文件做集成测试。
 
 use contract::{Principal, PrincipalType, ScopeType};
-use music_server::index::{Index, NewTrack};
+use yevune_server::index::{Index, NewTrack};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("music.sqlite");
+    let path = dir.path().join("yevune.sqlite");
     let index = Index::connect(&path).await.expect("连接并迁移失败");
     (index, dir)
 }

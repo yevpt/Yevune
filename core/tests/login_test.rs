@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use music_core::MusicClient;
+use yevune_core::MusicClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -26,7 +26,7 @@ async fn login_pings_with_subsonic_credentials() {
             expected_paths.lock().await.push(first_line);
             socket
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 115\r\nconnection: close\r\n\r\n{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}",
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 123\r\nconnection: close\r\n\r\n{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}",
                 )
                 .await
                 .unwrap();

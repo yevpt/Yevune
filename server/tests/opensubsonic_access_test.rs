@@ -1,13 +1,13 @@
 //! 端到端：OpenSubsonic 浏览/搜索读端点强制曲库访问控制（设计文档 §6 / 计划 T9）。
 //!
-//! 用真实 HTTP 请求驱动 [`music_server::app`]，断言受限内容对无授权用户
+//! 用真实 HTTP 请求驱动 [`yevune_server::app`]，断言受限内容对无授权用户
 //! 在浏览/搜索/取详情各路径均不可见，对授权用户与管理员可见。
 
 mod common;
 
 use contract::{Principal, PrincipalType, ScopeType};
-use music_server::index::NewTrack;
 use serde_json::Value;
+use yevune_server::index::NewTrack;
 
 /// 内部主键 → OpenSubsonic 对外 opaque id（前缀区分实体类型）。
 fn tr(id: i64) -> String {

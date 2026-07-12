@@ -1,11 +1,11 @@
 //! index 层集成测试：迁移、模式、WAL 与各仓储行为（临时 SQLite 文件）。
 
-use music_server::index::{Index, NewTrack, NewTranscodeCache};
+use yevune_server::index::{Index, NewTrack, NewTranscodeCache};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("music.sqlite");
+    let path = dir.path().join("yevune.sqlite");
     let index = Index::connect(&path).await.expect("连接并迁移失败");
     (index, dir)
 }
@@ -58,7 +58,7 @@ async fn transcode_cache_仓储可登记查询更新与删除() {
     let (index, _dir) = temp_index().await;
     let track_id = index
         .media()
-        .upsert_track(&new_track("Cache Me", None, None, "music/cache.flac"))
+        .upsert_track(&new_track("Cache Me", None, None, "library/cache.flac"))
         .await
         .unwrap();
     let cache = index.transcode_cache();
@@ -152,7 +152,7 @@ async fn media_upsert_track_并读取_dto() {
             "晴天",
             Some(album),
             Some(artist),
-            "music/jay/qingtian.flac",
+            "library/jay/qingtian.flac",
         ))
         .await
         .unwrap();
@@ -165,7 +165,7 @@ async fn media_upsert_track_并读取_dto() {
     assert_eq!(track.artist.as_deref(), Some("周杰伦"));
     assert_eq!(track.suffix.as_deref(), Some("flac"));
     assert_eq!(track.duration, 200);
-    assert_eq!(track.path.as_deref(), Some("music/jay/qingtian.flac"));
+    assert_eq!(track.path.as_deref(), Some("library/jay/qingtian.flac"));
 }
 
 #[tokio::test]
@@ -173,11 +173,11 @@ async fn media_upsert_track_幂等更新() {
     let (index, _dir) = temp_index().await;
     let media = index.media();
     let id1 = media
-        .upsert_track(&new_track("旧标题", None, None, "music/x.flac"))
+        .upsert_track(&new_track("旧标题", None, None, "library/x.flac"))
         .await
         .unwrap();
     let id2 = media
-        .upsert_track(&new_track("新标题", None, None, "music/x.flac"))
+        .upsert_track(&new_track("新标题", None, None, "library/x.flac"))
         .await
         .unwrap();
     assert_eq!(id1, id2, "同 object_key 应更新而非新增");
@@ -199,7 +199,7 @@ async fn media_get_album_聚合曲目数与时长() {
             "晴天",
             Some(album),
             Some(artist),
-            "music/a.flac",
+            "library/a.flac",
         ))
         .await
         .unwrap();
@@ -208,7 +208,7 @@ async fn media_get_album_聚合曲目数与时长() {
             "以父之名",
             Some(album),
             Some(artist),
-            "music/b.flac",
+            "library/b.flac",
         ))
         .await
         .unwrap();
@@ -248,7 +248,7 @@ async fn media_search_命中曲目与专辑() {
         .await
         .unwrap();
     media
-        .upsert_track(&new_track("晴天", Some(al), Some(ar), "music/a.flac"))
+        .upsert_track(&new_track("晴天", Some(al), Some(ar), "library/a.flac"))
         .await
         .unwrap();
 
@@ -268,12 +268,18 @@ async fn media_delete_by_object_key() {
     let (index, _dir) = temp_index().await;
     let media = index.media();
     let id = media
-        .upsert_track(&new_track("待删", None, None, "music/del.flac"))
+        .upsert_track(&new_track("待删", None, None, "library/del.flac"))
         .await
         .unwrap();
-    assert!(media.delete_by_object_key("music/del.flac").await.unwrap());
+    assert!(media
+        .delete_by_object_key("library/del.flac")
+        .await
+        .unwrap());
     assert!(media.get_track(id).await.unwrap().is_none());
-    assert!(!media.delete_by_object_key("music/del.flac").await.unwrap());
+    assert!(!media
+        .delete_by_object_key("library/del.flac")
+        .await
+        .unwrap());
 }
 
 // ─────────────────────────── User / Role ───────────────────────────
@@ -457,11 +463,11 @@ async fn playlist_曲目有序增删与聚合() {
     let papa = seed_user(&index, "papa").await;
 
     let t1 = media
-        .upsert_track(&new_track("A", None, None, "music/a.flac"))
+        .upsert_track(&new_track("A", None, None, "library/a.flac"))
         .await
         .unwrap();
     let t2 = media
-        .upsert_track(&new_track("B", None, None, "music/b.flac"))
+        .upsert_track(&new_track("B", None, None, "library/b.flac"))
         .await
         .unwrap();
     let pid = pl.create_playlist(papa, "L", None).await.unwrap();
@@ -530,7 +536,7 @@ async fn annotation_收藏评分与播放计数_按用户隔离() {
 // ─────────────────────────── Access control ───────────────────────────
 
 use contract::{Principal, PrincipalType, ScopeType};
-use music_server::index::TrackScope;
+use yevune_server::index::TrackScope;
 
 fn user_grant(id: i64) -> Principal {
     Principal {

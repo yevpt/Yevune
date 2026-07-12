@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use music_core::MusicClient;
+use yevune_core::MusicClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -38,7 +38,7 @@ async fn mock_server(
 }
 
 fn ok(inner: &str) -> String {
-    format!("{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true{}}}}}",
+    format!("{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true{}}}}}",
         if inner.is_empty() { String::new() } else { format!(",{inner}") })
 }
 

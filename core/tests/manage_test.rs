@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use music_core::{MusicClient, TagUpdate};
+use yevune_core::{MusicClient, TagUpdate};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -20,7 +20,7 @@ async fn update_tags_sends_only_requested_override_fields() {
                 .lock()
                 .await
                 .push(String::from_utf8_lossy(&bytes[..count]).into_owned());
-            let body = "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"music\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}";
+            let body = "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}";
             socket.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         }
     });

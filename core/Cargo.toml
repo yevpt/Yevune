@@ -1,5 +1,5 @@
 [package]
-name = "music-core"
+name = "yevune-core"
 version = "0.1.0"
 edition = "2021"
 description = "家庭音乐服务的跨平台 Rust 客户端核心"

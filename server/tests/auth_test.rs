@@ -1,13 +1,13 @@
 //! auth 层集成测试：密码可逆加密、Subsonic/Bearer 认证、用户/角色管理、提取器。
 
 use md5::{Digest, Md5};
-use music_server::auth::{verify_subsonic, Encryptor, SubsonicCredentials};
-use music_server::index::Index;
+use yevune_server::auth::{verify_subsonic, Encryptor, SubsonicCredentials};
+use yevune_server::index::Index;
 
 /// 在临时目录建一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("music.sqlite");
+    let path = dir.path().join("yevune.sqlite");
     let index = Index::connect(&path).await.expect("连接并迁移失败");
     (index, dir)
 }
@@ -176,8 +176,8 @@ async fn subsonic_缺凭证被拒() {
 
 // ─────────────────────────── Bearer 会话令牌 ───────────────────────────
 
-use music_server::auth::{issue_bearer, issue_bearer_with_expiry, verify_bearer, BearerKey};
 use std::time::Duration;
+use yevune_server::auth::{issue_bearer, issue_bearer_with_expiry, verify_bearer, BearerKey};
 
 #[test]
 fn bearer_签发后可校验还原用户id() {
@@ -223,7 +223,7 @@ fn bearer_格式损坏被拒() {
 
 // ─────────────────────────── 用户/角色管理 ───────────────────────────
 
-use music_server::auth::UserAdmin;
+use yevune_server::auth::UserAdmin;
 
 #[tokio::test]
 async fn 创建普通用户赋予member角色且密码可认证() {
@@ -376,8 +376,8 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use axum::routing::get;
 use axum::Router;
-use music_server::auth::{AdminUser, AuthState, CurrentUser};
 use tower::ServiceExt;
+use yevune_server::auth::{AdminUser, AuthState, CurrentUser};
 
 async fn whoami(user: CurrentUser) -> String {
     format!("{}:{}", user.name, user.admin)

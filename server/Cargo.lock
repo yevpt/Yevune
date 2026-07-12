@@ -1495,40 +1495,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "music-server"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "axum",
- "base64",
- "bytes",
- "chrono",
- "config",
- "contract",
- "form_urlencoded",
- "futures",
- "hex",
- "hmac",
- "http-body-util",
- "image",
- "lofty",
- "md-5 0.10.6",
- "object_store",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tempfile",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
- "utoipa",
-]
-
-[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3474,6 +3440,40 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "yevune-server"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "axum",
+ "base64",
+ "bytes",
+ "chrono",
+ "config",
+ "contract",
+ "form_urlencoded",
+ "futures",
+ "hex",
+ "hmac",
+ "http-body-util",
+ "image",
+ "lofty",
+ "md-5 0.10.6",
+ "object_store",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+]
 
 [[package]]
 name = "yoke"

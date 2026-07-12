@@ -6,13 +6,13 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use music_server::api::AppState;
-use music_server::app;
-use music_server::auth::{issue_bearer, BearerKey};
-use music_server::index::{Index, NewTrack};
-use music_server::storage::MemoryStore;
 use tempfile::TempDir;
 use tower::ServiceExt;
+use yevune_server::api::AppState;
+use yevune_server::app;
+use yevune_server::auth::{issue_bearer, BearerKey};
+use yevune_server::index::{Index, NewTrack};
+use yevune_server::storage::MemoryStore;
 
 /// 测试用应用密钥；bearer 令牌密钥与之域分离派生，须与 [`AppState`] 一致。
 const TEST_APP_SECRET: &str = "test-secret";
@@ -29,12 +29,12 @@ pub struct Ctx {
 /// 装配一个全新测试应用（临时 SQLite + 内存对象存储）。
 pub async fn ctx() -> Ctx {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("music.sqlite");
+    let path = dir.path().join("yevune.sqlite");
     let index = Index::connect(&path).await.expect("连接并迁移失败");
     let store = Arc::new(MemoryStore::new());
     let state = AppState::new(
         index.clone(),
-        store.clone() as Arc<dyn music_server::storage::ObjectStore>,
+        store.clone() as Arc<dyn yevune_server::storage::ObjectStore>,
         TEST_APP_SECRET,
         "ffmpeg",
     );

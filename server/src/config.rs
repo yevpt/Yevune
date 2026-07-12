@@ -1,7 +1,7 @@
 //! 服务端配置：TOML 文件 + 环境变量分层覆盖，全部字段带合理默认。
 //!
-//! 加载顺序（后者覆盖前者）：内建默认 → TOML 文件 → 环境变量（前缀 `MUSIC`，
-//! 分隔符 `__`，如 `MUSIC__SERVER__PORT=8080`）。字段对齐设计文档 §11。
+//! 加载顺序（后者覆盖前者）：内建默认 → TOML 文件 → 环境变量（前缀 `YEVUNE`，
+//! 分隔符 `__`，如 `YEVUNE__SERVER__PORT=8080`）。字段对齐设计文档 §11。
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -135,7 +135,7 @@ impl Default for GarageConfig {
     fn default() -> Self {
         Self {
             endpoint: "http://localhost:3900".to_string(),
-            bucket: "music".to_string(),
+            bucket: "yevune".to_string(),
             region: "garage".to_string(),
             access_key: String::new(),
             secret_key: String::new(),
@@ -146,7 +146,7 @@ impl Default for GarageConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            path: PathBuf::from("./data/music.sqlite"),
+            path: PathBuf::from("./data/yevune.sqlite"),
         }
     }
 }
@@ -187,9 +187,9 @@ impl ServerConfig {
 }
 
 impl Config {
-    /// 默认配置文件路径：环境变量 `MUSIC_CONFIG` 优先，否则 `./config.toml`（若存在）。
+    /// 默认配置文件路径：环境变量 `YEVUNE_CONFIG` 优先，否则 `./config.toml`（若存在）。
     pub fn default_path() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("MUSIC_CONFIG") {
+        if let Ok(p) = std::env::var("YEVUNE_CONFIG") {
             return Some(PathBuf::from(p));
         }
         let default = PathBuf::from("config.toml");
@@ -200,7 +200,7 @@ impl Config {
     ///
     /// 文件不存在时静默跳过（仅用默认 + 环境变量）。
     pub fn load(path: Option<&Path>) -> Result<Config, config::ConfigError> {
-        let env = config::Environment::with_prefix("MUSIC")
+        let env = config::Environment::with_prefix("YEVUNE")
             .separator("__")
             .try_parsing(true);
         build(path, env)
@@ -226,7 +226,7 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        config::Environment::with_prefix("MUSIC")
+        config::Environment::with_prefix("YEVUNE")
             .separator("__")
             .try_parsing(true)
             .source(Some(map))
@@ -237,8 +237,8 @@ mod tests {
         let cfg = build(None, env_from(&[])).unwrap();
         assert_eq!(cfg.server.host, "0.0.0.0");
         assert_eq!(cfg.server.port, 4533);
-        assert_eq!(cfg.garage.bucket, "music");
-        assert_eq!(cfg.database.path, PathBuf::from("./data/music.sqlite"));
+        assert_eq!(cfg.garage.bucket, "yevune");
+        assert_eq!(cfg.database.path, PathBuf::from("./data/yevune.sqlite"));
         assert_eq!(cfg.scan.interval_seconds, 3600);
         assert_eq!(cfg.log.level, "info");
         assert!(cfg.tls.is_none());
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn toml_文件覆盖默认值() {
-        let dir = std::env::temp_dir().join(format!("music-cfg-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("yevune-cfg-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
         std::fs::write(
@@ -276,7 +276,7 @@ level = "debug"
 
     #[test]
     fn 环境变量覆盖文件与默认值() {
-        let dir = std::env::temp_dir().join(format!("music-cfg-env-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("yevune-cfg-env-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
         std::fs::write(&path, "[server]\nport = 8080\n").unwrap();
@@ -284,8 +284,8 @@ level = "debug"
         let cfg = build(
             Some(&path),
             env_from(&[
-                ("MUSIC__SERVER__PORT", "9999"),
-                ("MUSIC__LOG__LEVEL", "trace"),
+                ("YEVUNE__SERVER__PORT", "9999"),
+                ("YEVUNE__LOG__LEVEL", "trace"),
             ]),
         )
         .unwrap();

@@ -11,14 +11,14 @@ use axum::http::{header, Method, Request, StatusCode};
 use bytes::Bytes;
 use futures::{stream, StreamExt};
 use http_body_util::BodyExt;
-use music_server::api::AppState;
-use music_server::auth::{Encryptor, UserAdmin};
-use music_server::index::Index;
-use music_server::storage::{
-    ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StorageResult, StorageError,
-};
 use tokio::sync::Notify;
 use tower::ServiceExt;
+use yevune_server::api::AppState;
+use yevune_server::auth::{Encryptor, UserAdmin};
+use yevune_server::index::Index;
+use yevune_server::storage::{
+    ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StorageResult, StorageError,
+};
 
 struct Fixture {
     state: AppState,
@@ -165,7 +165,7 @@ struct GatedFixture {
 impl GatedFixture {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let index = Index::connect(&dir.path().join("music.sqlite"))
+        let index = Index::connect(&dir.path().join("yevune.sqlite"))
             .await
             .unwrap();
         let encryptor = Encryptor::new("pwd:test-secret");
@@ -195,7 +195,7 @@ impl GatedFixture {
     }
 
     async fn get(&self, path: &str) -> axum::response::Response {
-        music_server::app(self.state.clone())
+        yevune_server::app(self.state.clone())
             .oneshot(
                 Request::builder()
                     .uri(self.uri(path))
@@ -207,7 +207,7 @@ impl GatedFixture {
     }
 
     async fn upload(&self, key: &str, bytes: &[u8]) -> axum::response::Response {
-        music_server::app(self.state.clone())
+        yevune_server::app(self.state.clone())
             .oneshot(upload_request(
                 self.uri("/rest/ext/uploadTrack"),
                 key,
@@ -317,7 +317,7 @@ async fn wait_for_move_final(index: &Index, store: &GatedStore, source: &str, de
 impl Fixture {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let index = Index::connect(&dir.path().join("music.sqlite"))
+        let index = Index::connect(&dir.path().join("yevune.sqlite"))
             .await
             .unwrap();
         let encryptor = Encryptor::new("pwd:test-secret");
@@ -360,7 +360,7 @@ impl Fixture {
     }
 
     async fn get(&self, user: &str, path: &str) -> axum::response::Response {
-        music_server::app(self.state.clone())
+        yevune_server::app(self.state.clone())
             .oneshot(
                 Request::builder()
                     .uri(self.uri(user, path))
@@ -372,7 +372,7 @@ impl Fixture {
     }
 
     async fn upload(&self, key: &str, bytes: &[u8]) -> axum::response::Response {
-        music_server::app(self.state.clone())
+        yevune_server::app(self.state.clone())
             .oneshot(upload_request(
                 self.uri("admin", "/rest/ext/uploadTrack"),
                 key,
@@ -876,7 +876,7 @@ async fn set_cover_art_streams_image_and_associates_album() {
             .await
             .unwrap();
     let bytes = b"replacement-cover";
-    let response = music_server::app(fixture.state.clone())
+    let response = yevune_server::app(fixture.state.clone())
         .oneshot(cover_request(
             fixture.uri("admin", "/rest/ext/setCoverArt"),
             &format!("al-{album_id}"),
@@ -972,7 +972,7 @@ async fn cancelled_upload_leaves_no_object_or_index() {
     ));
     let body_stream =
         stream::once(async move { Ok::<_, std::io::Error>(prefix) }).chain(stream::pending());
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let request = Request::builder()
         .method(Method::POST)
         .uri(fixture.uri("admin", "/rest/ext/uploadTrack"))
@@ -1221,7 +1221,7 @@ async fn cancelled_visible_upload_finishes_index_commit() {
     let (entered, release) = fixture
         .store
         .arm(GateOperation::PutFile, "library/cancel/upload.flac");
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let request = upload_request(
         fixture.uri("/rest/ext/uploadTrack"),
         "library/cancel/upload.flac",
@@ -1262,7 +1262,7 @@ async fn cancelled_visible_write_back_finishes_scan_and_override_commit() {
     let (entered, release) = fixture
         .store
         .arm(GateOperation::PutFile, "library/cancel/write.flac");
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let request = Request::builder()
         .uri(fixture.uri(&format!("/rest/ext/writeBackTags?id={id}&title=Written")))
         .body(Body::empty())
@@ -1307,7 +1307,7 @@ async fn cancelled_visible_delete_finishes_index_commit() {
     let (entered, release) = fixture
         .store
         .arm(GateOperation::Delete, "library/cancel/delete.flac");
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let request = Request::builder()
         .uri(fixture.uri(&format!("/rest/ext/deleteTrack?id={id}")))
         .body(Body::empty())
@@ -1339,7 +1339,7 @@ async fn cancelled_visible_move_finishes_index_and_source_cleanup() {
     let (entered, release) = fixture
         .store
         .arm(GateOperation::PutFile, "library/cancel/moved.flac");
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let request = Request::builder()
         .uri(fixture.uri(&format!(
             "/rest/ext/moveTrack?id={id}&key=library/cancel/moved.flac"
@@ -1382,7 +1382,7 @@ async fn concurrent_moves_to_same_destination_do_not_overwrite_or_delete_winner(
         .store
         .arm(GateOperation::PutFile, "library/race/shared.flac");
 
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let first_request = Request::builder()
         .uri(fixture.uri(&format!(
             "/rest/ext/moveTrack?id={first_id}&key=library/race/shared.flac"
@@ -1391,7 +1391,7 @@ async fn concurrent_moves_to_same_destination_do_not_overwrite_or_delete_winner(
         .unwrap();
     let first_move = tokio::spawn(async move { app.oneshot(first_request).await.unwrap() });
     entered.notified().await;
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let second_request = Request::builder()
         .uri(fixture.uri(&format!(
             "/rest/ext/moveTrack?id={second_id}&key=library/race/shared.flac"
@@ -1438,7 +1438,7 @@ async fn concurrent_moves_of_same_track_serialize_and_leave_no_orphan() {
         .store
         .arm(GateOperation::PutFile, "library/race/first.flac");
 
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let first_request = Request::builder()
         .uri(fixture.uri(&format!(
             "/rest/ext/moveTrack?id={id}&key=library/race/first.flac"
@@ -1447,7 +1447,7 @@ async fn concurrent_moves_of_same_track_serialize_and_leave_no_orphan() {
         .unwrap();
     let first_move = tokio::spawn(async move { app.oneshot(first_request).await.unwrap() });
     entered.notified().await;
-    let app = music_server::app(fixture.state.clone());
+    let app = yevune_server::app(fixture.state.clone());
     let second_request = Request::builder()
         .uri(fixture.uri(&format!(
             "/rest/ext/moveTrack?id={id}&key=library/race/second.flac"
@@ -1696,7 +1696,7 @@ async fn upload_accepts_files_larger_than_default_body_limit() {
 #[tokio::test]
 async fn upload_indexes_track_even_when_list_lags_behind_write() {
     let dir = tempfile::tempdir().unwrap();
-    let index = Index::connect(&dir.path().join("music.sqlite"))
+    let index = Index::connect(&dir.path().join("yevune.sqlite"))
         .await
         .unwrap();
     let encryptor = Encryptor::new("pwd:test-secret");
@@ -1713,7 +1713,7 @@ async fn upload_indexes_track_even_when_list_lags_behind_write() {
         "/missing/ffmpeg",
     );
 
-    let response = music_server::app(state.clone())
+    let response = yevune_server::app(state.clone())
         .oneshot(upload_request(
             "/rest/ext/uploadTrack?u=admin&p=secret&v=1.16.1&c=test&f=json".to_string(),
             "library/uploads/lag.flac",

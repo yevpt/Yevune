@@ -9,11 +9,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
-use music_server::index::{Index, NewTrack};
-use music_server::storage::{
+use yevune_server::index::{Index, NewTrack};
+use yevune_server::storage::{
     ListPage, MemoryStore, ObjectMeta, ObjectStore, Result as StoreResult,
 };
-use music_server::transcode::{
+use yevune_server::transcode::{
     should_transcode, ByteStream, TranscodeTarget, TranscodeTrack, Transcoder,
 };
 
@@ -57,7 +57,7 @@ async fn insert_track(
     TranscodeTrack::new(id, key, "flac", 800)
 }
 
-async fn collect(mut stream: ByteStream) -> Result<Bytes, music_server::transcode::Error> {
+async fn collect(mut stream: ByteStream) -> Result<Bytes, yevune_server::transcode::Error> {
     let mut output = BytesMut::new();
     while let Some(chunk) = stream.next().await {
         output.extend_from_slice(&chunk?);
@@ -75,7 +75,7 @@ fn aac_128() -> TranscodeTarget {
 
 #[test]
 fn passthrough_decision_handles_raw_compatible_and_bitrate_cap() {
-    let flac = TranscodeTrack::new(1, "music/a.flac", "flac", 800);
+    let flac = TranscodeTrack::new(1, "library/a.flac", "flac", 800);
     assert!(!should_transcode(&flac, &TranscodeTarget::new("raw", 0)));
     assert!(!should_transcode(
         &flac,
@@ -90,7 +90,7 @@ async fn original_compatible_track_is_streamed_without_ffmpeg() {
     let (index, _dir) = temp_index().await;
     let store = Arc::new(MemoryStore::new());
     let source = fixture("a.flac");
-    let track = insert_track(&index, &store, "music/a.flac", source.clone()).await;
+    let track = insert_track(&index, &store, "library/a.flac", source.clone()).await;
     let transcoder = Transcoder::new(store, index, PathBuf::from("definitely-no-ffmpeg"));
 
     let output = collect(
@@ -109,7 +109,7 @@ async fn original_compatible_track_is_streamed_without_ffmpeg() {
 async fn first_request_transcodes_playable_output_and_registers_cache() {
     let (index, dir) = temp_index().await;
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/a.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/a.flac", fixture("a.flac")).await;
     let track_id = track.id;
     let transcoder = Transcoder::new(store.clone(), index.clone(), PathBuf::from("ffmpeg"));
 
@@ -137,7 +137,7 @@ async fn first_request_transcodes_playable_output_and_registers_cache() {
 async fn second_request_streams_cache_without_source_or_ffmpeg() {
     let (index, _dir) = temp_index().await;
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/a.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/a.flac", fixture("a.flac")).await;
     let first = Transcoder::new(store.clone(), index.clone(), PathBuf::from("ffmpeg"));
     let expected = collect(first.stream(track.clone(), opus_96()).await.unwrap())
         .await
@@ -160,7 +160,7 @@ async fn second_request_streams_cache_without_source_or_ffmpeg() {
 async fn aac_output_is_playable_and_second_request_hits_cache() {
     let (index, dir) = temp_index().await;
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/a.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/a.flac", fixture("a.flac")).await;
     let first = Transcoder::new(store.clone(), index.clone(), PathBuf::from("ffmpeg"));
 
     let expected = collect(first.stream(track.clone(), aac_128()).await.unwrap())
@@ -188,7 +188,7 @@ async fn aac_output_is_playable_and_second_request_hits_cache() {
 async fn interrupted_consumer_leaves_no_cache_object_or_row() {
     let (index, _dir) = temp_index().await;
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/large.flac", fixture("large.flac")).await;
+    let track = insert_track(&index, &store, "library/large.flac", fixture("large.flac")).await;
     let id = track.id;
     let transcoder = Transcoder::new(store.clone(), index.clone(), PathBuf::from("ffmpeg"));
     let mut stream = transcoder.stream(track, opus_96()).await.unwrap();
@@ -219,7 +219,7 @@ async fn ffmpeg_failure_leaves_no_cache_object_or_row() {
     let track = insert_track(
         &index,
         &store,
-        "music/broken.flac",
+        "library/broken.flac",
         Bytes::from_static(b"not audio"),
     )
     .await;
@@ -258,8 +258,8 @@ async fn ffmpeg_processes_are_limited_by_semaphore() {
     std::fs::write(&script, script_body).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(MemoryStore::new());
-    let one = insert_track(&index, &store, "music/one.flac", fixture("a.flac")).await;
-    let two = insert_track(&index, &store, "music/two.flac", fixture("b.flac")).await;
+    let one = insert_track(&index, &store, "library/one.flac", fixture("a.flac")).await;
+    let two = insert_track(&index, &store, "library/two.flac", fixture("b.flac")).await;
     let transcoder = Transcoder::with_concurrency(store, index, script, 1);
 
     let one_stream = transcoder.stream(one, opus_96()).await.unwrap();
@@ -296,7 +296,7 @@ async fn interrupted_consumer_terminates_stalled_ffmpeg_process() {
     std::fs::write(&script, script_body).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/stalled.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/stalled.flac", fixture("a.flac")).await;
     let transcoder = Transcoder::with_concurrency(store, index, script, 1);
     let mut stream = transcoder.stream(track, opus_96()).await.unwrap();
 
@@ -335,7 +335,7 @@ async fn consumer_drop_after_stdout_eof_terminates_hung_ffmpeg() {
     std::fs::write(&script, script_body).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/eof.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/eof.flac", fixture("a.flac")).await;
     let id = track.id;
     let transcoder = Transcoder::with_concurrency(store.clone(), index.clone(), script, 1);
     let mut stream = transcoder.stream(track, opus_96()).await.unwrap();
@@ -384,7 +384,7 @@ async fn last_chunk_without_observing_eof_is_not_cached() {
     std::fs::write(&script, "#!/bin/sh\nprintf complete\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/last.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/last.flac", fixture("a.flac")).await;
     let id = track.id;
     let transcoder = Transcoder::with_concurrency(store.clone(), index.clone(), script, 1);
     let mut stream = transcoder.stream(track, opus_96()).await.unwrap();
@@ -425,7 +425,7 @@ async fn concurrent_same_cache_key_runs_ffmpeg_once() {
     std::fs::write(&script, script_body).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(MemoryStore::new());
-    let track = insert_track(&index, &store, "music/shared.flac", fixture("a.flac")).await;
+    let track = insert_track(&index, &store, "library/shared.flac", fixture("a.flac")).await;
     let transcoder = Transcoder::with_concurrency(store, index, script, 2);
 
     let first = transcoder.stream(track.clone(), opus_96()).await.unwrap();
@@ -524,7 +524,13 @@ async fn consumer_drop_during_cache_upload_cancels_put_file() {
     std::fs::write(&script, "#!/bin/sh\nprintf cached\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let store = Arc::new(BlockingPutStore::new());
-    let track = insert_track(&index, &store.inner, "music/upload.flac", fixture("a.flac")).await;
+    let track = insert_track(
+        &index,
+        &store.inner,
+        "library/upload.flac",
+        fixture("a.flac"),
+    )
+    .await;
     let id = track.id;
     let transcoder = Transcoder::with_concurrency(store.clone(), index.clone(), script, 1);
     let stream = transcoder.stream(track, opus_96()).await.unwrap();

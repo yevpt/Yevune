@@ -1,4 +1,4 @@
-use music_core::MusicClient;
+use yevune_core::MusicClient;
 
 #[tokio::test]
 async fn management_methods_require_an_authenticated_session() {

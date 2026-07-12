@@ -16,16 +16,16 @@ WORKDIR /build/server
 RUN TRIPLE="$(uname -m)-unknown-linux-musl" && \
     mkdir -p .cargo && \
     printf '[target.%s]\nrustflags = ["-C", "target-feature=+crt-static"]\n' "$TRIPLE" > .cargo/config.toml && \
-    cargo build --release --locked --bin music-server --target "$TRIPLE" && \
-    cp "target/$TRIPLE/release/music-server" /music-server
+    cargo build --release --locked --bin yevune-server --target "$TRIPLE" && \
+    cp "target/$TRIPLE/release/yevune-server" /yevune-server
 
 # ── 运行阶段：极简 + FFmpeg ─────────────────────────────────────────────
 FROM alpine:3.20
 # FFmpeg 为按需转码子进程（非常驻服务），随镜像附带；ca-certificates 供可选 HTTPS 反代场景。
 RUN apk add --no-cache ffmpeg ca-certificates
-COPY --from=builder /music-server /usr/local/bin/music-server
+COPY --from=builder /yevune-server /usr/local/bin/yevune-server
 # 默认明文 HTTP 监听（局域网小白友好，TLS/反代为进阶可选）。
-ENV MUSIC__SERVER__HOST=0.0.0.0 \
-    MUSIC__SERVER__PORT=4533
+ENV YEVUNE__SERVER__HOST=0.0.0.0 \
+    YEVUNE__SERVER__PORT=4533
 EXPOSE 4533
-ENTRYPOINT ["music-server"]
+ENTRYPOINT ["yevune-server"]

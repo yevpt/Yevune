@@ -1,12 +1,12 @@
 //! 首启引导：无用户时创建管理员（设计文档 §11 / 计划 T10）。
 
-use music_server::auth::Encryptor;
-use music_server::index::Index;
-use music_server::setup::{ensure_admin, AdminSeed, SetupOutcome};
+use yevune_server::auth::Encryptor;
+use yevune_server::index::Index;
+use yevune_server::setup::{ensure_admin, AdminSeed, SetupOutcome};
 
 async fn temp_index() -> (Index, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let index = Index::connect(&dir.path().join("music.sqlite"))
+    let index = Index::connect(&dir.path().join("yevune.sqlite"))
         .await
         .expect("连接并迁移失败");
     (index, dir)
