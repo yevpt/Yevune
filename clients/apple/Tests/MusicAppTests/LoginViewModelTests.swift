@@ -147,6 +147,10 @@ private actor FakeMusicClient: MusicClientProviding {
         [album]
     }
 
+    func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] {
+        [album]
+    }
+
     func search(query: String) async throws -> SearchResult {
         SearchResult(artists: [], albums: [album], tracks: [])
     }
