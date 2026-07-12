@@ -61,6 +61,9 @@ struct LibraryView: View {
                         onDelete: { target in deleteTarget = target }
                     )
                 }
+                if let playlistError = playlists.errorMessage {
+                    Text(playlistError).foregroundStyle(.red).font(.caption)
+                }
             }
             .navigationTitle("音乐")
             .toolbar {

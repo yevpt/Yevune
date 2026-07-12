@@ -56,6 +56,21 @@ final class PlaylistViewModelTests: XCTestCase {
         XCTAssertEqual(fake.calls.filter { $0 == "detail:playlist:5" }.count, 2) // 打开 + 移除后刷新
     }
 
+    func testSetCommentCallsClientAndRefreshesDetail() async {
+        let detail = PlaylistDetail(
+            playlist: playlistFixture(id: "playlist:5", name: "Mix", folderID: nil),
+            tracks: [trackFixture(id: "track:9", title: "Song")]
+        )
+        let fake = FakePlaylistClient(detail: detail)
+        let model = PlaylistViewModel(client: fake)
+        await model.openPlaylist(id: "playlist:5")
+
+        await model.setComment(playlistID: "playlist:5", comment: "hi")
+
+        XCTAssertTrue(fake.calls.contains("comment:playlist:5"))
+        XCTAssertEqual(fake.calls.filter { $0 == "detail:playlist:5" }.count, 2) // 打开 + 备注后刷新
+    }
+
     func testDeleteFolderPropagatesError() async {
         let fake = ThrowingPlaylistClient()
         let model = PlaylistViewModel(client: fake)

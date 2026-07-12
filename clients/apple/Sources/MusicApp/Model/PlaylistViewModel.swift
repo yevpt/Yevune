@@ -61,6 +61,9 @@ final class PlaylistViewModel: ObservableObject {
     func removeTrack(playlistID: String, index: Int64) async {
         await mutateDetail(playlistID: playlistID) { try await self.client.removeTrackAt(id: playlistID, index: index) }
     }
+    func setComment(playlistID: String, comment: String) async {
+        await mutateDetail(playlistID: playlistID) { try await self.client.setPlaylistComment(id: playlistID, comment: comment) }
+    }
 
     private func mutateTree(_ action: () async throws -> Void) async {
         errorMessage = nil
@@ -68,7 +71,10 @@ final class PlaylistViewModel: ObservableObject {
             try await action()
             await loadTree()
         } catch {
-            errorMessage = error.localizedDescription
+            // 即使失败也刷新，暴露部分成功的服务端状态；errorMessage 最后设，因 loadTree() 起始会清空它。
+            let message = error.localizedDescription
+            await loadTree()
+            errorMessage = message
         }
     }
 
@@ -79,7 +85,10 @@ final class PlaylistViewModel: ObservableObject {
             if detail?.playlist.id == playlistID { await openPlaylist(id: playlistID) }
             await loadTree() // songCount/duration 可能变化
         } catch {
-            errorMessage = error.localizedDescription
+            // 即使失败也刷新树，暴露部分成功的服务端状态；errorMessage 最后设，因 loadTree() 起始会清空它。
+            let message = error.localizedDescription
+            await loadTree()
+            errorMessage = message
         }
     }
 }
