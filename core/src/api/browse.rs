@@ -1,6 +1,6 @@
 //! 曲库浏览与全文搜索端点。
 
-use contract::{Album, Artist, Track};
+use contract::{Album, Artist, Genre, Track};
 use serde::Deserialize;
 
 use crate::auth::AuthenticatedSession;
@@ -30,6 +30,39 @@ impl AlbumSort {
             Self::AlphabeticalByArtist => "alphabeticalByArtist",
             Self::Frequent => "frequent",
             Self::Recent => "recent",
+        }
+    }
+}
+
+/// `getAlbumList2` 的查询意图：三态互斥——按排序、按流派、按年份区间。
+#[derive(Clone, uniffi::Enum)]
+pub enum AlbumFilter {
+    /// 按既有排序方式浏览。
+    Sort(AlbumSort),
+    /// 按流派筛选（对应 `type=byGenre&genre=`）。
+    Genre(String),
+    /// 按年份区间筛选，闭区间（对应 `type=byYear&fromYear=&toYear=`）。
+    YearRange {
+        /// 起始年份（含）。
+        from: u32,
+        /// 结束年份（含）。
+        to: u32,
+    },
+}
+
+impl AlbumFilter {
+    fn query_params(&self) -> Vec<(String, String)> {
+        match self {
+            Self::Sort(sort) => vec![("type".to_owned(), sort.endpoint_value().to_owned())],
+            Self::Genre(genre) => vec![
+                ("type".to_owned(), "byGenre".to_owned()),
+                ("genre".to_owned(), genre.clone()),
+            ],
+            Self::YearRange { from, to } => vec![
+                ("type".to_owned(), "byYear".to_owned()),
+                ("fromYear".to_owned(), from.to_string()),
+                ("toYear".to_owned(), to.to_string()),
+            ],
         }
     }
 }
@@ -66,22 +99,20 @@ pub struct SearchResult {
 pub(crate) async fn list_albums(
     http: &HttpClient,
     auth: &AuthenticatedSession,
-    sort: AlbumSort,
+    filter: AlbumFilter,
     offset: u32,
     size: u32,
 ) -> Result<Vec<Album>> {
-    let payload: AlbumListPayload = http
-        .get_json(
-            auth,
-            "getAlbumList2",
-            &[
-                ("type".to_owned(), sort.endpoint_value().to_owned()),
-                ("offset".to_owned(), offset.to_string()),
-                ("size".to_owned(), size.to_string()),
-            ],
-        )
-        .await?;
+    let mut params = filter.query_params();
+    params.push(("offset".to_owned(), offset.to_string()));
+    params.push(("size".to_owned(), size.to_string()));
+    let payload: AlbumListPayload = http.get_json(auth, "getAlbumList2", &params).await?;
     Ok(payload.album_list2.album)
+}
+
+pub(crate) async fn list_genres(http: &HttpClient, auth: &AuthenticatedSession) -> Result<Vec<Genre>> {
+    let payload: GenresPayload = http.get_json(auth, "getGenres", &[]).await?;
+    Ok(payload.genres.genre)
 }
 
 pub(crate) async fn get_album(
@@ -192,6 +223,17 @@ struct ArtistWithAlbums {
 #[derive(Deserialize)]
 struct SongResponse {
     song: Track,
+}
+
+#[derive(Deserialize)]
+struct GenresPayload {
+    genres: GenresList,
+}
+
+#[derive(Deserialize)]
+struct GenresList {
+    #[serde(default)]
+    genre: Vec<Genre>,
 }
 
 #[derive(Deserialize)]

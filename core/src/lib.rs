@@ -8,7 +8,7 @@ mod error;
 mod ffi_types;
 mod http;
 
-pub use api::browse::{AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
+pub use api::browse::{AlbumDetail, AlbumFilter, AlbumSort, ArtistDetail, SearchResult};
 pub use api::manage::{TagUpdate, UploadMetadata, UploadProgress};
 pub use api::scan::{DetailedScanResult, ScanAction, ScanChange, ScanStatus};
 pub use client::{MusicClient, Session};

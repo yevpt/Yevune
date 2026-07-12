@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::api::browse::{self, AlbumDetail, AlbumSort, ArtistDetail, SearchResult};
+use crate::api::browse::{self, AlbumDetail, AlbumFilter, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
 use crate::api::playlist::{self, PlaylistDetail, PlaylistTree};
@@ -64,21 +64,26 @@ impl MusicClient {
         self.http.get_empty(&session, "ping").await
     }
 
-    /// 读取一页专辑。
+    /// 读取一页专辑，按排序/流派/年份区间三态互斥筛选。
     pub async fn list_albums(
         &self,
-        sort: AlbumSort,
+        filter: AlbumFilter,
         offset: u32,
         size: u32,
     ) -> Result<Vec<contract::Album>> {
         browse::list_albums(
             &self.http,
             &self.authenticated_session().await?,
-            sort,
+            filter,
             offset,
             size,
         )
         .await
+    }
+
+    /// 读取所有可见流派。
+    pub async fn list_genres(&self) -> Result<Vec<contract::Genre>> {
+        browse::list_genres(&self.http, &self.authenticated_session().await?).await
     }
 
     /// 读取专辑及其曲目。
