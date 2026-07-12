@@ -26,7 +26,9 @@ pub struct PlaylistFolder {
 pub struct Playlist {
     /// 不透明标识符。
     pub id: String,
-    /// 所有者用户标识符。
+    /// 所有者用户标识符。标准 OpenSubsonic `getPlaylist`/`createPlaylist` 响应不含此字段
+    /// （只在扩展的 `getPlaylistTree` 输出），故解码时缺省为空串。
+    #[serde(default)]
     pub owner_id: String,
     /// 歌单名。
     pub name: String,
@@ -34,7 +36,8 @@ pub struct Playlist {
     pub comment: Option<String>,
     /// 所属文件夹标识符；`None` 表示根级。
     pub folder_id: Option<String>,
-    /// 在同级中的位置。
+    /// 在同级中的位置。标准 OpenSubsonic 响应不含此字段（只在扩展树输出），故解码时缺省为 0。
+    #[serde(default)]
     pub position: u32,
     /// 曲目数。
     pub song_count: u32,

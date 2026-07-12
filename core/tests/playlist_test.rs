@@ -53,6 +53,38 @@ async fn logged_in(address: std::net::SocketAddr) -> Arc<MusicClient> {
 }
 
 #[tokio::test]
+async fn playlist_detail_decodes_standard_opensubsonic_shape() {
+    // 真实服务端标准 getPlaylist/createPlaylist 响应：owner 是用户名字符串，
+    // 无 ownerId/folderId/position（这些仅扩展的 getPlaylistTree 输出）。
+    let body = "\"playlist\":{\"id\":\"playlist:7\",\"name\":\"1\",\"owner\":\"admin\",\"public\":false,\"songCount\":0,\"duration\":0,\"entry\":[]}";
+    let (address, _requests, handle) = mock_server(vec![ok(""), ok(body)]).await;
+    let client = logged_in(address).await;
+
+    let detail = client.playlist_detail("playlist:7".into()).await.unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(detail.playlist.id, "playlist:7");
+    assert_eq!(detail.playlist.name, "1");
+    assert!(detail.tracks.is_empty());
+}
+
+#[tokio::test]
+async fn create_playlist_decodes_standard_opensubsonic_shape() {
+    let created = "\"playlist\":{\"id\":\"playlist:7\",\"name\":\"1\",\"owner\":\"admin\",\"public\":false,\"songCount\":0,\"duration\":0,\"entry\":[]}";
+    let (address, _requests, handle) = mock_server(vec![ok(""), ok(created)]).await;
+    let client = logged_in(address).await;
+
+    let playlist = client
+        .create_playlist("1".into(), None, vec![])
+        .await
+        .unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(playlist.id, "playlist:7");
+    assert_eq!(playlist.name, "1");
+}
+
+#[tokio::test]
 async fn playlist_tree_decodes_folders_and_playlists() {
     let tree = "\"playlistTree\":{\"folders\":[{\"id\":\"folder:1\",\"ownerId\":\"user:1\",\"name\":\"Rock\",\"parentId\":null,\"position\":0}],\"playlists\":[{\"id\":\"playlist:5\",\"ownerId\":\"user:1\",\"name\":\"Mix\",\"comment\":null,\"folderId\":\"folder:1\",\"position\":0,\"songCount\":2,\"duration\":300,\"created\":null,\"changed\":null}]}";
     let (address, requests, handle) = mock_server(vec![ok(""), ok(tree)]).await;

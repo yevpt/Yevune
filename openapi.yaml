@@ -371,9 +371,7 @@ components:
       description: 歌单（叶子节点），对应 `playlists` 表，默认私有。
       required:
       - id
-      - ownerId
       - name
-      - position
       - songCount
       - duration
       properties:
@@ -410,11 +408,13 @@ components:
           description: 歌单名。
         ownerId:
           type: string
-          description: 所有者用户标识符。
+          description: |-
+            所有者用户标识符。标准 OpenSubsonic `getPlaylist`/`createPlaylist` 响应不含此字段
+            （只在扩展的 `getPlaylistTree` 输出），故解码时缺省为空串。
         position:
           type: integer
           format: int32
-          description: 在同级中的位置。
+          description: 在同级中的位置。标准 OpenSubsonic 响应不含此字段（只在扩展树输出），故解码时缺省为 0。
           minimum: 0
         songCount:
           type: integer
