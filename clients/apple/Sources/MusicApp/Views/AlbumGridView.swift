@@ -1,6 +1,18 @@
 import CoreFFI
 import SwiftUI
 
+func coverArtID(for album: Album) -> String? {
+    album.coverArt
+}
+
+func loadCoverURL(for album: Album, client: any MusicClientProviding) async -> URL? {
+    guard let coverArtID = coverArtID(for: album),
+          let urlString = try? await client.coverArtURL(id: coverArtID, size: 300) else {
+        return nil
+    }
+    return URL(string: urlString)
+}
+
 struct AlbumGridView: View {
     let albums: [Album]
     let client: any MusicClientProviding
@@ -48,10 +60,8 @@ private struct AlbumGridCell: View {
             Text(album.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
         .frame(width: 150)
-        .task(id: album.id) {
-            if let urlString = try? await client.coverArtURL(id: album.id, size: 300), let url = URL(string: urlString) {
-                coverURL = url
-            }
+        .task(id: album.coverArt) {
+            coverURL = await loadCoverURL(for: album, client: client)
         }
     }
 }
