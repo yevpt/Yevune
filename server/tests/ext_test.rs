@@ -825,6 +825,14 @@ async fn prefix_scan_only_indexes_requested_range() {
     )
     .await;
     assert_eq!(started["subsonic-response"]["status"], "ok", "{started}");
+    let changes = payload(&started, "scanResult")["changes"]
+        .as_array()
+        .unwrap();
+    assert_eq!(changes.len(), 1, "{started}");
+    assert_eq!(changes[0]["action"], "added");
+    assert_eq!(changes[0]["objectKey"], "family/a.flac");
+    assert_eq!(changes[0]["track"]["title"], "Song A");
+    assert_eq!(payload(&started, "scanResult")["changesTruncated"], false);
     let keys: Vec<String> = sqlx::query_scalar("SELECT object_key FROM tracks ORDER BY object_key")
         .fetch_all(fixture.index.pool())
         .await

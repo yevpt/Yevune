@@ -29,15 +29,30 @@ async fn start_scan(
         return response::parameter_error(format, "Required parameter 'prefix' is missing");
     };
     match state.scanner.scan(Some(&prefix)).await {
-        Ok(report) => response::ok(
-            format,
-            serde_json::json!({"scanResult": {
-                "added": report.added,
-                "updated": report.updated,
-                "deleted": report.deleted,
-                "unchanged": report.unchanged
-            }}),
-        ),
+        Ok(report) => {
+            let changes: Vec<_> = report
+                .changes
+                .iter()
+                .map(|change| {
+                    serde_json::json!({
+                        "action": change.action.as_str(),
+                        "objectKey": change.object_key,
+                        "track": response::track_value(&change.track),
+                    })
+                })
+                .collect();
+            response::ok(
+                format,
+                serde_json::json!({"scanResult": {
+                    "added": report.added,
+                    "updated": report.updated,
+                    "deleted": report.deleted,
+                    "unchanged": report.unchanged,
+                    "changes": changes,
+                    "changesTruncated": report.changes_truncated
+                }}),
+            )
+        }
         Err(crate::scanner::Error::AlreadyScanning) => {
             response::parameter_error(format, "A scan is already running")
         }

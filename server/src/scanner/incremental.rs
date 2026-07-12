@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use sqlx::SqlitePool;
 
 use crate::index::{Index, NewTrack};
+use contract::Track;
 
 use super::tags::ParsedTrack;
 use super::Result;
@@ -36,7 +37,7 @@ pub async fn upsert_track(
     entry: &ListEntry,
     meta: &ParsedTrack,
     cover_key: Option<&str>,
-) -> Result<()> {
+) -> Result<Track> {
     let media = index.media();
 
     let artist_id = match meta.artist.as_deref() {
@@ -77,8 +78,11 @@ pub async fn upsert_track(
         content_hash: None,
         replaygain: None,
     };
-    media.upsert_track(&new).await?;
-    Ok(())
+    let id = media.upsert_track(&new).await?;
+    media
+        .get_track(id)
+        .await?
+        .ok_or_else(|| sqlx::Error::RowNotFound.into())
 }
 
 /// 仅当专辑还没有封面时写入 `cover_key`（避免同专辑多曲反复改写）。

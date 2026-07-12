@@ -87,7 +87,38 @@ pub struct ScanReport {
     pub deleted: u32,
     /// etag 未变、跳过的曲目数。
     pub unchanged: u32,
+    /// 本轮变更明细（最多 500 条）。
+    pub changes: Vec<ScanChange>,
+    /// 变更总数是否超过明细上限。
+    pub changes_truncated: bool,
 }
+
+/// 一条扫描变更，用于原生客户端可视化反馈。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanChange {
+    pub action: ScanAction,
+    pub object_key: String,
+    pub track: contract::Track,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanAction {
+    Added,
+    Updated,
+    Deleted,
+}
+
+impl ScanAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Added => "added",
+            Self::Updated => "updated",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+const MAX_SCAN_CHANGES: usize = 500;
 
 /// 扫描状态快照（供 `getScanStatus`）。
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -185,10 +216,20 @@ impl Scanner {
             Some(cover) => Some(cover::store_cover(self.store.as_ref(), cover).await?),
             None => None,
         };
-        incremental::upsert_track(&self.index, &entry, &parsed, cover_key.as_deref()).await?;
+        let track =
+            incremental::upsert_track(&self.index, &entry, &parsed, cover_key.as_deref()).await?;
         Ok(ScanReport {
             added: u32::from(!was_present),
             updated: u32::from(was_present),
+            changes: vec![ScanChange {
+                action: if was_present {
+                    ScanAction::Updated
+                } else {
+                    ScanAction::Added
+                },
+                object_key: key.to_owned(),
+                track,
+            }],
             ..Default::default()
         })
     }
@@ -276,15 +317,30 @@ impl Scanner {
 
         let mut added = 0u32;
         let mut updated = 0u32;
+        let mut changes = Vec::new();
+        let mut changes_truncated = false;
         for ingest in ingests {
             let was_present = existing.contains_key(&ingest.entry.key);
-            incremental::upsert_track(
+            let track = incremental::upsert_track(
                 &self.index,
                 &ingest.entry,
                 &ingest.meta,
                 ingest.cover_key.as_deref(),
             )
             .await?;
+            push_change(
+                &mut changes,
+                &mut changes_truncated,
+                ScanChange {
+                    action: if was_present {
+                        ScanAction::Updated
+                    } else {
+                        ScanAction::Added
+                    },
+                    object_key: ingest.entry.key.clone(),
+                    track,
+                },
+            );
             if was_present {
                 updated += 1;
             } else {
@@ -297,8 +353,20 @@ impl Scanner {
         let mut deleted = 0u32;
         for key in existing.keys() {
             if !seen.contains(key) {
+                let track = self.index.media().get_track(existing[key].0).await?;
                 self.index.media().delete_by_object_key(key).await?;
                 deleted += 1;
+                if let Some(track) = track {
+                    push_change(
+                        &mut changes,
+                        &mut changes_truncated,
+                        ScanChange {
+                            action: ScanAction::Deleted,
+                            object_key: key.clone(),
+                            track,
+                        },
+                    );
+                }
             }
         }
 
@@ -315,6 +383,8 @@ impl Scanner {
             updated,
             deleted,
             unchanged,
+            changes,
+            changes_truncated,
         })
     }
 
@@ -349,6 +419,14 @@ impl Scanner {
             ingests.push(handle.await.expect("解析任务不应 panic")?);
         }
         Ok(ingests)
+    }
+}
+
+fn push_change(changes: &mut Vec<ScanChange>, truncated: &mut bool, change: ScanChange) {
+    if changes.len() < MAX_SCAN_CHANGES {
+        changes.push(change);
+    } else {
+        *truncated = true;
     }
 }
 
