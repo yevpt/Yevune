@@ -53,7 +53,7 @@ DTO：`contract::Playlist`、`contract::PlaylistFolder` 经 `ffi_types.rs` 的 `
 1. 顶部固定入口：「曲库」「搜索」。
 2. 「歌单」分区：递归渲染文件夹树（`DisclosureGroup`）+ 叶子歌单；空树显示占位提示。
 
-选择用统一枚举 `SidebarSelection { case library, case search, case playlist(String) }`，右侧详情按选择切换。选中歌单 → `PlaylistDetailView`；选中曲库/搜索 → 现有专辑/搜索视图。
+选择用统一枚举 `SidebarSelection { case library, case playlist(String) }`，右侧详情按选择切换。选中歌单 → `PlaylistDetailView`；选中曲库 → 现有专辑列表/搜索视图（搜索并入曲库详情区，不单列侧栏入口）。
 
 **`PlaylistViewModel`（`@MainActor ObservableObject`）**：持有 `PlaylistTree` 与当前 `PlaylistDetail`，封装全部 CRUD 调用 core，成功后局部刷新树/详情，失败置 `errorMessage`。它是唯一与 core 歌单 API 交互的地方。
 
@@ -76,7 +76,7 @@ DTO：`contract::Playlist`、`contract::PlaylistFolder` 经 `ffi_types.rs` 的 `
 
 ## 7. 测试
 
-- **core（TDD）**：`wiremock` 覆盖每个方法的请求编码与响应解码——含 `create_playlist` 带/不带 folder 的两步组合、`move_playlist(None)` 移根、空 song 列表、`remove_track_at` 的 index 传参、错误码传播。
+- **core（TDD）**：`TcpListener` 回环 mock server（复用既有测试设施，不引入新依赖）覆盖每个方法的请求编码与响应解码——含 `create_playlist` 带/不带 folder 的两步组合、`move_playlist(None)` 移根、空 song 列表、`remove_track_at` 的 index 传参、错误码传播。
 - **XCTest**：`PlaylistViewModel` 用 mock client 覆盖 建/删/改名/移动/加曲/移曲 后的树与详情刷新、错误态；侧栏选择枚举切换。
 - **端到端**：真实 Docker 服务完成 建文件夹 → 建歌单（落入文件夹）→ 从专辑加曲 → 查看曲目 → 移出曲目 → 移动歌单到根 → 删除歌单/文件夹。
 - 全量执行 `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 与 Swift test。
