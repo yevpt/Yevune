@@ -121,6 +121,7 @@ final class AccessControlViewModel: ObservableObject {
                 }
             }
         } catch {
+            targetResults = []
             errorMessage = error.localizedDescription
         }
     }

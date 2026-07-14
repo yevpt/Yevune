@@ -145,6 +145,20 @@ final class AccessControlViewModelTests: XCTestCase {
         XCTAssertTrue(model.targetResults.isEmpty)
     }
 
+    func testFailedTargetSearchClearsResultsFromPreviousSuccessfulSearch() async {
+        let fake = FakeAccessControlClient(searchResult: Self.searchResult)
+        let model = AccessControlViewModel(client: fake)
+        await model.searchTargets(scopeType: .album, query: "blue")
+        XCTAssertFalse(model.targetResults.isEmpty)
+        await fake.setSearchFails(true)
+
+        await model.searchTargets(scopeType: .album, query: "missing")
+
+        XCTAssertTrue(model.targetResults.isEmpty)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isSearching)
+    }
+
     private static let rules = [
         AccessRule(
             id: "ru-1",
@@ -234,7 +248,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
     private let roles: [Role]
     private let genres: [Genre]
     private let searchResult: SearchResult
-    private let searchFails: Bool
+    private var searchFails: Bool
     private var loadFailure: LoadFailure?
     private var queries: [String] = []
 
@@ -300,6 +314,10 @@ private actor FakeAccessControlClient: MusicClientProviding {
 
     func setLoadFailure(_ failure: LoadFailure?) {
         loadFailure = failure
+    }
+
+    func setSearchFails(_ fails: Bool) {
+        searchFails = fails
     }
 
     func searchQueries() -> [String] { queries }
