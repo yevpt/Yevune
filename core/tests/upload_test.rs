@@ -11,17 +11,22 @@ async fn upload_streams_a_local_file_and_reports_progress() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
-        for request_number in 0..2 {
+        for request_number in 0..3 {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_request(&mut socket).await;
-            let body = if request_number == 0 {
-                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}".to_owned()
-            } else {
-                assert!(request.starts_with("POST /rest/ext/uploadTrack?"));
-                assert!(request.contains("name=\"key\""));
-                assert!(request.contains("library/imported.flac"));
-                assert!(request.contains("small but complete audio fixture"));
-                "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true,\"track\":{\"id\":\"tr-1\",\"title\":\"Imported\",\"size\":32,\"duration\":120,\"bitRate\":320}}}".to_owned()
+            let body = match request_number {
+                0 => "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true}}".to_owned(),
+                1 => {
+                    assert!(request.contains("/rest/getUser?"));
+                    "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true,\"user\":{\"username\":\"admin\",\"adminRole\":true}}}".to_owned()
+                }
+                _ => {
+                    assert!(request.starts_with("POST /rest/ext/uploadTrack?"));
+                    assert!(request.contains("name=\"key\""));
+                    assert!(request.contains("library/imported.flac"));
+                    assert!(request.contains("small but complete audio fixture"));
+                    "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"yevune-server\",\"serverVersion\":\"0.1.0\",\"openSubsonic\":true,\"track\":{\"id\":\"tr-1\",\"title\":\"Imported\",\"size\":32,\"duration\":120,\"bitRate\":320}}}".to_owned()
+                }
             };
             let response = format!(
                 "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",

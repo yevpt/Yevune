@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use crate::api::admin;
 use crate::api::browse::{self, AlbumDetail, AlbumFilter, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
@@ -22,6 +23,8 @@ pub struct Session {
     pub server: String,
     /// 当前用户名。
     pub user: String,
+    /// 当前用户是否拥有管理员角色。
+    pub admin: bool,
 }
 
 /// 所有平台共用的音乐服务客户端。
@@ -50,9 +53,11 @@ impl MusicClient {
             password,
         };
         self.http.get_empty(&candidate, "ping").await?;
+        let admin = admin::current_user_is_admin(&self.http, &candidate).await?;
         let session = Session {
             server: candidate.config.public_url(),
             user: candidate.user.clone(),
+            admin,
         };
         *self.session.write().await = Some(candidate);
         Ok(session)
@@ -62,6 +67,16 @@ impl MusicClient {
     pub async fn ping(&self) -> Result<()> {
         let session = self.authenticated_session().await?;
         self.http.get_empty(&session, "ping").await
+    }
+
+    /// 读取管理员可管理的完整用户列表。
+    pub async fn list_users(&self) -> Result<Vec<contract::User>> {
+        admin::list_users(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 读取内建与自定义角色。
+    pub async fn list_roles(&self) -> Result<Vec<contract::Role>> {
+        admin::list_roles(&self.http, &self.authenticated_session().await?).await
     }
 
     /// 读取一页专辑，按排序/流派/年份区间三态互斥筛选。

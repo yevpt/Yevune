@@ -42,8 +42,12 @@ fn ok(inner: &str) -> String {
         if inner.is_empty() { String::new() } else { format!(",{inner}") })
 }
 
+fn current_user() -> String {
+    ok("\"user\":{\"username\":\"admin\",\"adminRole\":true}")
+}
+
 async fn logged_in(address: std::net::SocketAddr) -> Arc<MusicClient> {
-    // login 先打一次 ping；调用方需在 bodies 首位放一个 ok("") 供 ping 使用。
+    // login 依次调用 ping 与 getUser；调用方需把两份响应放在业务响应前。
     let client = MusicClient::new();
     client
         .login(format!("http://{address}"), "admin".into(), "secret".into())
@@ -57,7 +61,7 @@ async fn playlist_detail_decodes_standard_opensubsonic_shape() {
     // 真实服务端标准 getPlaylist/createPlaylist 响应：owner 是用户名字符串，
     // 无 ownerId/folderId/position（这些仅扩展的 getPlaylistTree 输出）。
     let body = "\"playlist\":{\"id\":\"playlist:7\",\"name\":\"1\",\"owner\":\"admin\",\"public\":false,\"songCount\":0,\"duration\":0,\"entry\":[]}";
-    let (address, _requests, handle) = mock_server(vec![ok(""), ok(body)]).await;
+    let (address, _requests, handle) = mock_server(vec![ok(""), current_user(), ok(body)]).await;
     let client = logged_in(address).await;
 
     let detail = client.playlist_detail("playlist:7".into()).await.unwrap();
@@ -71,7 +75,7 @@ async fn playlist_detail_decodes_standard_opensubsonic_shape() {
 #[tokio::test]
 async fn create_playlist_decodes_standard_opensubsonic_shape() {
     let created = "\"playlist\":{\"id\":\"playlist:7\",\"name\":\"1\",\"owner\":\"admin\",\"public\":false,\"songCount\":0,\"duration\":0,\"entry\":[]}";
-    let (address, _requests, handle) = mock_server(vec![ok(""), ok(created)]).await;
+    let (address, _requests, handle) = mock_server(vec![ok(""), current_user(), ok(created)]).await;
     let client = logged_in(address).await;
 
     let playlist = client
@@ -87,7 +91,7 @@ async fn create_playlist_decodes_standard_opensubsonic_shape() {
 #[tokio::test]
 async fn playlist_tree_decodes_folders_and_playlists() {
     let tree = "\"playlistTree\":{\"folders\":[{\"id\":\"folder:1\",\"ownerId\":\"user:1\",\"name\":\"Rock\",\"parentId\":null,\"position\":0}],\"playlists\":[{\"id\":\"playlist:5\",\"ownerId\":\"user:1\",\"name\":\"Mix\",\"comment\":null,\"folderId\":\"folder:1\",\"position\":0,\"songCount\":2,\"duration\":300,\"created\":null,\"changed\":null}]}";
-    let (address, requests, handle) = mock_server(vec![ok(""), ok(tree)]).await;
+    let (address, requests, handle) = mock_server(vec![ok(""), current_user(), ok(tree)]).await;
     let client = logged_in(address).await;
 
     let result = client.playlist_tree().await.unwrap();
@@ -98,7 +102,7 @@ async fn playlist_tree_decodes_folders_and_playlists() {
     assert_eq!(result.playlists.len(), 1);
     assert_eq!(result.playlists[0].name, "Mix");
     assert_eq!(result.playlists[0].folder_id.as_deref(), Some("folder:1"));
-    assert!(requests.lock().await[1].contains("/rest/ext/getPlaylistTree?"));
+    assert!(requests.lock().await[2].contains("/rest/ext/getPlaylistTree?"));
 }
 
 #[tokio::test]
@@ -108,7 +112,7 @@ async fn playlist_detail_decodes_playlist_and_entries() {
     let body = format!(
         "\"playlist\":{{\"id\":\"playlist:5\",\"ownerId\":\"user:1\",\"name\":\"Mix\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":1,\"duration\":180,\"created\":null,\"changed\":null,\"entry\":[{track}]}}"
     );
-    let (address, requests, handle) = mock_server(vec![ok(""), ok(&body)]).await;
+    let (address, requests, handle) = mock_server(vec![ok(""), current_user(), ok(&body)]).await;
     let client = logged_in(address).await;
 
     let detail = client.playlist_detail("playlist:5".into()).await.unwrap();
@@ -117,7 +121,7 @@ async fn playlist_detail_decodes_playlist_and_entries() {
     assert_eq!(detail.playlist.name, "Mix");
     assert_eq!(detail.tracks.len(), 1);
     assert_eq!(detail.tracks[0].title, "Song");
-    let req = requests.lock().await[1].clone();
+    let req = requests.lock().await[2].clone();
     assert!(req.contains("/rest/getPlaylist?"));
     assert!(req.contains("id=playlist%3A5"));
 }
@@ -125,7 +129,7 @@ async fn playlist_detail_decodes_playlist_and_entries() {
 #[tokio::test]
 async fn create_playlist_without_folder_sends_single_request() {
     let created = "\"playlist\":{\"id\":\"playlist:7\",\"ownerId\":\"user:1\",\"name\":\"New\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":0,\"duration\":0,\"created\":null,\"changed\":null,\"entry\":[]}";
-    let (address, requests, handle) = mock_server(vec![ok(""), ok(created)]).await;
+    let (address, requests, handle) = mock_server(vec![ok(""), current_user(), ok(created)]).await;
     let client = logged_in(address).await;
 
     let playlist = client
@@ -136,15 +140,16 @@ async fn create_playlist_without_folder_sends_single_request() {
 
     assert_eq!(playlist.id, "playlist:7");
     let reqs = requests.lock().await;
-    assert_eq!(reqs.len(), 2); // ping + createPlaylist，无 move
-    assert!(reqs[1].contains("/rest/createPlaylist?"));
-    assert!(reqs[1].contains("name=New"));
+    assert_eq!(reqs.len(), 3); // ping + getUser + createPlaylist，无 move
+    assert!(reqs[2].contains("/rest/createPlaylist?"));
+    assert!(reqs[2].contains("name=New"));
 }
 
 #[tokio::test]
 async fn create_playlist_with_folder_creates_then_moves() {
     let created = "\"playlist\":{\"id\":\"playlist:7\",\"ownerId\":\"user:1\",\"name\":\"New\",\"comment\":null,\"folderId\":null,\"position\":0,\"songCount\":0,\"duration\":0,\"created\":null,\"changed\":null,\"entry\":[]}";
-    let (address, requests, handle) = mock_server(vec![ok(""), ok(created), ok("")]).await;
+    let (address, requests, handle) =
+        mock_server(vec![ok(""), current_user(), ok(created), ok("")]).await;
     let client = logged_in(address).await;
 
     let playlist = client
@@ -159,27 +164,28 @@ async fn create_playlist_with_folder_creates_then_moves() {
 
     assert_eq!(playlist.folder_id.as_deref(), Some("folder:2"));
     let reqs = requests.lock().await;
-    assert_eq!(reqs.len(), 3); // ping + create + move
-    assert!(reqs[1].contains("songId=track%3A1"));
-    assert!(reqs[2].contains("/rest/ext/movePlaylist?"));
-    assert!(reqs[2].contains("id=playlist%3A7"));
-    assert!(reqs[2].contains("folderId=folder%3A2"));
+    assert_eq!(reqs.len(), 4); // ping + getUser + create + move
+    assert!(reqs[2].contains("songId=track%3A1"));
+    assert!(reqs[3].contains("/rest/ext/movePlaylist?"));
+    assert!(reqs[3].contains("id=playlist%3A7"));
+    assert!(reqs[3].contains("folderId=folder%3A2"));
 }
 
 #[tokio::test]
 async fn delete_playlist_hits_endpoint() {
-    let (address, requests, handle) = mock_server(vec![ok(""), ok("")]).await;
+    let (address, requests, handle) = mock_server(vec![ok(""), current_user(), ok("")]).await;
     let client = logged_in(address).await;
 
     client.delete_playlist("playlist:7".into()).await.unwrap();
     handle.await.unwrap();
 
-    assert!(requests.lock().await[1].contains("/rest/deletePlaylist?"));
+    assert!(requests.lock().await[2].contains("/rest/deletePlaylist?"));
 }
 
 #[tokio::test]
 async fn rename_and_add_and_remove_encode_params() {
-    let (address, requests, handle) = mock_server(vec![ok(""), ok(""), ok(""), ok("")]).await;
+    let (address, requests, handle) =
+        mock_server(vec![ok(""), current_user(), ok(""), ok(""), ok("")]).await;
     let client = logged_in(address).await;
 
     client
@@ -200,19 +206,26 @@ async fn rename_and_add_and_remove_encode_params() {
     handle.await.unwrap();
 
     let reqs = requests.lock().await;
-    assert!(reqs[1].contains("/rest/updatePlaylist?"));
-    assert!(reqs[1].contains("playlistId=playlist%3A5"));
-    assert!(reqs[1].contains("name=Renamed"));
-    assert!(reqs[2].contains("songIdToAdd=track%3A1"));
-    assert!(reqs[2].contains("songIdToAdd=track%3A2"));
-    assert!(reqs[3].contains("songIndexToRemove=3"));
+    assert!(reqs[2].contains("/rest/updatePlaylist?"));
+    assert!(reqs[2].contains("playlistId=playlist%3A5"));
+    assert!(reqs[2].contains("name=Renamed"));
+    assert!(reqs[3].contains("songIdToAdd=track%3A1"));
+    assert!(reqs[3].contains("songIdToAdd=track%3A2"));
+    assert!(reqs[4].contains("songIndexToRemove=3"));
 }
 
 #[tokio::test]
 async fn create_folder_decodes_and_move_encodes() {
     let folder = "\"playlistFolder\":{\"id\":\"folder:3\",\"ownerId\":\"user:1\",\"name\":\"Jazz\",\"parentId\":\"folder:1\",\"position\":0}";
-    let (address, requests, handle) =
-        mock_server(vec![ok(""), ok(folder), ok(""), ok(""), ok("")]).await;
+    let (address, requests, handle) = mock_server(vec![
+        ok(""),
+        current_user(),
+        ok(folder),
+        ok(""),
+        ok(""),
+        ok(""),
+    ])
+    .await;
     let client = logged_in(address).await;
 
     let created = client
@@ -230,10 +243,10 @@ async fn create_folder_decodes_and_move_encodes() {
     assert_eq!(created.name, "Jazz");
     assert_eq!(created.parent_id.as_deref(), Some("folder:1"));
     let reqs = requests.lock().await;
-    assert!(reqs[1].contains("/rest/ext/createPlaylistFolder?"));
-    assert!(reqs[1].contains("parentId=folder%3A1"));
-    assert!(reqs[2].contains("/rest/ext/updatePlaylistFolder?"));
-    assert!(reqs[3].contains("/rest/ext/moveFolder?"));
-    assert!(!reqs[3].contains("parentId=")); // 移到根不带 parentId
-    assert!(reqs[4].contains("/rest/ext/deletePlaylistFolder?"));
+    assert!(reqs[2].contains("/rest/ext/createPlaylistFolder?"));
+    assert!(reqs[2].contains("parentId=folder%3A1"));
+    assert!(reqs[3].contains("/rest/ext/updatePlaylistFolder?"));
+    assert!(reqs[4].contains("/rest/ext/moveFolder?"));
+    assert!(!reqs[4].contains("parentId=")); // 移到根不带 parentId
+    assert!(reqs[5].contains("/rest/ext/deletePlaylistFolder?"));
 }

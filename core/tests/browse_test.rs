@@ -12,7 +12,7 @@ async fn browse_and_search_decode_opensubsonic_json_payloads() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let observed = requests.clone();
     let server = tokio::spawn(async move {
-        for _ in 0..5 {
+        for _ in 0..6 {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = vec![0; 4096];
             let bytes = socket.read(&mut request).await.unwrap();
@@ -55,17 +55,19 @@ async fn browse_and_search_decode_opensubsonic_json_payloads() {
     assert_eq!(artists[0].name, "Band");
     assert_eq!(search.albums[0].id, "al-1");
     let requests = requests.lock().await;
-    assert!(requests[1].contains("/rest/getAlbumList2?"));
-    assert!(requests[1].contains("type=newest"));
-    assert!(requests[2].contains("/rest/getAlbum?"));
-    assert!(requests[2].contains("id=al-1"));
-    assert!(requests[3].contains("/rest/getArtists?"));
-    assert!(requests[4].contains("/rest/search3?"));
-    assert!(requests[4].contains("query=Blue"));
+    assert!(requests[2].contains("/rest/getAlbumList2?"));
+    assert!(requests[2].contains("type=newest"));
+    assert!(requests[3].contains("/rest/getAlbum?"));
+    assert!(requests[3].contains("id=al-1"));
+    assert!(requests[4].contains("/rest/getArtists?"));
+    assert!(requests[5].contains("/rest/search3?"));
+    assert!(requests[5].contains("query=Blue"));
 }
 
 fn response_for(request: &str) -> String {
-    let data = if request.contains("/rest/getAlbumList2") {
+    let data = if request.contains("/rest/getUser?") {
+        "\"user\":{\"username\":\"admin\",\"adminRole\":true}"
+    } else if request.contains("/rest/getAlbumList2") {
         "\"albumList2\":{\"album\":[{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120}]}"
     } else if request.contains("/rest/getAlbum?") {
         "\"album\":{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120,\"song\":[{\"id\":\"tr-1\",\"title\":\"Blue Sky\",\"size\":42,\"duration\":120,\"bitRate\":320}]}"
@@ -120,7 +122,7 @@ async fn spin_server(
 
 #[tokio::test]
 async fn list_albums_by_genre_sends_type_and_genre_query() {
-    let (address, requests, server) = spin_server(2).await;
+    let (address, requests, server) = spin_server(3).await;
     let client = MusicClient::new();
     client
         .login(
@@ -138,14 +140,14 @@ async fn list_albums_by_genre_sends_type_and_genre_query() {
 
     assert_eq!(albums[0].name, "Blue");
     let requests = requests.lock().await;
-    assert!(requests[1].contains("/rest/getAlbumList2?"));
-    assert!(requests[1].contains("type=byGenre"));
-    assert!(requests[1].contains("genre=Rock"));
+    assert!(requests[2].contains("/rest/getAlbumList2?"));
+    assert!(requests[2].contains("type=byGenre"));
+    assert!(requests[2].contains("genre=Rock"));
 }
 
 #[tokio::test]
 async fn list_albums_by_year_range_sends_from_and_to_year() {
-    let (address, requests, server) = spin_server(2).await;
+    let (address, requests, server) = spin_server(3).await;
     let client = MusicClient::new();
     client
         .login(
@@ -170,14 +172,14 @@ async fn list_albums_by_year_range_sends_from_and_to_year() {
 
     assert_eq!(albums[0].name, "Blue");
     let requests = requests.lock().await;
-    assert!(requests[1].contains("type=byYear"));
-    assert!(requests[1].contains("fromYear=2000"));
-    assert!(requests[1].contains("toYear=2020"));
+    assert!(requests[2].contains("type=byYear"));
+    assert!(requests[2].contains("fromYear=2000"));
+    assert!(requests[2].contains("toYear=2020"));
 }
 
 #[tokio::test]
 async fn list_genres_decodes_genre_array() {
-    let (address, requests, server) = spin_server(2).await;
+    let (address, requests, server) = spin_server(3).await;
     let client = MusicClient::new();
     client
         .login(
@@ -194,5 +196,5 @@ async fn list_genres_decodes_genre_array() {
     assert_eq!(genres[0].song_count, 5);
     assert_eq!(genres[0].album_count, 2);
     let requests = requests.lock().await;
-    assert!(requests[1].contains("/rest/getGenres"));
+    assert!(requests[2].contains("/rest/getGenres"));
 }

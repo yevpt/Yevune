@@ -14,19 +14,19 @@ async fn detailed_prefix_scan_decodes_changes() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
-        for request_index in 0..2 {
+        for request_index in 0..3 {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = [0; 4096];
             let count = socket.read(&mut request).await.unwrap();
             let request = String::from_utf8_lossy(&request[..count]);
-            if request_index == 1 {
+            if request_index == 2 {
                 assert!(request.contains("/rest/ext/startScan?"));
                 assert!(request.contains("prefix=library%2F"));
             }
-            let data = if request_index == 0 {
-                ""
-            } else {
-                ",\"scanResult\":{\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":2,\"changesTruncated\":false,\"changes\":[{\"action\":\"added\",\"objectKey\":\"library/song.flac\",\"track\":{\"id\":\"tr-1\",\"title\":\"Song\",\"size\":42,\"duration\":120,\"bitRate\":320}}]}"
+            let data = match request_index {
+                0 => "",
+                1 => ",\"user\":{\"username\":\"admin\",\"adminRole\":true}",
+                _ => ",\"scanResult\":{\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":2,\"changesTruncated\":false,\"changes\":[{\"action\":\"added\",\"objectKey\":\"library/song.flac\",\"track\":{\"id\":\"tr-1\",\"title\":\"Song\",\"size\":42,\"duration\":120,\"bitRate\":320}}]}",
             };
             let body = format!("{{\"subsonic-response\":{{\"status\":\"ok\"{data}}}}}");
             socket.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
@@ -49,14 +49,14 @@ async fn failed_scan_decodes_protocol_error_without_exposing_credentials() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
-        for index in 0..2 {
+        for index in 0..3 {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = [0; 2048];
             let _ = socket.read(&mut request).await.unwrap();
-            let body = if index == 0 {
-                "{\"subsonic-response\":{\"status\":\"ok\"}}"
-            } else {
-                "{\"subsonic-response\":{\"status\":\"failed\",\"error\":{\"code\":0,\"message\":\"Internal server error\"}}}"
+            let body = match index {
+                0 => "{\"subsonic-response\":{\"status\":\"ok\"}}",
+                1 => "{\"subsonic-response\":{\"status\":\"ok\",\"user\":{\"username\":\"admin\",\"adminRole\":true}}}",
+                _ => "{\"subsonic-response\":{\"status\":\"failed\",\"error\":{\"code\":0,\"message\":\"Internal server error\"}}}",
             };
             socket.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         }
