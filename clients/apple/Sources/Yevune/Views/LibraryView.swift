@@ -6,6 +6,7 @@ enum SidebarSelection: Hashable {
     case library
     case playlist(String)
     case adminUsers
+    case adminRoles
 }
 
 /// 重命名目标：区分歌单与文件夹。
@@ -70,6 +71,8 @@ struct LibraryView: View {
                     Section("管理") {
                         Label("用户", systemImage: "person.2")
                             .tag(SidebarSelection.adminUsers)
+                        Label("角色", systemImage: "person.badge.key")
+                            .tag(SidebarSelection.adminRoles)
                     }
                 }
                 if let playlistError = playlists.errorMessage {
@@ -155,6 +158,8 @@ struct LibraryView: View {
         switch selection {
         case .adminUsers:
             AdminUsersView(model: admin)
+        case .adminRoles:
+            AdminRolesView(model: admin)
         case .playlist(let id):
             if let detail = playlists.detail, detail.playlist.id == id {
                 PlaylistDetailView(detail: detail, playlists: playlists, media: media)
