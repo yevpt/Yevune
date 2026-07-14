@@ -68,7 +68,10 @@ struct AdminRolesView: View {
         .navigationTitle("角色")
         .overlay(alignment: .top) {
             if let error = model.errorMessage, !model.roles.isEmpty {
-                AdminErrorBanner(message: error).padding(.top, 8)
+                AdminErrorBanner(message: error) {
+                    Task { await model.load() }
+                }
+                .padding(.top, 8)
             }
         }
         .task {

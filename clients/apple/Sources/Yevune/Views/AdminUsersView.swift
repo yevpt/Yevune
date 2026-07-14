@@ -62,7 +62,9 @@ struct AdminUsersView: View {
         .navigationTitle("用户")
         .overlay(alignment: .top) {
             if let error = model.errorMessage, !model.users.isEmpty {
-                AdminErrorBanner(message: error)
+                AdminErrorBanner(message: error) {
+                    Task { await model.load() }
+                }
                     .padding(.top, 8)
             }
         }
@@ -350,9 +352,16 @@ private struct ResetPasswordSheet: View {
 
 struct AdminErrorBanner: View {
     let message: String
+    let retry: () -> Void
 
     var body: some View {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
+        HStack(spacing: 10) {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+            Divider().frame(height: 16)
+            Button("重新加载", action: retry)
+                .buttonStyle(.borderless)
+                .fontWeight(.semibold)
+        }
             .font(.callout)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
