@@ -158,9 +158,9 @@ SwiftUI 结构以 `swift build`、`swift test` 和真实服务手动冒烟验证
 
 ### 9.4 完成门槛
 
-- `cargo test`
-- `cargo clippy -- -D warnings`
-- `cargo fmt --check`
+- `cargo test --manifest-path contract/Cargo.toml`、`server/Cargo.toml`、`core/Cargo.toml`
+- `cargo clippy --manifest-path contract/Cargo.toml -- -D warnings`、`server/Cargo.toml --all-targets -- -D warnings`、`core/Cargo.toml --all-targets -- -D warnings`
+- `cargo fmt --manifest-path contract/Cargo.toml --check`、`server/Cargo.toml --check`、`core/Cargo.toml --check`
 - `swift build --package-path clients/apple`
 - `swift test --package-path clients/apple`
 - 一键启动脚本测试与上述真实服务冒烟

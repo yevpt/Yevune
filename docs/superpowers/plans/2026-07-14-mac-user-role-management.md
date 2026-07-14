@@ -952,15 +952,15 @@ git commit -m "feat(mac): 加入角色管理工作台"
 
 - [ ] **Step 1: Rust 全量验证**
 
-Run: `cargo test`
+Run: `cargo test --manifest-path contract/Cargo.toml && cargo test --manifest-path server/Cargo.toml && cargo test --manifest-path core/Cargo.toml`
 
 Expected: PASS。
 
-Run: `cargo clippy -- -D warnings`
+Run: `cargo clippy --manifest-path contract/Cargo.toml -- -D warnings && cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings && cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`
 
 Expected: PASS with zero warnings。
 
-Run: `cargo fmt --check`
+Run: `cargo fmt --manifest-path contract/Cargo.toml --check && cargo fmt --manifest-path server/Cargo.toml --check && cargo fmt --manifest-path core/Cargo.toml --check`
 
 Expected: PASS。
 
