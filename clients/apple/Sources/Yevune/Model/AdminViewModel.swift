@@ -72,6 +72,60 @@ final class AdminViewModel: ObservableObject {
         users.count { $0.roles.contains(role.name) }
     }
 
+    func createUser(name: String, email: String, password: String, admin: Bool) async {
+        await mutate {
+            try await client.createUser(
+                username: name,
+                email: email,
+                password: password,
+                admin: admin
+            )
+        }
+    }
+
+    func updateUser(_ user: User, email: String, admin: Bool) async {
+        guard canSetAdmin(user, to: admin) else { return }
+        await mutate {
+            try await client.updateUser(username: user.name, email: email, admin: admin)
+        }
+    }
+
+    func changePassword(for user: User, password: String) async {
+        await mutate {
+            try await client.changePassword(username: user.name, password: password)
+        }
+    }
+
+    func deleteUser(_ user: User) async {
+        guard canDelete(user) else { return }
+        await mutate {
+            try await client.deleteUser(username: user.name)
+        }
+    }
+
+    func createRole(name: String) async {
+        await mutate {
+            _ = try await client.createRole(name: name)
+        }
+    }
+
+    func deleteRole(_ role: Role) async {
+        guard canDelete(role) else { return }
+        await mutate {
+            try await client.deleteRole(id: role.id)
+        }
+    }
+
+    func setRole(_ role: Role, assigned: Bool, for user: User) async {
+        await mutate {
+            if assigned {
+                try await client.assignRole(userID: user.id, roleID: role.id)
+            } else {
+                try await client.unassignRole(userID: user.id, roleID: role.id)
+            }
+        }
+    }
+
     private var administratorCount: Int {
         users.count { $0.admin }
     }
@@ -82,6 +136,20 @@ final class AdminViewModel: ObservableObject {
         }
         if let selectedRoleID, !roles.contains(where: { $0.id == selectedRoleID }) {
             self.selectedRoleID = nil
+        }
+    }
+
+    private func mutate(_ operation: () async throws -> Void) async {
+        guard !isMutating else { return }
+        isMutating = true
+        errorMessage = nil
+        defer { isMutating = false }
+
+        do {
+            try await operation()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
