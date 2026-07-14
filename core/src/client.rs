@@ -79,6 +79,85 @@ impl MusicClient {
         admin::list_roles(&self.http, &self.authenticated_session().await?).await
     }
 
+    /// 创建家庭用户并赋予内建 member 或 admin 角色。
+    pub async fn create_user(
+        &self,
+        username: String,
+        email: String,
+        password: String,
+        admin: bool,
+    ) -> Result<()> {
+        admin::create_user(
+            &self.http,
+            &self.authenticated_session().await?,
+            username,
+            email,
+            password,
+            admin,
+        )
+        .await
+    }
+
+    /// 更新用户邮箱与管理员状态。
+    pub async fn update_user(&self, username: String, email: String, admin: bool) -> Result<()> {
+        admin::update_user(
+            &self.http,
+            &self.authenticated_session().await?,
+            username,
+            email,
+            admin,
+        )
+        .await
+    }
+
+    /// 重置指定用户的密码。
+    pub async fn change_password(&self, username: String, password: String) -> Result<()> {
+        admin::change_password(
+            &self.http,
+            &self.authenticated_session().await?,
+            username,
+            password,
+        )
+        .await
+    }
+
+    /// 删除指定用户。
+    pub async fn delete_user(&self, username: String) -> Result<()> {
+        admin::delete_user(&self.http, &self.authenticated_session().await?, username).await
+    }
+
+    /// 创建自定义角色。
+    pub async fn create_role(&self, name: String) -> Result<contract::Role> {
+        admin::create_role(&self.http, &self.authenticated_session().await?, name).await
+    }
+
+    /// 删除自定义角色；内建角色由服务端拒绝。
+    pub async fn delete_role(&self, id: String) -> Result<()> {
+        admin::delete_role(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 给用户分配角色。
+    pub async fn assign_role(&self, user_id: String, role_id: String) -> Result<()> {
+        admin::assign_role(
+            &self.http,
+            &self.authenticated_session().await?,
+            user_id,
+            role_id,
+        )
+        .await
+    }
+
+    /// 解除用户的角色。
+    pub async fn unassign_role(&self, user_id: String, role_id: String) -> Result<()> {
+        admin::unassign_role(
+            &self.http,
+            &self.authenticated_session().await?,
+            user_id,
+            role_id,
+        )
+        .await
+    }
+
     /// 读取一页专辑，按排序/流派/年份区间三态互斥筛选。
     pub async fn list_albums(
         &self,

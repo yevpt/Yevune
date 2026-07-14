@@ -82,3 +82,68 @@ async fn list_users_and_roles_decode_shared_contract_records() {
     assert!(requests[2].contains("/rest/ext/getUsers?"));
     assert!(requests[3].contains("/rest/ext/getRoles?"));
 }
+
+#[tokio::test]
+async fn write_operations_encode_all_parameters() {
+    let created_role = "\"role\":{\"id\":\"ro-9\",\"name\":\"孩子\",\"isBuiltin\":false}";
+    let (address, requests, handle) = mock_server(vec![
+        ok(""),
+        current_user(true),
+        ok(""),
+        ok(""),
+        ok(""),
+        ok(created_role),
+        ok(""),
+        ok(""),
+        ok(""),
+        ok(""),
+    ])
+    .await;
+    let client = logged_in(address).await;
+
+    client
+        .create_user("小明".into(), "m@example.com".into(), "s e&c".into(), false)
+        .await
+        .unwrap();
+    client
+        .update_user("小明".into(), "new@example.com".into(), true)
+        .await
+        .unwrap();
+    client
+        .change_password("小明".into(), "new secret".into())
+        .await
+        .unwrap();
+    let role = client.create_role("孩子".into()).await.unwrap();
+    client
+        .assign_role("us-2".into(), role.id.clone())
+        .await
+        .unwrap();
+    client
+        .unassign_role("us-2".into(), role.id.clone())
+        .await
+        .unwrap();
+    client.delete_role(role.id).await.unwrap();
+    client.delete_user("小明".into()).await.unwrap();
+    handle.await.unwrap();
+
+    let requests = requests.lock().await;
+    assert!(requests[2].contains("/rest/createUser?"));
+    assert!(requests[2].contains("username=%E5%B0%8F%E6%98%8E"));
+    assert!(requests[2].contains("email=m%40example.com"));
+    assert!(requests[2].contains("password=s+e%26c"));
+    assert!(requests[2].contains("adminRole=false"));
+    assert!(requests[3].contains("/rest/updateUser?"));
+    assert!(requests[3].contains("email=new%40example.com"));
+    assert!(requests[3].contains("adminRole=true"));
+    assert!(requests[4].contains("/rest/changePassword?"));
+    assert!(requests[4].contains("password=new+secret"));
+    assert!(requests[5].contains("/rest/ext/createRole?"));
+    assert!(requests[5].contains("name=%E5%AD%A9%E5%AD%90"));
+    assert!(requests[6].contains("/rest/ext/assignRole?"));
+    assert!(requests[6].contains("userId=us-2"));
+    assert!(requests[6].contains("roleId=ro-9"));
+    assert!(requests[7].contains("/rest/ext/unassignRole?"));
+    assert!(requests[8].contains("/rest/ext/deleteRole?"));
+    assert!(requests[8].contains("id=ro-9"));
+    assert!(requests[9].contains("/rest/deleteUser?"));
+}

@@ -37,6 +37,126 @@ pub(crate) async fn list_roles(
     Ok(payload.roles.role)
 }
 
+pub(crate) async fn create_user(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    username: String,
+    email: String,
+    password: String,
+    admin: bool,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "createUser",
+        &[
+            ("username".to_owned(), username),
+            ("email".to_owned(), email),
+            ("password".to_owned(), password),
+            ("adminRole".to_owned(), admin.to_string()),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn update_user(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    username: String,
+    email: String,
+    admin: bool,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "updateUser",
+        &[
+            ("username".to_owned(), username),
+            ("email".to_owned(), email),
+            ("adminRole".to_owned(), admin.to_string()),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn change_password(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    username: String,
+    password: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "changePassword",
+        &[
+            ("username".to_owned(), username),
+            ("password".to_owned(), password),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn delete_user(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    username: String,
+) -> Result<()> {
+    http.get_empty_with_params(auth, "deleteUser", &[("username".to_owned(), username)])
+        .await
+}
+
+pub(crate) async fn create_role(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    name: String,
+) -> Result<Role> {
+    let payload: RolePayload = http
+        .get_json(auth, "ext/createRole", &[("name".to_owned(), name)])
+        .await?;
+    Ok(payload.role)
+}
+
+pub(crate) async fn delete_role(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+) -> Result<()> {
+    http.get_empty_with_params(auth, "ext/deleteRole", &[("id".to_owned(), id)])
+        .await
+}
+
+pub(crate) async fn assign_role(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    user_id: String,
+    role_id: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "ext/assignRole",
+        &[
+            ("userId".to_owned(), user_id),
+            ("roleId".to_owned(), role_id),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn unassign_role(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    user_id: String,
+    role_id: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "ext/unassignRole",
+        &[
+            ("userId".to_owned(), user_id),
+            ("roleId".to_owned(), role_id),
+        ],
+    )
+    .await
+}
+
 #[derive(Deserialize)]
 struct CurrentUserPayload {
     user: CurrentUser,
@@ -68,4 +188,9 @@ struct RolesPayload {
 struct RolesBody {
     #[serde(default)]
     role: Vec<Role>,
+}
+
+#[derive(Deserialize)]
+struct RolePayload {
+    role: Role,
 }
