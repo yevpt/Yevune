@@ -159,6 +159,127 @@ final class AccessControlViewModelTests: XCTestCase {
         XCTAssertFalse(model.isSearching)
     }
 
+    func testSaveAndRestoreForwardExactDTOsAndReloadRules() async {
+        let fake = FakeAccessControlClient(rules: Self.rules, users: Self.users, roles: Self.roles)
+        let model = AccessControlViewModel(client: fake)
+        await model.load()
+        let target = AccessScopeTarget(
+            scopeType: .genre,
+            id: "摇滚 & Blues",
+            name: "摇滚 & Blues",
+            context: nil
+        )
+        let grants = [
+            Principal(principalType: .user, id: "us-2"),
+            Principal(principalType: .role, id: "ro-7"),
+        ]
+
+        let saved = await model.saveRule(target: target, grants: grants)
+        XCTAssertTrue(saved)
+        var calls = await fake.recordedCalls()
+        XCTAssertTrue(calls.contains(.set(.genre, "摇滚 & Blues", grants)))
+        XCTAssertEqual(model.rule(for: target)?.grants, grants)
+
+        let restored = await model.restoreFamilyVisibility(ruleID: "ru-1")
+        XCTAssertTrue(restored)
+        calls = await fake.recordedCalls()
+        XCTAssertTrue(calls.contains(.delete("ru-1")))
+        XCTAssertFalse(model.rules.contains(where: { $0.id == "ru-1" }))
+    }
+
+    func testFailedWriteReturnsFalseAndPreservesPreviousStateWithoutReloading() async {
+        let fake = FakeAccessControlClient(
+            rules: Self.rules,
+            users: Self.users,
+            roles: Self.roles,
+            mutationFails: true
+        )
+        let model = AccessControlViewModel(client: fake)
+        await model.load()
+        let target = AccessScopeTarget(scopeType: .genre, id: "Jazz", name: "Jazz", context: nil)
+
+        let succeeded = await model.saveRule(target: target, grants: [])
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(model.rules, Self.rules)
+        XCTAssertEqual(model.users, Self.users)
+        XCTAssertEqual(model.roles, Self.roles)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isMutating)
+        let calls = await fake.recordedCalls()
+        XCTAssertEqual(calls.filter { $0 == .listRules }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listUsers }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listRoles }.count, 1)
+    }
+
+    func testSuccessfulWriteWithFailedReloadReturnsTrueAndPreservesPreviousState() async {
+        let fake = FakeAccessControlClient(
+            rules: Self.rules,
+            users: Self.users,
+            roles: Self.roles,
+            failListRulesOnCall: 2
+        )
+        let model = AccessControlViewModel(client: fake)
+        await model.load()
+        let target = AccessScopeTarget(scopeType: .genre, id: "Jazz", name: "Jazz", context: nil)
+
+        let succeeded = await model.saveRule(target: target, grants: [])
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(model.rules, Self.rules)
+        XCTAssertEqual(model.users, Self.users)
+        XCTAssertEqual(model.roles, Self.roles)
+        XCTAssertTrue(model.errorMessage?.contains("操作已完成") == true)
+        XCTAssertFalse(model.isMutating)
+        XCTAssertFalse(model.isLoading)
+    }
+
+    func testRuleLookupMatchesBothScopeTypeAndOpaqueID() async {
+        let model = AccessControlViewModel(
+            client: FakeAccessControlClient(rules: Self.rules, users: Self.users, roles: Self.roles)
+        )
+        await model.load()
+
+        XCTAssertEqual(
+            model.rule(
+                for: AccessScopeTarget(scopeType: .track, id: "tr-1", name: "ignored", context: nil)
+            )?.id,
+            "ru-1"
+        )
+        XCTAssertNil(
+            model.rule(
+                for: AccessScopeTarget(scopeType: .album, id: "tr-1", name: "ignored", context: nil)
+            )
+        )
+    }
+
+    func testReferenceCountsRespectPrincipalTypeAndEmptyGrantNeedsConfirmation() async {
+        let rules = Self.rules + [
+            AccessRule(
+                id: "ru-3",
+                scopeType: .artist,
+                scopeId: "ar-1",
+                scopeName: "John Coltrane",
+                grants: [
+                    Principal(principalType: .user, id: "us-2"),
+                    Principal(principalType: .role, id: "us-2"),
+                    Principal(principalType: .user, id: "ro-2"),
+                ]
+            ),
+        ]
+        let model = AccessControlViewModel(
+            client: FakeAccessControlClient(rules: rules, users: Self.users, roles: Self.roles)
+        )
+        await model.load()
+
+        XCTAssertEqual(model.ruleReferenceCount(userID: "us-2"), 2)
+        XCTAssertEqual(model.ruleReferenceCount(roleID: "ro-2"), 1)
+        XCTAssertTrue(model.requiresEmptyGrantConfirmation([]))
+        XCTAssertFalse(
+            model.requiresEmptyGrantConfirmation([Principal(principalType: .user, id: "us-2")])
+        )
+    }
+
     private static let rules = [
         AccessRule(
             id: "ru-1",
@@ -242,15 +363,27 @@ private enum LoadFailure: CaseIterable {
     case roles
 }
 
+private enum AccessControlCall: Equatable {
+    case listRules
+    case listUsers
+    case listRoles
+    case set(ScopeType, String, [Principal])
+    case delete(String)
+}
+
 private actor FakeAccessControlClient: MusicClientProviding {
-    private let rules: [AccessRule]
+    private var rules: [AccessRule]
     private let users: [User]
     private let roles: [Role]
     private let genres: [Genre]
     private let searchResult: SearchResult
     private var searchFails: Bool
     private var loadFailure: LoadFailure?
+    private let mutationFails: Bool
+    private let failListRulesOnCall: Int?
     private var queries: [String] = []
+    private var calls: [AccessControlCall] = []
+    private var listRulesCallCount = 0
 
     init(
         rules: [AccessRule] = [],
@@ -259,7 +392,9 @@ private actor FakeAccessControlClient: MusicClientProviding {
         genres: [Genre] = [],
         searchResult: SearchResult = .init(artists: [], albums: [], tracks: []),
         loadFailure: LoadFailure? = nil,
-        searchFails: Bool = false
+        searchFails: Bool = false,
+        mutationFails: Bool = false,
+        failListRulesOnCall: Int? = nil
     ) {
         self.rules = rules
         self.users = users
@@ -268,6 +403,8 @@ private actor FakeAccessControlClient: MusicClientProviding {
         self.searchResult = searchResult
         self.loadFailure = loadFailure
         self.searchFails = searchFails
+        self.mutationFails = mutationFails
+        self.failListRulesOnCall = failListRulesOnCall
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
@@ -298,18 +435,49 @@ private actor FakeAccessControlClient: MusicClientProviding {
     func scanStatus() async throws -> ScanStatus { .init(scanning: false, count: 0) }
 
     func listAccessRules() async throws -> [AccessRule] {
-        if loadFailure == .rules { throw TestError.requestFailed }
+        calls.append(.listRules)
+        listRulesCallCount += 1
+        if loadFailure == .rules || listRulesCallCount == failListRulesOnCall {
+            throw TestError.requestFailed
+        }
         return rules
     }
 
     func listUsers() async throws -> [User] {
+        calls.append(.listUsers)
         if loadFailure == .users { throw TestError.requestFailed }
         return users
     }
 
     func listRoles() async throws -> [Role] {
+        calls.append(.listRoles)
         if loadFailure == .roles { throw TestError.requestFailed }
         return roles
+    }
+
+    func setAccessRule(
+        scopeType: ScopeType,
+        scopeID: String,
+        grants: [Principal]
+    ) async throws -> AccessRule {
+        calls.append(.set(scopeType, scopeID, grants))
+        if mutationFails { throw TestError.requestFailed }
+        let rule = AccessRule(
+            id: rules.first(where: { $0.scopeType == scopeType && $0.scopeId == scopeID })?.id ?? "ru-new",
+            scopeType: scopeType,
+            scopeId: scopeID,
+            scopeName: scopeID,
+            grants: grants
+        )
+        rules.removeAll { $0.scopeType == scopeType && $0.scopeId == scopeID }
+        rules.append(rule)
+        return rule
+    }
+
+    func deleteAccessRule(id: String) async throws {
+        calls.append(.delete(id))
+        if mutationFails { throw TestError.requestFailed }
+        rules.removeAll { $0.id == id }
     }
 
     func setLoadFailure(_ failure: LoadFailure?) {
@@ -321,6 +489,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
     }
 
     func searchQueries() -> [String] { queries }
+    func recordedCalls() -> [AccessControlCall] { calls }
 }
 
 private enum TestError: Error {

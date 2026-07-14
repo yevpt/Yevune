@@ -47,6 +47,26 @@ final class AccessControlViewModel: ObservableObject {
         }
     }
 
+    func rule(for target: AccessScopeTarget) -> AccessRule? {
+        rules.first { $0.scopeType == target.scopeType && $0.scopeId == target.id }
+    }
+
+    func ruleReferenceCount(userID: String) -> Int {
+        rules.count { rule in
+            rule.grants.contains { $0.principalType == .user && $0.id == userID }
+        }
+    }
+
+    func ruleReferenceCount(roleID: String) -> Int {
+        rules.count { rule in
+            rule.grants.contains { $0.principalType == .role && $0.id == roleID }
+        }
+    }
+
+    func requiresEmptyGrantConfirmation(_ grants: [Principal]) -> Bool {
+        grants.isEmpty
+    }
+
     func load() async {
         isLoading = true
         errorMessage = nil
@@ -126,6 +146,24 @@ final class AccessControlViewModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func saveRule(target: AccessScopeTarget, grants: [Principal]) async -> Bool {
+        await mutate {
+            _ = try await client.setAccessRule(
+                scopeType: target.scopeType,
+                scopeID: target.id,
+                grants: grants
+            )
+        }
+    }
+
+    @discardableResult
+    func restoreFamilyVisibility(ruleID: String) async -> Bool {
+        await mutate {
+            try await client.deleteAccessRule(id: ruleID)
+        }
+    }
+
     private func fetchState() async throws -> ([AccessRule], [User], [Role]) {
         async let fetchedRules = client.listAccessRules()
         async let fetchedUsers = client.listUsers()
@@ -140,5 +178,28 @@ final class AccessControlViewModel: ObservableObject {
         if let selectedRuleID, !rules.contains(where: { $0.id == selectedRuleID }) {
             self.selectedRuleID = nil
         }
+    }
+
+    private func mutate(_ operation: () async throws -> Void) async -> Bool {
+        guard !isMutating else { return false }
+        isMutating = true
+        errorMessage = nil
+        defer { isMutating = false }
+
+        do {
+            try await operation()
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            apply(try await fetchState())
+        } catch {
+            errorMessage = "操作已完成，但刷新失败：\(error.localizedDescription)"
+        }
+        return true
     }
 }
