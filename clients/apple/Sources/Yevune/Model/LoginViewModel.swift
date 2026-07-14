@@ -53,6 +53,12 @@ protocol MusicClientProviding: Sendable {
     func deleteRole(id: String) async throws
     func assignRole(userID: String, roleID: String) async throws
     func unassignRole(userID: String, roleID: String) async throws
+    func listAccessRules() async throws -> [AccessRule]
+    func setAccessRule(scopeType: ScopeType, scopeID: String, grants: [Principal]) async throws -> AccessRule
+    func deleteAccessRule(id: String) async throws
+    func getSong(id: String) async throws -> Track
+    func getArtist(id: String) async throws -> ArtistDetail
+    func listArtists() async throws -> [Artist]
 }
 
 extension MusicClientProviding {
@@ -86,6 +92,12 @@ extension MusicClientProviding {
     func deleteRole(id: String) async throws { throw CocoaError(.featureUnsupported) }
     func assignRole(userID: String, roleID: String) async throws { throw CocoaError(.featureUnsupported) }
     func unassignRole(userID: String, roleID: String) async throws { throw CocoaError(.featureUnsupported) }
+    func listAccessRules() async throws -> [AccessRule] { throw CocoaError(.featureUnsupported) }
+    func setAccessRule(scopeType: ScopeType, scopeID: String, grants: [Principal]) async throws -> AccessRule { throw CocoaError(.featureUnsupported) }
+    func deleteAccessRule(id: String) async throws { throw CocoaError(.featureUnsupported) }
+    func getSong(id: String) async throws -> Track { throw CocoaError(.featureUnsupported) }
+    func getArtist(id: String) async throws -> ArtistDetail { throw CocoaError(.featureUnsupported) }
+    func listArtists() async throws -> [Artist] { throw CocoaError(.featureUnsupported) }
 }
 
 @MainActor

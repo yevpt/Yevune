@@ -84,4 +84,13 @@ actor CoreMusicClient: MusicClientProviding {
     func unassignRole(userID: String, roleID: String) async throws {
         try await client.unassignRole(userId: userID, roleId: roleID)
     }
+
+    func listAccessRules() async throws -> [AccessRule] { try await client.listAccessRules() }
+    func setAccessRule(scopeType: ScopeType, scopeID: String, grants: [Principal]) async throws -> AccessRule {
+        try await client.setAccessRule(scopeType: scopeType, scopeId: scopeID, grants: grants)
+    }
+    func deleteAccessRule(id: String) async throws { try await client.deleteAccessRule(id: id) }
+    func getSong(id: String) async throws -> Track { try await client.getSong(id: id) }
+    func getArtist(id: String) async throws -> ArtistDetail { try await client.getArtist(id: id) }
+    func listArtists() async throws -> [Artist] { try await client.listArtists() }
 }

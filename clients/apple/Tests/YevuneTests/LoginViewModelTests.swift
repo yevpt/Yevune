@@ -20,6 +20,21 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNotNil(client as AnyObject)
     }
 
+    func testMusicClientProtocolExposesAccessRules() async throws {
+        let rule = AccessRule(
+            id: "rule-1",
+            scopeType: .album,
+            scopeId: "album-1",
+            scopeName: "Album",
+            grants: [Principal(principalType: .role, id: "role-1")]
+        )
+        let client: any MusicClientProviding = FakeMusicClient(accessRules: [rule])
+
+        let rules = try await client.listAccessRules()
+
+        XCTAssertEqual(rules, [rule])
+    }
+
     func testSubmitPublishesAuthenticatedSession() async {
         let client = FakeMusicClient()
         let model = LoginViewModel(client: client)
@@ -124,6 +139,7 @@ private final class FakeApplicationActivation: ApplicationActivating {
 
 private actor FakeMusicClient: MusicClientProviding {
     private let album: Album
+    private let accessRules: [AccessRule]
     private let scanFails: Bool
     private let loginIsAdmin: Bool
 
@@ -138,8 +154,9 @@ private actor FakeMusicClient: MusicClientProviding {
         year: nil,
         genre: nil,
         created: nil
-    ), scanFails: Bool = false, loginIsAdmin: Bool = true) {
+    ), accessRules: [AccessRule] = [], scanFails: Bool = false, loginIsAdmin: Bool = true) {
         self.album = album
+        self.accessRules = accessRules
         self.scanFails = scanFails
         self.loginIsAdmin = loginIsAdmin
     }
@@ -154,6 +171,10 @@ private actor FakeMusicClient: MusicClientProviding {
 
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] {
         [album]
+    }
+
+    func listAccessRules() async throws -> [AccessRule] {
+        accessRules
     }
 
     func search(query: String) async throws -> SearchResult {
