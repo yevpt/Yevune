@@ -48,6 +48,8 @@ pub struct AccessRule {
     pub scope_type: ScopeType,
     /// 作用域目标标识符（曲目/专辑/艺人 id，或流派名）。
     pub scope_id: String,
+    /// 作用域目标展示名；目标已不存在时为空。
+    pub scope_name: Option<String>,
     /// 允许访问的主体名单。
     pub grants: Vec<Principal>,
 }

@@ -211,6 +211,7 @@ impl<'a> AccessRepo<'a> {
             id: id.to_string(),
             scope_type: parse_scope(&scope_type).unwrap_or(ScopeType::Track),
             scope_id,
+            scope_name: None,
             grants,
         })
     }

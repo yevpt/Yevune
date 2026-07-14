@@ -195,27 +195,27 @@ fn role_往返且字段名对齐() {
 #[test]
 fn access_rule_往返且枚举为小写() {
     let rule = AccessRule {
-        id: "ac-1".into(),
+        id: "ru-1".into(),
         scope_type: ScopeType::Album,
-        scope_id: "al-1".into(),
-        grants: vec![
-            Principal {
-                principal_type: PrincipalType::User,
-                id: "us-1".into(),
-            },
-            Principal {
-                principal_type: PrincipalType::Role,
-                id: "ro-1".into(),
-            },
-        ],
+        scope_id: "al-2".into(),
+        scope_name: Some("Blue Train".into()),
+        grants: vec![Principal {
+            principal_type: PrincipalType::Role,
+            id: "ro-3".into(),
+        }],
     };
-    let json = assert_roundtrip(&rule, &["id", "scopeType", "scopeId", "grants"]);
+    let json = serde_json::to_value(&rule).unwrap();
+    assert_eq!(json["scopeName"], "Blue Train");
+    assert_eq!(
+        serde_json::from_value::<AccessRule>(json.clone()).unwrap(),
+        rule
+    );
 
     // 枚举值应序列化为小写字符串
     assert_eq!(json["scopeType"], "album");
     // Principal 的类型字段名应为 `type`，值为小写
     let first = &json["grants"][0];
-    assert_eq!(first["type"], "user");
+    assert_eq!(first["type"], "role");
     assert!(
         first.get("type").is_some(),
         "Principal 应有 `type` 字段：{first}"

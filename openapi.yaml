@@ -257,6 +257,11 @@ components:
         scopeId:
           type: string
           description: 作用域目标标识符（曲目/专辑/艺人 id，或流派名）。
+        scopeName:
+          type:
+          - string
+          - 'null'
+          description: 作用域目标展示名；目标已不存在时为空。
         scopeType:
           $ref: '#/components/schemas/ScopeType'
           description: 作用域类型。

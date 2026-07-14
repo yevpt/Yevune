@@ -83,7 +83,14 @@ async fn set_rule(
         }
     };
     debug_assert_eq!(rule.id, id.to_string());
-    response::ok(format, serde_json::json!({"accessRule": rule_value(&rule)}))
+    let rule = match rule_value(&state, &rule).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "补全新访问规则展示名失败");
+            return response::internal(format);
+        }
+    };
+    response::ok(format, serde_json::json!({"accessRule": rule}))
 }
 
 async fn get_rules(
@@ -92,18 +99,27 @@ async fn get_rules(
     _admin: ApiAdmin,
 ) -> Response {
     let format = Format::from_uri(&uri);
-    match state.index.access().list_rules().await {
-        Ok(rules) => response::ok(
-            format,
-            serde_json::json!({"accessRules": {
-                "accessRule": rules.iter().map(rule_value).collect::<Vec<_>>()
-            }}),
-        ),
+    let rules = match state.index.access().list_rules().await {
+        Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, "列举访问规则失败");
-            response::internal(format)
+            return response::internal(format);
+        }
+    };
+    let mut values = Vec::with_capacity(rules.len());
+    for rule in &rules {
+        match rule_value(&state, rule).await {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                tracing::error!(%error, "补全访问规则展示名失败");
+                return response::internal(format);
+            }
         }
     }
+    response::ok(
+        format,
+        serde_json::json!({"accessRules": {"accessRule": values}}),
+    )
 }
 
 async fn delete_rule(
@@ -211,17 +227,46 @@ async fn principals_exist(state: &AppState, grants: &[Principal]) -> sqlx::Resul
     Ok(true)
 }
 
-fn rule_value(rule: &contract::AccessRule) -> serde_json::Value {
+async fn scope_name(state: &AppState, rule: &contract::AccessRule) -> sqlx::Result<Option<String>> {
+    match rule.scope_type {
+        ScopeType::Track => {
+            sqlx::query_scalar("SELECT title FROM tracks WHERE id = ?")
+                .bind(&rule.scope_id)
+                .fetch_optional(state.index.pool())
+                .await
+        }
+        ScopeType::Album => {
+            sqlx::query_scalar("SELECT name FROM albums WHERE id = ?")
+                .bind(&rule.scope_id)
+                .fetch_optional(state.index.pool())
+                .await
+        }
+        ScopeType::Artist => {
+            sqlx::query_scalar("SELECT name FROM artists WHERE id = ?")
+                .bind(&rule.scope_id)
+                .fetch_optional(state.index.pool())
+                .await
+        }
+        ScopeType::Genre => Ok(Some(rule.scope_id.clone())),
+    }
+}
+
+async fn rule_value(
+    state: &AppState,
+    rule: &contract::AccessRule,
+) -> sqlx::Result<serde_json::Value> {
+    let scope_name = scope_name(state, rule).await?;
     let scope_id = match rule.scope_type {
         ScopeType::Track => response::opaque_id("track", &rule.scope_id),
         ScopeType::Album => response::opaque_id("album", &rule.scope_id),
         ScopeType::Artist => response::opaque_id("artist", &rule.scope_id),
         ScopeType::Genre => rule.scope_id.clone(),
     };
-    serde_json::json!({
+    Ok(serde_json::json!({
         "id": response::opaque_id("rule", &rule.id),
         "scopeType": rule.scope_type,
         "scopeId": scope_id,
+        "scopeName": scope_name,
         "grants": rule.grants.iter().map(|grant| serde_json::json!({
             "type": grant.principal_type,
             "id": response::opaque_id(match grant.principal_type {
@@ -229,7 +274,7 @@ fn rule_value(rule: &contract::AccessRule) -> serde_json::Value {
                 PrincipalType::Role => "role",
             }, &grant.id)
         })).collect::<Vec<_>>()
-    })
+    }))
 }
 
 #[cfg(test)]

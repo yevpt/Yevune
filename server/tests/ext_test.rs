@@ -752,6 +752,55 @@ async fn access_rule_allowlist_round_trips_and_is_admin_only() {
 }
 
 #[tokio::test]
+async fn access_rules_include_scope_display_names() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/access/names.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let track = payload(&uploaded, "track");
+    let track_id = track["id"].as_str().unwrap().to_owned();
+    let album_id = track["albumId"].as_str().unwrap().to_owned();
+    let artist_id = track["artistId"].as_str().unwrap().to_owned();
+
+    for (scope_type, scope_id, expected_name) in [
+        ("track", track_id.as_str(), "Song A"),
+        ("album", album_id.as_str(), "Album A"),
+        ("artist", artist_id.as_str(), "Artist A"),
+        ("genre", "Rock", "Rock"),
+    ] {
+        let body = json(
+            fixture
+                .get(
+                    "admin",
+                    &format!("/rest/ext/setAccessRule?scopeType={scope_type}&scopeId={scope_id}"),
+                )
+                .await,
+        )
+        .await;
+        assert_eq!(
+            payload(&body, "accessRule")["scopeName"],
+            expected_name,
+            "{body}"
+        );
+    }
+
+    let listed = json(fixture.get("admin", "/rest/ext/getAccessRules").await).await;
+    let rules = payload(&listed, "accessRules")["accessRule"]
+        .as_array()
+        .unwrap();
+    assert_eq!(rules.len(), 4);
+    assert!(
+        rules
+            .iter()
+            .all(|rule| rule["scopeName"].as_str().is_some()),
+        "{listed}"
+    );
+}
+
+#[tokio::test]
 async fn role_crud_assign_and_unassign_are_admin_only() {
     let fixture = Fixture::new().await;
     let created = json(
