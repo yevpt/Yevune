@@ -4,6 +4,136 @@ import YevuneCoreFFI
 
 @MainActor
 final class AccessControlViewModelTests: XCTestCase {
+    func testReadinessStartsFalseBecomesTrueAfterCompleteLoadAndClearsOnExplicitLoadFailure() async {
+        let fake = FakeAccessControlClient(rules: Self.rules, users: Self.users, roles: Self.roles)
+        let model = AccessControlViewModel(client: fake)
+
+        XCTAssertFalse(model.hasLoadedSuccessfully)
+
+        await model.load()
+        XCTAssertTrue(model.hasLoadedSuccessfully)
+
+        await fake.setLoadFailure(.rules)
+        await model.load()
+
+        XCTAssertFalse(model.hasLoadedSuccessfully)
+        XCTAssertTrue(model.rules.isEmpty)
+        XCTAssertTrue(model.users.isEmpty)
+        XCTAssertTrue(model.roles.isEmpty)
+    }
+
+    func testInitialLoadFailureKeepsReadinessFalseAndPublishesNoPartialState() async {
+        let model = AccessControlViewModel(
+            client: FakeAccessControlClient(
+                rules: Self.rules,
+                users: Self.users,
+                roles: Self.roles,
+                loadFailure: .users
+            )
+        )
+
+        await model.load()
+
+        XCTAssertFalse(model.hasLoadedSuccessfully)
+        XCTAssertTrue(model.rules.isEmpty)
+        XCTAssertTrue(model.users.isEmpty)
+        XCTAssertTrue(model.roles.isEmpty)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    func testConcurrentLoadReturnsWithoutStartingDuplicateRequests() async {
+        let fake = FakeAccessControlClient(
+            rules: Self.rules,
+            users: Self.users,
+            roles: Self.roles,
+            suspendNextLoad: true
+        )
+        let model = AccessControlViewModel(client: fake)
+        let firstLoad = Task { await model.load() }
+        await fake.waitUntilLoadStarts()
+
+        await model.load()
+        await fake.releaseSuspendedLoad()
+        await firstLoad.value
+
+        let calls = await fake.recordedCalls()
+        XCTAssertEqual(calls.filter { $0 == .listRules }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listUsers }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listRoles }.count, 1)
+        XCTAssertTrue(model.hasLoadedSuccessfully)
+    }
+
+    func testContextTargetFactoriesPreserveOpaqueIdentityAndDisplayContext() {
+        let album = Self.searchResult.albums[0]
+        let track = Self.searchResult.tracks[0]
+
+        XCTAssertEqual(
+            AccessScopeTarget.fromAlbum(album),
+            AccessScopeTarget(
+                scopeType: .album,
+                id: "al-1",
+                name: "Blue Train",
+                context: "John Coltrane"
+            )
+        )
+        XCTAssertEqual(
+            AccessScopeTarget.artist(from: album),
+            AccessScopeTarget(
+                scopeType: .artist,
+                id: "ar-1",
+                name: "John Coltrane",
+                context: "Blue Train"
+            )
+        )
+        XCTAssertEqual(
+            AccessScopeTarget.fromTrack(track),
+            AccessScopeTarget(
+                scopeType: .track,
+                id: "tr-1",
+                name: "Blue Train",
+                context: "Blue Train"
+            )
+        )
+        XCTAssertEqual(
+            AccessScopeTarget.fromGenre("摇滚 & Blues"),
+            AccessScopeTarget(
+                scopeType: .genre,
+                id: "摇滚 & Blues",
+                name: "摇滚 & Blues",
+                context: nil
+            )
+        )
+    }
+
+    func testAccessManagementPolicyRestrictsEntriesAndMapsReadinessToPresentation() {
+        XCTAssertTrue(AccessManagementPolicy.allowsEntry(isAdmin: true))
+        XCTAssertFalse(AccessManagementPolicy.allowsEntry(isAdmin: false))
+        XCTAssertEqual(
+            AccessManagementPolicy.editorPresentation(
+                hasLoadedSuccessfully: true,
+                isLoading: false,
+                errorMessage: nil
+            ),
+            .editor
+        )
+        XCTAssertEqual(
+            AccessManagementPolicy.editorPresentation(
+                hasLoadedSuccessfully: false,
+                isLoading: true,
+                errorMessage: nil
+            ),
+            .loading
+        )
+        XCTAssertEqual(
+            AccessManagementPolicy.editorPresentation(
+                hasLoadedSuccessfully: false,
+                isLoading: false,
+                errorMessage: "offline"
+            ),
+            .unavailable("offline")
+        )
+    }
+
     func testAccessRuleSelectionDropsHiddenPrincipalsAndSortsCompleteGrantList() {
         let grants = [
             Principal(principalType: .role, id: "ro-hidden-admin"),
@@ -350,6 +480,40 @@ final class AccessControlViewModelTests: XCTestCase {
         XCTAssertTrue(model.errorMessage?.contains("操作已完成") == true)
         XCTAssertFalse(model.isMutating)
         XCTAssertFalse(model.isLoading)
+        XCTAssertTrue(model.hasLoadedSuccessfully)
+    }
+
+    func testPrincipalDeletionRefreshesOnlyAfterSuccess() async {
+        let fake = FakeAccessControlClient(rules: Self.rules, users: Self.users, roles: Self.roles)
+        let model = AccessControlViewModel(client: fake)
+        await model.load()
+
+        await model.refreshAfterPrincipalDeletion(succeeded: false)
+        var calls = await fake.recordedCalls()
+        XCTAssertEqual(calls.filter { $0 == .listRules }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listUsers }.count, 1)
+        XCTAssertEqual(calls.filter { $0 == .listRoles }.count, 1)
+
+        await model.refreshAfterPrincipalDeletion(succeeded: true)
+        calls = await fake.recordedCalls()
+        XCTAssertEqual(calls.filter { $0 == .listRules }.count, 2)
+        XCTAssertEqual(calls.filter { $0 == .listUsers }.count, 2)
+        XCTAssertEqual(calls.filter { $0 == .listRoles }.count, 2)
+    }
+
+    func testFailedRefreshAfterPrincipalDeletionClearsReadinessAndEditableState() async {
+        let fake = FakeAccessControlClient(rules: Self.rules, users: Self.users, roles: Self.roles)
+        let model = AccessControlViewModel(client: fake)
+        await model.load()
+        await fake.setLoadFailure(.roles)
+
+        await model.refreshAfterPrincipalDeletion(succeeded: true)
+
+        XCTAssertFalse(model.hasLoadedSuccessfully)
+        XCTAssertTrue(model.rules.isEmpty)
+        XCTAssertTrue(model.users.isEmpty)
+        XCTAssertTrue(model.roles.isEmpty)
+        XCTAssertNotNil(model.errorMessage)
     }
 
     func testRuleLookupMatchesBothScopeTypeAndOpaqueID() async {
@@ -497,6 +661,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
     private let searchResult: SearchResult
     private var searchFails: Bool
     private var suspendNextSearch: Bool
+    private var suspendNextLoad: Bool
     private var loadFailure: LoadFailure?
     private let mutationFails: Bool
     private let failListRulesOnCall: Int?
@@ -505,6 +670,8 @@ private actor FakeAccessControlClient: MusicClientProviding {
     private var listRulesCallCount = 0
     private var suspendedSearch: CheckedContinuation<Void, Never>?
     private var searchStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var suspendedLoad: CheckedContinuation<Void, Never>?
+    private var loadStartWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         rules: [AccessRule] = [],
@@ -515,6 +682,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
         loadFailure: LoadFailure? = nil,
         searchFails: Bool = false,
         suspendNextSearch: Bool = false,
+        suspendNextLoad: Bool = false,
         mutationFails: Bool = false,
         failListRulesOnCall: Int? = nil
     ) {
@@ -526,6 +694,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
         self.loadFailure = loadFailure
         self.searchFails = searchFails
         self.suspendNextSearch = suspendNextSearch
+        self.suspendNextLoad = suspendNextLoad
         self.mutationFails = mutationFails
         self.failListRulesOnCall = failListRulesOnCall
     }
@@ -567,6 +736,13 @@ private actor FakeAccessControlClient: MusicClientProviding {
     func listAccessRules() async throws -> [AccessRule] {
         calls.append(.listRules)
         listRulesCallCount += 1
+        let waiters = loadStartWaiters
+        loadStartWaiters = []
+        waiters.forEach { $0.resume() }
+        if suspendNextLoad {
+            suspendNextLoad = false
+            await withCheckedContinuation { suspendedLoad = $0 }
+        }
         if loadFailure == .rules || listRulesCallCount == failListRulesOnCall {
             throw TestError.requestFailed
         }
@@ -626,6 +802,16 @@ private actor FakeAccessControlClient: MusicClientProviding {
     func releaseSuspendedSearch() {
         suspendedSearch?.resume()
         suspendedSearch = nil
+    }
+
+    func waitUntilLoadStarts() async {
+        guard listRulesCallCount == 0 else { return }
+        await withCheckedContinuation { loadStartWaiters.append($0) }
+    }
+
+    func releaseSuspendedLoad() {
+        suspendedLoad?.resume()
+        suspendedLoad = nil
     }
 
     func searchQueries() -> [String] { queries }

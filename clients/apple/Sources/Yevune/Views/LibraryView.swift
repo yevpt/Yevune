@@ -71,7 +71,7 @@ struct LibraryView: View {
                         onDelete: { target in deleteTarget = target }
                     )
                 }
-                if session.admin {
+                if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
                     Section("管理") {
                         Label("用户", systemImage: "person.2")
                             .tag(SidebarSelection.adminUsers)
@@ -96,10 +96,13 @@ struct LibraryView: View {
             detailContent
         }
         .task {
-            await model.load()
-            await playlists.loadTree()
-            if session.admin, !accessHasLoadedState, !access.isLoading {
-                await access.load()
+            async let libraryLoad: Void = model.load()
+            async let playlistLoad: Void = playlists.loadTree()
+            if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
+                async let accessLoad: Void = access.load()
+                _ = await (libraryLoad, playlistLoad, accessLoad)
+            } else {
+                _ = await (libraryLoad, playlistLoad)
             }
         }
         .toolbar {
@@ -163,8 +166,31 @@ struct LibraryView: View {
         }
         .sheet(isPresented: accessTargetIsPresented) {
             if let target = accessTarget {
-                AccessRuleEditorView(target: target, model: access) {
-                    accessTarget = nil
+                switch AccessManagementPolicy.editorPresentation(
+                    hasLoadedSuccessfully: access.hasLoadedSuccessfully,
+                    isLoading: access.isLoading,
+                    errorMessage: access.errorMessage
+                ) {
+                case .editor:
+                    AccessRuleEditorView(target: target, model: access) {
+                        accessTarget = nil
+                    }
+                case .loading:
+                    ProgressView("正在加载可见范围…")
+                        .padding(32)
+                case .unavailable(let message):
+                    VStack(spacing: 16) {
+                        ContentUnavailableView {
+                            Label("无法编辑可见范围", systemImage: "wifi.exclamationmark")
+                        } description: {
+                            Text(message)
+                        }
+                        Button("重新加载") {
+                            Task { await access.load() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(32)
                 }
             }
         }
@@ -221,7 +247,7 @@ struct LibraryView: View {
                             .contextMenu {
                                 if let manageAccess {
                                     Button("设置专辑可见范围") {
-                                        manageAccess(albumAccessTarget(album))
+                                        manageAccess(.fromAlbum(album))
                                     }
                                 }
                             }
@@ -293,14 +319,9 @@ struct LibraryView: View {
 
             Spacer()
 
-            if session.admin, let genre = model.genreFilter {
+            if AccessManagementPolicy.allowsEntry(isAdmin: session.admin), let genre = model.genreFilter {
                 Button {
-                    accessTarget = AccessScopeTarget(
-                        scopeType: .genre,
-                        id: genre,
-                        name: genre,
-                        context: nil
-                    )
+                    accessTarget = .fromGenre(genre)
                 } label: {
                     Label("可见范围", systemImage: "eye")
                 }
@@ -343,20 +364,7 @@ struct LibraryView: View {
     }
 
     private var manageAccess: ((AccessScopeTarget) -> Void)? {
-        session.admin ? { accessTarget = $0 } : nil
-    }
-
-    private var accessHasLoadedState: Bool {
-        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
-    }
-
-    private func albumAccessTarget(_ album: Album) -> AccessScopeTarget {
-        AccessScopeTarget(
-            scopeType: .album,
-            id: album.id,
-            name: album.name,
-            context: album.artist
-        )
+        AccessManagementPolicy.allowsEntry(isAdmin: session.admin) ? { accessTarget = $0 } : nil
     }
 }
 

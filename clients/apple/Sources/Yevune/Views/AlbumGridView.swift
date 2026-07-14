@@ -46,12 +46,7 @@ struct AlbumGridView: View {
                             if let onManageAccess {
                                 Button("设置专辑可见范围") {
                                     onManageAccess(
-                                        AccessScopeTarget(
-                                            scopeType: .album,
-                                            id: album.id,
-                                            name: album.name,
-                                            context: album.artist
-                                        )
+                                        .fromAlbum(album)
                                     )
                                 }
                             }

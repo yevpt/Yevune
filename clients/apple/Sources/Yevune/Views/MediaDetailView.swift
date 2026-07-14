@@ -35,11 +35,11 @@ struct MediaDetailView: View {
                         if let onManageAccess {
                             Menu {
                                 Button("专辑可见范围") {
-                                    onManageAccess(albumAccessTarget)
+                                    onManageAccess(.fromAlbum(album))
                                 }
-                                if let artistAccessTarget {
+                                if let artistTarget = AccessScopeTarget.artist(from: album) {
                                     Button("艺人可见范围") {
-                                        onManageAccess(artistAccessTarget)
+                                        onManageAccess(artistTarget)
                                     }
                                 }
                             } label: {
@@ -66,12 +66,7 @@ struct MediaDetailView: View {
                                 Divider()
                                 Button("设置曲目可见范围") {
                                     onManageAccess(
-                                        AccessScopeTarget(
-                                            scopeType: .track,
-                                            id: track.id,
-                                            name: track.title,
-                                            context: track.album
-                                        )
+                                        .fromTrack(track)
                                     )
                                 }
                             }
@@ -134,24 +129,5 @@ struct MediaDetailView: View {
             Text("将删除 \(pendingDeletion?.count ?? 0) 首曲目，此操作无法撤销。")
         }
         .onChange(of: album.id) { _, _ in selectedTrackIDs.removeAll() }
-    }
-
-    private var albumAccessTarget: AccessScopeTarget {
-        AccessScopeTarget(
-            scopeType: .album,
-            id: album.id,
-            name: album.name,
-            context: album.artist
-        )
-    }
-
-    private var artistAccessTarget: AccessScopeTarget? {
-        guard let artistID = album.artistId, !artistID.isEmpty else { return nil }
-        return AccessScopeTarget(
-            scopeType: .artist,
-            id: artistID,
-            name: album.artist ?? artistID,
-            context: album.name
-        )
     }
 }

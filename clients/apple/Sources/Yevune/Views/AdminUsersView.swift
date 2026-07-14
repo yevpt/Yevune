@@ -71,7 +71,7 @@ struct AdminUsersView: View {
         }
         .task {
             if model.users.isEmpty { await model.load() }
-            if !accessHasLoadedState, !access.isLoading { await access.load() }
+            if !access.hasLoadedSuccessfully, !access.isLoading { await access.load() }
         }
         .sheet(isPresented: $isCreatingUser) {
             CreateUserSheet(model: model)
@@ -80,10 +80,6 @@ struct AdminUsersView: View {
 
     private var selectedUser: User? {
         model.users.first { $0.id == model.selectedUserID }
-    }
-
-    private var accessHasLoadedState: Bool {
-        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
     }
 }
 
@@ -219,7 +215,12 @@ private struct AdminUserDetailView: View {
                         }
                         Spacer()
                         Button("删除用户", role: .destructive) { isConfirmingDelete = true }
-                            .disabled(model.isMutating || !model.canDelete(user))
+                            .disabled(
+                                model.isMutating
+                                    || !model.canDelete(user)
+                                    || !access.hasLoadedSuccessfully
+                                    || access.isLoading
+                            )
                     }
                     .padding(8)
                 }
@@ -232,7 +233,10 @@ private struct AdminUserDetailView: View {
         }
         .confirmationDialog("删除 \(user.name)？", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("删除用户", role: .destructive) {
-                Task { await model.deleteUser(user) }
+                Task {
+                    let succeeded = await model.deleteUser(user)
+                    await access.refreshAfterPrincipalDeletion(succeeded: succeeded)
+                }
             }
             Button("取消", role: .cancel) {}
         } message: {

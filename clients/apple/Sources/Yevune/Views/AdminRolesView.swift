@@ -77,7 +77,7 @@ struct AdminRolesView: View {
         }
         .task {
             if model.roles.isEmpty { await model.load() }
-            if !accessHasLoadedState, !access.isLoading { await access.load() }
+            if !access.hasLoadedSuccessfully, !access.isLoading { await access.load() }
         }
         .sheet(isPresented: $isCreatingRole) {
             CreateRoleSheet(model: model)
@@ -86,10 +86,6 @@ struct AdminRolesView: View {
 
     private var selectedRole: Role? {
         model.roles.first { $0.id == model.selectedRoleID }
-    }
-
-    private var accessHasLoadedState: Bool {
-        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
     }
 }
 
@@ -196,7 +192,12 @@ private struct AdminRoleDetailView: View {
                         Spacer()
                         if !role.isBuiltin {
                             Button("删除角色", role: .destructive) { isConfirmingDelete = true }
-                                .disabled(model.isMutating || !model.canDelete(role))
+                                .disabled(
+                                    model.isMutating
+                                        || !model.canDelete(role)
+                                        || !access.hasLoadedSuccessfully
+                                        || access.isLoading
+                                )
                         }
                     }
                     .padding(8)
@@ -207,7 +208,10 @@ private struct AdminRoleDetailView: View {
         }
         .confirmationDialog("删除 \(role.name)？", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("删除角色", role: .destructive) {
-                Task { await model.deleteRole(role) }
+                Task {
+                    let succeeded = await model.deleteRole(role)
+                    await access.refreshAfterPrincipalDeletion(succeeded: succeeded)
+                }
             }
             Button("取消", role: .cancel) {}
         } message: {

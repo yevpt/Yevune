@@ -6,6 +6,65 @@ struct AccessScopeTarget: Identifiable, Hashable {
     let id: String
     let name: String
     let context: String?
+
+    static func fromAlbum(_ album: Album) -> AccessScopeTarget {
+        AccessScopeTarget(
+            scopeType: .album,
+            id: album.id,
+            name: album.name,
+            context: album.artist
+        )
+    }
+
+    static func artist(from album: Album) -> AccessScopeTarget? {
+        guard let artistID = album.artistId, !artistID.isEmpty else { return nil }
+        return AccessScopeTarget(
+            scopeType: .artist,
+            id: artistID,
+            name: album.artist ?? artistID,
+            context: album.name
+        )
+    }
+
+    static func fromTrack(_ track: Track) -> AccessScopeTarget {
+        AccessScopeTarget(
+            scopeType: .track,
+            id: track.id,
+            name: track.title,
+            context: track.album
+        )
+    }
+
+    static func fromGenre(_ genre: String) -> AccessScopeTarget {
+        AccessScopeTarget(
+            scopeType: .genre,
+            id: genre,
+            name: genre,
+            context: nil
+        )
+    }
+}
+
+enum AccessEditorPresentation: Equatable {
+    case editor
+    case loading
+    case unavailable(String)
+}
+
+enum AccessManagementPolicy {
+    static func allowsEntry(isAdmin: Bool) -> Bool {
+        isAdmin
+    }
+
+    static func editorPresentation(
+        hasLoadedSuccessfully: Bool,
+        isLoading: Bool,
+        errorMessage: String?
+    ) -> AccessEditorPresentation {
+        if isLoading { return .loading }
+        if hasLoadedSuccessfully { return .editor }
+        return .unavailable(errorMessage ?? "访问控制数据尚未加载。")
+    }
 }
 
 @MainActor
@@ -20,6 +79,7 @@ final class AccessControlViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isSearching = false
     @Published private(set) var isMutating = false
+    @Published private(set) var hasLoadedSuccessfully = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var searchErrorMessage: String?
 
@@ -70,6 +130,7 @@ final class AccessControlViewModel: ObservableObject {
     }
 
     func load() async {
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -81,6 +142,7 @@ final class AccessControlViewModel: ObservableObject {
             users = []
             roles = []
             selectedRuleID = nil
+            hasLoadedSuccessfully = false
             errorMessage = error.localizedDescription
         }
     }
@@ -175,6 +237,11 @@ final class AccessControlViewModel: ObservableObject {
         }
     }
 
+    func refreshAfterPrincipalDeletion(succeeded: Bool) async {
+        guard succeeded else { return }
+        await load()
+    }
+
     private func fetchState() async throws -> ([AccessRule], [User], [Role]) {
         async let fetchedRules = client.listAccessRules()
         async let fetchedUsers = client.listUsers()
@@ -186,6 +253,7 @@ final class AccessControlViewModel: ObservableObject {
         rules = state.0
         users = state.1
         roles = state.2
+        hasLoadedSuccessfully = true
         if let selectedRuleID, !rules.contains(where: { $0.id == selectedRuleID }) {
             self.selectedRuleID = nil
         }
