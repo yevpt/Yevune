@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::api::admin;
 use crate::api::browse::{self, AlbumDetail, AlbumFilter, ArtistDetail, SearchResult};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
 use crate::api::playlist::{self, PlaylistDetail, PlaylistTree};
 use crate::api::scan::DetailedScanResult;
 use crate::api::scan::{self, ScanStatus};
+use crate::api::{access, admin};
 use crate::auth::AuthenticatedSession;
 use crate::config::ServerConfig;
 use crate::error::{CoreError, Result};
@@ -162,6 +162,33 @@ impl MusicClient {
             role_id,
         )
         .await
+    }
+
+    /// 读取全部曲库访问规则。
+    pub async fn list_access_rules(&self) -> Result<Vec<contract::AccessRule>> {
+        access::list_access_rules(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 创建或替换指定作用域的访问规则。
+    pub async fn set_access_rule(
+        &self,
+        scope_type: contract::ScopeType,
+        scope_id: String,
+        grants: Vec<contract::Principal>,
+    ) -> Result<contract::AccessRule> {
+        access::set_access_rule(
+            &self.http,
+            &self.authenticated_session().await?,
+            scope_type,
+            scope_id,
+            grants,
+        )
+        .await
+    }
+
+    /// 删除指定访问规则。
+    pub async fn delete_access_rule(&self, id: String) -> Result<()> {
+        access::delete_access_rule(&self.http, &self.authenticated_session().await?, id).await
     }
 
     /// 读取一页专辑，按排序/流派/年份区间三态互斥筛选。

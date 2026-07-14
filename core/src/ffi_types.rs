@@ -1,6 +1,38 @@
 //! 为 `contract` 中既有 DTO 声明 UniFFI 外部记录，避免复制跨端数据模型。
 
-use contract::{Album, Artist, Genre, Playlist, PlaylistFolder, Role, Track, User};
+use contract::{
+    AccessRule, Album, Artist, Genre, Playlist, PlaylistFolder, Principal, PrincipalType, Role,
+    ScopeType, Track, User,
+};
+
+#[uniffi::remote(Enum)]
+pub enum ScopeType {
+    Track,
+    Album,
+    Artist,
+    Genre,
+}
+
+#[uniffi::remote(Enum)]
+pub enum PrincipalType {
+    User,
+    Role,
+}
+
+#[uniffi::remote(Record)]
+pub struct Principal {
+    pub principal_type: PrincipalType,
+    pub id: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct AccessRule {
+    pub id: String,
+    pub scope_type: ScopeType,
+    pub scope_id: String,
+    pub scope_name: Option<String>,
+    pub grants: Vec<Principal>,
+}
 
 #[uniffi::remote(Record)]
 pub struct Album {
