@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use yevune_core::MusicClient;
+use yevune_core::{CoreError, MusicClient};
 
 async fn mock_server(
     bodies: Vec<String>,
@@ -53,6 +53,12 @@ fn current_user(admin: bool) -> String {
     ))
 }
 
+fn failed(code: u32, message: &str) -> String {
+    format!(
+        "{{\"subsonic-response\":{{\"status\":\"failed\",\"version\":\"1.16.1\",\"error\":{{\"code\":{code},\"message\":\"{message}\"}}}}}}"
+    )
+}
+
 async fn logged_in(address: std::net::SocketAddr) -> Arc<MusicClient> {
     let client = MusicClient::new();
     client
@@ -81,6 +87,21 @@ async fn list_users_and_roles_decode_shared_contract_records() {
     let requests = requests.lock().await;
     assert!(requests[2].contains("/rest/ext/getUsers?"));
     assert!(requests[3].contains("/rest/ext/getRoles?"));
+}
+
+#[tokio::test]
+async fn admin_failure_envelope_maps_to_typed_server_error() {
+    let (address, _, handle) =
+        mock_server(vec![ok(""), current_user(true), failed(50, "Admin only")]).await;
+    let client = logged_in(address).await;
+
+    let error = client.list_users().await.unwrap_err();
+    handle.await.unwrap();
+
+    assert!(matches!(
+        error,
+        CoreError::Server { code: 50, message } if message == "Admin only"
+    ));
 }
 
 #[tokio::test]
@@ -146,4 +167,23 @@ async fn write_operations_encode_all_parameters() {
     assert!(requests[8].contains("/rest/ext/deleteRole?"));
     assert!(requests[8].contains("id=ro-9"));
     assert!(requests[9].contains("/rest/deleteUser?"));
+}
+
+#[tokio::test]
+async fn changing_current_user_password_updates_live_session_credentials() {
+    let (address, requests, handle) =
+        mock_server(vec![ok(""), current_user(true), ok(""), ok("")]).await;
+    let client = logged_in(address).await;
+
+    client
+        .change_password("admin".into(), "new secret".into())
+        .await
+        .unwrap();
+    client.ping().await.unwrap();
+    handle.await.unwrap();
+
+    let requests = requests.lock().await;
+    assert!(requests[2].contains("p=secret"));
+    assert!(requests[2].contains("password=new+secret"));
+    assert!(requests[3].contains("p=new+secret"));
 }

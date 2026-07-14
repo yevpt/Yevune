@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use yevune_core::MusicClient;
+use yevune_core::{CoreError, MusicClient};
 
 #[tokio::test]
 async fn login_pings_with_subsonic_credentials() {
@@ -68,4 +68,45 @@ async fn login_pings_with_subsonic_credentials() {
     assert!(paths
         .iter()
         .any(|path| { path.contains("/rest/getUser?") && path.contains("username=admin") }));
+}
+
+#[tokio::test]
+async fn login_does_not_save_session_when_current_user_lookup_fails() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let bodies = [
+            r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#,
+            r#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":50,"message":"Denied"}}}"#,
+        ];
+        for body in bodies {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let count = socket.read(&mut request).await.unwrap();
+            assert!(count > 0);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(head.as_bytes()).await.unwrap();
+            socket.write_all(body.as_bytes()).await.unwrap();
+        }
+    });
+
+    let client = MusicClient::new();
+    let error = client
+        .login(
+            format!("http://{address}"),
+            "admin".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap_err();
+    server.await.unwrap();
+
+    assert!(matches!(error, CoreError::Server { code: 50, .. }));
+    assert!(matches!(
+        client.ping().await,
+        Err(CoreError::NotAuthenticated)
+    ));
 }

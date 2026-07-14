@@ -46,6 +46,23 @@ final class AdminViewModelTests: XCTestCase {
         XCTAssertTrue(model.canDelete(Self.users[1]))
     }
 
+    func testCurrentAdministratorCannotDemoteItselfWhenAnotherAdminExists() async {
+        let secondAdmin = User(
+            id: "us-3",
+            name: "backup-admin",
+            email: nil,
+            created: nil,
+            admin: true,
+            roles: ["admin"]
+        )
+        let client = FakeAdminClient(users: Self.users + [secondAdmin], roles: Self.roles)
+        let model = AdminViewModel(currentUsername: "owner", client: client)
+        await model.load()
+
+        XCTAssertFalse(model.canSetAdmin(Self.users[0], to: false))
+        XCTAssertTrue(model.canSetAdmin(secondAdmin, to: false))
+    }
+
     func testBuiltInRoleCannotBeDeletedAndCustomRoleReportsAffectedUsers() async {
         let model = AdminViewModel(
             currentUsername: "owner",
@@ -119,6 +136,24 @@ final class AdminViewModelTests: XCTestCase {
         XCTAssertEqual(calls.filter { $0 == .listRoles }.count, 1)
     }
 
+    func testSuccessfulMutationWithFailedRefreshReportsSuccessAndPreservesPreviousState() async {
+        let client = FakeAdminClient(
+            users: Self.users,
+            roles: Self.roles,
+            failListUsersOnCall: 2
+        )
+        let model = AdminViewModel(currentUsername: "owner", client: client)
+        await model.load()
+
+        let succeeded = await model.createRole(name: "family")
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(model.users, Self.users)
+        XCTAssertEqual(model.roles, Self.roles)
+        XCTAssertTrue(model.errorMessage?.contains("操作已完成") == true)
+        XCTAssertFalse(model.isMutating)
+    }
+
     private static let users = [
         User(
             id: "us-1",
@@ -162,11 +197,18 @@ private actor FakeAdminClient: MusicClientProviding {
     private var roles: [Role]
     private var calls: [AdminCall] = []
     private let failMutations: Bool
+    private let failListUsersOnCall: Int?
 
-    init(users: [User] = [], roles: [Role] = [], failMutations: Bool = false) {
+    init(
+        users: [User] = [],
+        roles: [Role] = [],
+        failMutations: Bool = false,
+        failListUsersOnCall: Int? = nil
+    ) {
         self.users = users
         self.roles = roles
         self.failMutations = failMutations
+        self.failListUsersOnCall = failListUsersOnCall
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
@@ -185,6 +227,9 @@ private actor FakeAdminClient: MusicClientProviding {
     func scanStatus() async throws -> ScanStatus { ScanStatus(scanning: false, count: 0) }
     func listUsers() async throws -> [User] {
         calls.append(.listUsers)
+        if calls.filter({ $0 == .listUsers }).count == failListUsersOnCall {
+            throw CocoaError(.fileReadUnknown)
+        }
         return users
     }
 

@@ -843,6 +843,12 @@ async fn prefix_scan_only_indexes_requested_range() {
 #[tokio::test]
 async fn admin_get_users_extension_returns_ids_and_custom_roles() {
     let fixture = Fixture::new().await;
+    fixture
+        .index
+        .users()
+        .set_email(fixture.member_id, Some("member@family.example"))
+        .await
+        .unwrap();
     let family_role = fixture
         .index
         .roles()
@@ -861,6 +867,10 @@ async fn admin_get_users_extension_returns_ids_and_custom_roles() {
     let member = users.iter().find(|user| user["name"] == "member").unwrap();
 
     assert_eq!(member["id"], format!("us-{}", fixture.member_id));
+    assert_eq!(member["email"], "member@family.example");
+    assert!(member["created"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
     assert_eq!(member["admin"], false);
     assert!(member["roles"]
         .as_array()

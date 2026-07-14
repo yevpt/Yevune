@@ -112,13 +112,19 @@ impl MusicClient {
 
     /// 重置指定用户的密码。
     pub async fn change_password(&self, username: String, password: String) -> Result<()> {
-        admin::change_password(
-            &self.http,
-            &self.authenticated_session().await?,
-            username,
-            password,
-        )
-        .await
+        let session = self.authenticated_session().await?;
+        let changes_current_session = username == session.user;
+        admin::change_password(&self.http, &session, username, password.clone()).await?;
+
+        if changes_current_session {
+            let mut current = self.session.write().await;
+            if let Some(current) = current.as_mut() {
+                if current.user == session.user && current.password == session.password {
+                    current.password = password;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// 删除指定用户。

@@ -20,7 +20,16 @@ struct AdminUsersView: View {
 
                 Divider()
 
-                if model.filteredUsers.isEmpty, !model.isLoading {
+                if let error = model.errorMessage, model.users.isEmpty, !model.isLoading {
+                    ContentUnavailableView {
+                        Label("无法加载用户", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("重试") { Task { await model.load() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if model.filteredUsers.isEmpty, !model.isLoading {
                     ContentUnavailableView(
                         model.query.isEmpty ? "还没有用户" : "没有匹配的用户",
                         systemImage: "person.2.slash",
@@ -52,7 +61,7 @@ struct AdminUsersView: View {
         }
         .navigationTitle("用户")
         .overlay(alignment: .top) {
-            if let error = model.errorMessage {
+            if let error = model.errorMessage, !model.users.isEmpty {
                 AdminErrorBanner(message: error)
                     .padding(.top, 8)
             }
@@ -158,7 +167,7 @@ private struct AdminUserDetailView: View {
                         }
                         Toggle("允许管理服务器与曲库", isOn: $isAdmin)
                         if !model.canSetAdmin(user, to: isAdmin) {
-                            Label("必须保留至少一个管理员。", systemImage: "exclamationmark.shield")
+                            Label(adminGuardExplanation, systemImage: "exclamationmark.shield")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
@@ -227,6 +236,13 @@ private struct AdminUserDetailView: View {
         return "账号删除后无法恢复，音乐文件不会被删除。"
     }
 
+    private var adminGuardExplanation: String {
+        if user.name == model.currentUsername {
+            return "当前账号不能移除自己的管理员权限。"
+        }
+        return "必须保留至少一个管理员。"
+    }
+
     private func roleBinding(_ role: Role) -> Binding<Bool> {
         Binding(
             get: { user.roles.contains(role.name) },
@@ -276,13 +292,13 @@ private struct CreateUserSheet: View {
                 Button("取消", role: .cancel) { dismiss() }
                 Button("添加用户") {
                     Task {
-                        await model.createUser(
+                        let succeeded = await model.createUser(
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                             password: password,
                             admin: admin
                         )
-                        if model.errorMessage == nil { dismiss() }
+                        if succeeded { dismiss() }
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -318,8 +334,8 @@ private struct ResetPasswordSheet: View {
                 Button("取消", role: .cancel) { dismiss() }
                 Button("更新密码") {
                     Task {
-                        await model.changePassword(for: user, password: password)
-                        if model.errorMessage == nil { dismiss() }
+                        let succeeded = await model.changePassword(for: user, password: password)
+                        if succeeded { dismiss() }
                     }
                 }
                 .buttonStyle(.borderedProminent)

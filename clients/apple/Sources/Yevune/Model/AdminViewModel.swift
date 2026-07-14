@@ -40,12 +40,7 @@ final class AdminViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            async let fetchedUsers = client.listUsers()
-            async let fetchedRoles = client.listRoles()
-            let (newUsers, newRoles) = try await (fetchedUsers, fetchedRoles)
-            users = newUsers
-            roles = newRoles
-            preserveValidSelections()
+            apply(try await fetchState())
         } catch {
             users = []
             roles = []
@@ -61,7 +56,8 @@ final class AdminViewModel: ObservableObject {
     }
 
     func canSetAdmin(_ user: User, to newValue: Bool) -> Bool {
-        newValue || !user.admin || administratorCount > 1
+        if !newValue && user.name == currentUsername { return false }
+        return newValue || !user.admin || administratorCount > 1
     }
 
     func canDelete(_ role: Role) -> Bool {
@@ -72,7 +68,8 @@ final class AdminViewModel: ObservableObject {
         users.count { $0.roles.contains(role.name) }
     }
 
-    func createUser(name: String, email: String, password: String, admin: Bool) async {
+    @discardableResult
+    func createUser(name: String, email: String, password: String, admin: Bool) async -> Bool {
         await mutate {
             try await client.createUser(
                 username: name,
@@ -83,40 +80,46 @@ final class AdminViewModel: ObservableObject {
         }
     }
 
-    func updateUser(_ user: User, email: String, admin: Bool) async {
-        guard canSetAdmin(user, to: admin) else { return }
-        await mutate {
+    @discardableResult
+    func updateUser(_ user: User, email: String, admin: Bool) async -> Bool {
+        guard canSetAdmin(user, to: admin) else { return false }
+        return await mutate {
             try await client.updateUser(username: user.name, email: email, admin: admin)
         }
     }
 
-    func changePassword(for user: User, password: String) async {
+    @discardableResult
+    func changePassword(for user: User, password: String) async -> Bool {
         await mutate {
             try await client.changePassword(username: user.name, password: password)
         }
     }
 
-    func deleteUser(_ user: User) async {
-        guard canDelete(user) else { return }
-        await mutate {
+    @discardableResult
+    func deleteUser(_ user: User) async -> Bool {
+        guard canDelete(user) else { return false }
+        return await mutate {
             try await client.deleteUser(username: user.name)
         }
     }
 
-    func createRole(name: String) async {
+    @discardableResult
+    func createRole(name: String) async -> Bool {
         await mutate {
             _ = try await client.createRole(name: name)
         }
     }
 
-    func deleteRole(_ role: Role) async {
-        guard canDelete(role) else { return }
-        await mutate {
+    @discardableResult
+    func deleteRole(_ role: Role) async -> Bool {
+        guard canDelete(role) else { return false }
+        return await mutate {
             try await client.deleteRole(id: role.id)
         }
     }
 
-    func setRole(_ role: Role, assigned: Bool, for user: User) async {
+    @discardableResult
+    func setRole(_ role: Role, assigned: Bool, for user: User) async -> Bool {
         await mutate {
             if assigned {
                 try await client.assignRole(userID: user.id, roleID: role.id)
@@ -139,17 +142,38 @@ final class AdminViewModel: ObservableObject {
         }
     }
 
-    private func mutate(_ operation: () async throws -> Void) async {
-        guard !isMutating else { return }
+    private func fetchState() async throws -> ([User], [Role]) {
+        async let fetchedUsers = client.listUsers()
+        async let fetchedRoles = client.listRoles()
+        return try await (fetchedUsers, fetchedRoles)
+    }
+
+    private func apply(_ state: ([User], [Role])) {
+        users = state.0
+        roles = state.1
+        preserveValidSelections()
+    }
+
+    private func mutate(_ operation: () async throws -> Void) async -> Bool {
+        guard !isMutating else { return false }
         isMutating = true
         errorMessage = nil
         defer { isMutating = false }
 
         do {
             try await operation()
-            await load()
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
+
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            apply(try await fetchState())
+        } catch {
+            errorMessage = "操作已完成，但刷新失败：\(error.localizedDescription)"
+        }
+        return true
     }
 }

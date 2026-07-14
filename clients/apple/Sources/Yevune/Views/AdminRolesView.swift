@@ -8,26 +8,37 @@ struct AdminRolesView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                List(selection: $model.selectedRoleID) {
-                    Section("内建角色") {
-                        ForEach(model.roles.filter(\.isBuiltin), id: \.id) { role in
-                            RoleRow(role: role, memberCount: model.affectedUserCount(for: role))
-                                .tag(role.id)
+                if let error = model.errorMessage, model.roles.isEmpty, !model.isLoading {
+                    ContentUnavailableView {
+                        Label("无法加载角色", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("重试") { Task { await model.load() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List(selection: $model.selectedRoleID) {
+                        Section("内建角色") {
+                            ForEach(model.roles.filter(\.isBuiltin), id: \.id) { role in
+                                RoleRow(role: role, memberCount: model.affectedUserCount(for: role))
+                                    .tag(role.id)
+                            }
+                        }
+                        Section("自定义角色") {
+                            ForEach(model.customRoles, id: \.id) { role in
+                                RoleRow(role: role, memberCount: model.affectedUserCount(for: role))
+                                    .tag(role.id)
+                            }
+                            if model.customRoles.isEmpty {
+                                Text("还没有自定义角色")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                    Section("自定义角色") {
-                        ForEach(model.customRoles, id: \.id) { role in
-                            RoleRow(role: role, memberCount: model.affectedUserCount(for: role))
-                                .tag(role.id)
-                        }
-                        if model.customRoles.isEmpty {
-                            Text("还没有自定义角色")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    .listStyle(.sidebar)
                 }
-                .listStyle(.sidebar)
 
                 Divider()
                 Button { isCreatingRole = true } label: {
@@ -56,7 +67,7 @@ struct AdminRolesView: View {
         }
         .navigationTitle("角色")
         .overlay(alignment: .top) {
-            if let error = model.errorMessage {
+            if let error = model.errorMessage, !model.roles.isEmpty {
                 AdminErrorBanner(message: error).padding(.top, 8)
             }
         }
@@ -216,8 +227,8 @@ private struct CreateRoleSheet: View {
                 Button("取消", role: .cancel) { dismiss() }
                 Button("创建角色") {
                     Task {
-                        await model.createRole(name: trimmedName)
-                        if model.errorMessage == nil { dismiss() }
+                        let succeeded = await model.createRole(name: trimmedName)
+                        if succeeded { dismiss() }
                     }
                 }
                 .buttonStyle(.borderedProminent)
