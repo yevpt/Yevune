@@ -61,6 +61,12 @@ paths:
       responses:
         '200':
           description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/ext/getUsers:
+    get:
+      summary: 完整用户列表（扩展，仅管理员）
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
   /rest/ext/setAccessRule:
     get:
       summary: 设置曲库访问规则（扩展，仅管理员）

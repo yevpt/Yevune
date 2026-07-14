@@ -78,6 +78,7 @@ const ENDPOINTS: &[(&str, &str)] = &[
         "设置曲库访问规则（扩展，仅管理员）",
     ),
     ("/rest/ext/getAccessRules", "查询访问规则（扩展，仅管理员）"),
+    ("/rest/ext/getUsers", "完整用户列表（扩展，仅管理员）"),
     ("/rest/ext/getRoles", "角色列表（扩展，仅管理员）"),
 ];
 

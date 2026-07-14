@@ -27,6 +27,7 @@
 | `server/src/api/ext/mod.rs` | 注册用户管理扩展路由。 |
 | `server/src/api/system.rs` | 声明 `userManagement` version 1。 |
 | `server/src/openapi.rs` | 登记 `/rest/ext/getUsers`。 |
+| `openapi.yaml` | 与服务端 OpenAPI 实现同步的生成产物。 |
 | `server/tests/ext_test.rs` | 扩展端点鉴权、字段与发现测试。 |
 | `core/src/api/admin.rs` | 当前用户权限识别、用户与角色请求编排。 |
 | `core/src/api/mod.rs` | 注册 admin 模块。 |
@@ -54,6 +55,7 @@
 - Modify: `server/src/api/ext/mod.rs`
 - Modify: `server/src/api/system.rs`
 - Modify: `server/src/openapi.rs`
+- Modify: `openapi.yaml`
 - Test: `server/tests/ext_test.rs`
 
 **Interfaces:**
@@ -79,7 +81,7 @@ async fn admin_get_users_extension_returns_ids_and_custom_roles() {
     let body = json(fixture.get("admin", "/rest/ext/getUsers").await).await;
     let users = payload(&body, "users")["user"].as_array().unwrap();
     let member = users.iter().find(|user| user["name"] == "member").unwrap();
-    assert_eq!(member["id"], format!("user:{}", fixture.member_id));
+    assert_eq!(member["id"], format!("us-{}", fixture.member_id));
     assert_eq!(member["admin"], false);
     assert!(member["roles"].as_array().unwrap().contains(&serde_json::json!("member")));
     assert!(member["roles"].as_array().unwrap().contains(&serde_json::json!("family")));
@@ -157,6 +159,8 @@ async fn get_users(
 ("/rest/ext/getUsers", "完整用户列表（扩展，仅管理员）"),
 ```
 
+从 `server/` 目录运行 `cargo run --bin gen_openapi`，重建根目录 `openapi.yaml`。
+
 - [ ] **Step 4: 确认扩展测试与标准兼容测试为绿**
 
 Run: `cargo test --manifest-path server/Cargo.toml --test ext_test -- --nocapture`
@@ -170,7 +174,7 @@ Expected: PASS；标准用户端点未改变。
 - [ ] **Step 5: 提交**
 
 ```bash
-git add server/src/api/ext/user.rs server/src/api/ext/mod.rs server/src/api/system.rs server/src/openapi.rs server/tests/ext_test.rs
+git add server/src/api/ext/user.rs server/src/api/ext/mod.rs server/src/api/system.rs server/src/openapi.rs server/tests/ext_test.rs openapi.yaml
 git commit -m "feat(api): 暴露完整用户管理扩展"
 ```
 
@@ -220,8 +224,8 @@ assert!(paths.lock().await.iter().any(|path| path.contains("/rest/getUser?")));
 ```rust
 #[tokio::test]
 async fn list_users_and_roles_decode_shared_contract_records() {
-    let users = "\"users\":{\"user\":[{\"id\":\"user:1\",\"name\":\"admin\",\"email\":\"a@example.com\",\"created\":null,\"admin\":true,\"roles\":[\"admin\"]}]}";
-    let roles = "\"roles\":{\"role\":[{\"id\":\"role:1\",\"name\":\"admin\",\"isBuiltin\":true}]}";
+    let users = "\"users\":{\"user\":[{\"id\":\"us-1\",\"name\":\"admin\",\"email\":\"a@example.com\",\"created\":null,\"admin\":true,\"roles\":[\"admin\"]}]}";
+    let roles = "\"roles\":{\"role\":[{\"id\":\"ro-1\",\"name\":\"admin\",\"isBuiltin\":true}]}";
     let (address, requests, handle) = mock_server(vec![ok(""), current_user(true), ok(users), ok(roles)]).await;
     let client = logged_in(address).await;
 
@@ -229,9 +233,9 @@ async fn list_users_and_roles_decode_shared_contract_records() {
     let decoded_roles = client.list_roles().await.unwrap();
     handle.await.unwrap();
 
-    assert_eq!(decoded_users[0].id, "user:1");
+    assert_eq!(decoded_users[0].id, "us-1");
     assert_eq!(decoded_users[0].roles, vec!["admin"]);
-    assert_eq!(decoded_roles[0].id, "role:1");
+    assert_eq!(decoded_roles[0].id, "ro-1");
     assert!(decoded_roles[0].is_builtin);
     let requests = requests.lock().await;
     assert!(requests[2].contains("/rest/ext/getUsers?"));
@@ -391,8 +395,8 @@ client.create_user("小明".into(), "m@example.com".into(), "s e&c".into(), fals
 client.update_user("小明".into(), "new@example.com".into(), true).await.unwrap();
 client.change_password("小明".into(), "new secret".into()).await.unwrap();
 let role = client.create_role("孩子".into()).await.unwrap();
-client.assign_role("user:2".into(), role.id.clone()).await.unwrap();
-client.unassign_role("user:2".into(), role.id.clone()).await.unwrap();
+client.assign_role("us-2".into(), role.id.clone()).await.unwrap();
+client.unassign_role("us-2".into(), role.id.clone()).await.unwrap();
 client.delete_role(role.id).await.unwrap();
 client.delete_user("小明".into()).await.unwrap();
 ```
@@ -400,10 +404,10 @@ client.delete_user("小明".into()).await.unwrap();
 为 mock 的 `createRole` 返回：
 
 ```json
-{"subsonic-response":{"status":"ok","version":"1.16.1","role":{"id":"role:9","name":"孩子","isBuiltin":false}}}
+{"subsonic-response":{"status":"ok","version":"1.16.1","role":{"id":"ro-9","name":"孩子","isBuiltin":false}}}
 ```
 
-对记录请求断言 endpoint 与参数包含：`username=%E5%B0%8F%E6%98%8E`、`password=s+e%26c`、`adminRole=false`、`email=new%40example.com`、`userId=user%3A2`、`roleId=role%3A9`。
+对记录请求断言 endpoint 与参数包含：`username=%E5%B0%8F%E6%98%8E`、`password=s+e%26c`、`adminRole=false`、`email=new%40example.com`、`userId=us-2`、`roleId=ro-9`。
 
 - [ ] **Step 2: 运行测试确认红灯**
 
@@ -590,9 +594,9 @@ func testLoadPublishesUsersRolesAndRestoresSelection() async {
     let fake = FakeAdminClient(users: adminUsers, roles: adminRoles)
     let model = AdminViewModel(client: fake, currentUsername: "admin")
     await model.load()
-    model.selectedUserID = "user:2"
+    model.selectedUserID = "us-2"
     await model.load()
-    XCTAssertEqual(model.selectedUserID, "user:2")
+    XCTAssertEqual(model.selectedUserID, "us-2")
     XCTAssertEqual(model.users.count, 2)
     XCTAssertEqual(model.roles.count, 3)
 }
@@ -601,7 +605,7 @@ func testSearchMatchesNameAndEmailCaseInsensitively() async {
     let model = AdminViewModel(client: FakeAdminClient(users: adminUsers, roles: adminRoles), currentUsername: "admin")
     await model.load()
     model.query = "FAMILY"
-    XCTAssertEqual(model.filteredUsers.map(\.id), ["user:2"])
+    XCTAssertEqual(model.filteredUsers.map(\.id), ["us-2"])
 }
 
 func testCurrentAndLastAdminCannotBeDeletedOrDemoted() async {

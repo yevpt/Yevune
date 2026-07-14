@@ -841,6 +841,46 @@ async fn prefix_scan_only_indexes_requested_range() {
 }
 
 #[tokio::test]
+async fn admin_get_users_extension_returns_ids_and_custom_roles() {
+    let fixture = Fixture::new().await;
+    let family_role = fixture
+        .index
+        .roles()
+        .create_role("family", false)
+        .await
+        .unwrap();
+    fixture
+        .index
+        .roles()
+        .assign(fixture.member_id, family_role)
+        .await
+        .unwrap();
+
+    let body = json(fixture.get("admin", "/rest/ext/getUsers").await).await;
+    let users = payload(&body, "users")["user"].as_array().unwrap();
+    let member = users.iter().find(|user| user["name"] == "member").unwrap();
+
+    assert_eq!(member["id"], format!("us-{}", fixture.member_id));
+    assert_eq!(member["admin"], false);
+    assert!(member["roles"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("member")));
+    assert!(member["roles"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("family")));
+}
+
+#[tokio::test]
+async fn member_cannot_list_users_through_extension() {
+    let fixture = Fixture::new().await;
+    let body = json(fixture.get("member", "/rest/ext/getUsers").await).await;
+
+    assert_eq!(body["subsonic-response"]["error"]["code"], 50);
+}
+
+#[tokio::test]
 async fn extensions_discovery_declares_every_ext_capability() {
     let fixture = Fixture::new().await;
     let body = json(
@@ -860,6 +900,7 @@ async fn extensions_discovery_declares_every_ext_capability() {
         "libraryManagement",
         "accessControl",
         "roleManagement",
+        "userManagement",
         "prefixScan",
         "coverArtManagement",
     ] {

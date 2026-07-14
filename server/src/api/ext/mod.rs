@@ -6,6 +6,7 @@ mod library;
 mod playlist_tree;
 mod role;
 mod scan;
+mod user;
 
 use axum::Router;
 
@@ -19,5 +20,6 @@ pub(super) fn router() -> Router<AppState> {
         .merge(library::router())
         .merge(access::router())
         .merge(role::router())
+        .merge(user::router())
         .merge(scan::router())
 }
