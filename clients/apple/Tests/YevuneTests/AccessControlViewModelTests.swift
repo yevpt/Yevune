@@ -215,15 +215,51 @@ final class AccessControlViewModelTests: XCTestCase {
         XCTAssertEqual(queries, ["blue"])
     }
 
-    func testFailedTargetSearchPublishesErrorAndStopsSearching() async {
+    func testFailedTargetSearchPublishesOnlySearchErrorAndEmptyQueryClearsIt() async {
         let fake = FakeAccessControlClient(searchFails: true)
         let model = AccessControlViewModel(client: fake)
 
         await model.searchTargets(scopeType: .album, query: "blue")
 
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(model.searchErrorMessage)
         XCTAssertFalse(model.isSearching)
         XCTAssertTrue(model.targetResults.isEmpty)
+
+        await model.searchTargets(scopeType: .album, query: "")
+
+        XCTAssertNil(model.searchErrorMessage)
+    }
+
+    func testClearingSearchInvalidatesSuspendedSuccessfulRequest() async {
+        let fake = FakeAccessControlClient(searchResult: Self.searchResult, suspendNextSearch: true)
+        let model = AccessControlViewModel(client: fake)
+        let oldSearch = Task { await model.searchTargets(scopeType: .album, query: "blue") }
+        await fake.waitUntilSearchStarts()
+
+        await model.searchTargets(scopeType: .album, query: "")
+        await fake.releaseSuspendedSearch()
+        await oldSearch.value
+
+        XCTAssertTrue(model.targetResults.isEmpty)
+        XCTAssertNil(model.searchErrorMessage)
+        XCTAssertFalse(model.isSearching)
+    }
+
+    func testClearingSearchInvalidatesSuspendedFailedRequest() async {
+        let fake = FakeAccessControlClient(searchFails: true, suspendNextSearch: true)
+        let model = AccessControlViewModel(client: fake)
+        let oldSearch = Task { await model.searchTargets(scopeType: .album, query: "blue") }
+        await fake.waitUntilSearchStarts()
+
+        await model.searchTargets(scopeType: .album, query: "")
+        await fake.releaseSuspendedSearch()
+        await oldSearch.value
+
+        XCTAssertTrue(model.targetResults.isEmpty)
+        XCTAssertNil(model.searchErrorMessage)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.isSearching)
     }
 
     func testFailedTargetSearchClearsResultsFromPreviousSuccessfulSearch() async {
@@ -236,7 +272,8 @@ final class AccessControlViewModelTests: XCTestCase {
         await model.searchTargets(scopeType: .album, query: "missing")
 
         XCTAssertTrue(model.targetResults.isEmpty)
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNotNil(model.searchErrorMessage)
+        XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.isSearching)
     }
 
@@ -459,12 +496,15 @@ private actor FakeAccessControlClient: MusicClientProviding {
     private let genres: [Genre]
     private let searchResult: SearchResult
     private var searchFails: Bool
+    private var suspendNextSearch: Bool
     private var loadFailure: LoadFailure?
     private let mutationFails: Bool
     private let failListRulesOnCall: Int?
     private var queries: [String] = []
     private var calls: [AccessControlCall] = []
     private var listRulesCallCount = 0
+    private var suspendedSearch: CheckedContinuation<Void, Never>?
+    private var searchStartWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         rules: [AccessRule] = [],
@@ -474,6 +514,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
         searchResult: SearchResult = .init(artists: [], albums: [], tracks: []),
         loadFailure: LoadFailure? = nil,
         searchFails: Bool = false,
+        suspendNextSearch: Bool = false,
         mutationFails: Bool = false,
         failListRulesOnCall: Int? = nil
     ) {
@@ -484,6 +525,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
         self.searchResult = searchResult
         self.loadFailure = loadFailure
         self.searchFails = searchFails
+        self.suspendNextSearch = suspendNextSearch
         self.mutationFails = mutationFails
         self.failListRulesOnCall = failListRulesOnCall
     }
@@ -501,6 +543,13 @@ private actor FakeAccessControlClient: MusicClientProviding {
 
     func search(query: String) async throws -> SearchResult {
         queries.append(query)
+        let waiters = searchStartWaiters
+        searchStartWaiters = []
+        waiters.forEach { $0.resume() }
+        if suspendNextSearch {
+            suspendNextSearch = false
+            await withCheckedContinuation { suspendedSearch = $0 }
+        }
         if searchFails { throw TestError.requestFailed }
         return searchResult
     }
@@ -567,6 +616,16 @@ private actor FakeAccessControlClient: MusicClientProviding {
 
     func setSearchFails(_ fails: Bool) {
         searchFails = fails
+    }
+
+    func waitUntilSearchStarts() async {
+        guard queries.isEmpty else { return }
+        await withCheckedContinuation { searchStartWaiters.append($0) }
+    }
+
+    func releaseSuspendedSearch() {
+        suspendedSearch?.resume()
+        suspendedSearch = nil
     }
 
     func searchQueries() -> [String] { queries }

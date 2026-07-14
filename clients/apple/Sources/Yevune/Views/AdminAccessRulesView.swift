@@ -266,7 +266,7 @@ private struct AddAccessRestrictionSheet: View {
                     .disabled(trimmedQuery.isEmpty || model.isSearching)
             }
 
-            if let error = model.errorMessage {
+            if let error = model.searchErrorMessage {
                 HStack(alignment: .firstTextBaseline) {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.caption)

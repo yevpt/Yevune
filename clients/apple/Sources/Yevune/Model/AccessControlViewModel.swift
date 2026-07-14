@@ -21,8 +21,10 @@ final class AccessControlViewModel: ObservableObject {
     @Published private(set) var isSearching = false
     @Published private(set) var isMutating = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var searchErrorMessage: String?
 
     private let client: any MusicClientProviding
+    private var searchGeneration: UInt64 = 0
 
     init(client: any MusicClientProviding) {
         self.client = client
@@ -84,19 +86,23 @@ final class AccessControlViewModel: ObservableObject {
     }
 
     func searchTargets(scopeType: ScopeType, query: String) async {
+        searchGeneration &+= 1
+        let generation = searchGeneration
+        searchErrorMessage = nil
+
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else {
             targetResults = []
+            isSearching = false
             return
         }
 
         isSearching = true
-        errorMessage = nil
-        defer { isSearching = false }
 
         do {
+            let results: [AccessScopeTarget]
             if scopeType == .genre {
-                targetResults = try await client.listGenres()
+                results = try await client.listGenres()
                     .filter { $0.value.localizedCaseInsensitiveContains(needle) }
                     .map {
                         AccessScopeTarget(
@@ -110,7 +116,7 @@ final class AccessControlViewModel: ObservableObject {
                 let result = try await client.search(query: needle)
                 switch scopeType {
                 case .track:
-                    targetResults = result.tracks.map {
+                    results = result.tracks.map {
                         AccessScopeTarget(
                             scopeType: .track,
                             id: $0.id,
@@ -119,7 +125,7 @@ final class AccessControlViewModel: ObservableObject {
                         )
                     }
                 case .album:
-                    targetResults = result.albums.map {
+                    results = result.albums.map {
                         AccessScopeTarget(
                             scopeType: .album,
                             id: $0.id,
@@ -128,7 +134,7 @@ final class AccessControlViewModel: ObservableObject {
                         )
                     }
                 case .artist:
-                    targetResults = result.artists.map {
+                    results = result.artists.map {
                         AccessScopeTarget(
                             scopeType: .artist,
                             id: $0.id,
@@ -137,12 +143,17 @@ final class AccessControlViewModel: ObservableObject {
                         )
                     }
                 case .genre:
-                    targetResults = []
+                    results = []
                 }
             }
+            guard generation == searchGeneration else { return }
+            targetResults = results
+            isSearching = false
         } catch {
+            guard generation == searchGeneration else { return }
             targetResults = []
-            errorMessage = error.localizedDescription
+            searchErrorMessage = error.localizedDescription
+            isSearching = false
         }
     }
 
