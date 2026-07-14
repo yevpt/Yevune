@@ -62,11 +62,20 @@ struct AdminUsersView: View {
         }
         .navigationTitle("用户")
         .overlay(alignment: .top) {
-            if let error = model.errorMessage, !model.users.isEmpty {
-                AdminErrorBanner(message: error) {
-                    Task { await model.load() }
+            if (model.errorMessage != nil && !model.users.isEmpty) || access.errorMessage != nil {
+                VStack(spacing: 8) {
+                    if let error = model.errorMessage, !model.users.isEmpty {
+                        AdminErrorBanner(message: error) {
+                            Task { await model.load() }
+                        }
+                    }
+                    if let error = access.errorMessage {
+                        AdminErrorBanner(message: "可见范围：\(error)") {
+                            Task { await access.load() }
+                        }
+                    }
                 }
-                    .padding(.top, 8)
+                .padding(.top, 8)
             }
         }
         .task {

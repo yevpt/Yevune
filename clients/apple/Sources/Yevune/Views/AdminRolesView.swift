@@ -68,9 +68,18 @@ struct AdminRolesView: View {
         }
         .navigationTitle("角色")
         .overlay(alignment: .top) {
-            if let error = model.errorMessage, !model.roles.isEmpty {
-                AdminErrorBanner(message: error) {
-                    Task { await model.load() }
+            if (model.errorMessage != nil && !model.roles.isEmpty) || access.errorMessage != nil {
+                VStack(spacing: 8) {
+                    if let error = model.errorMessage, !model.roles.isEmpty {
+                        AdminErrorBanner(message: error) {
+                            Task { await model.load() }
+                        }
+                    }
+                    if let error = access.errorMessage {
+                        AdminErrorBanner(message: "可见范围：\(error)") {
+                            Task { await access.load() }
+                        }
+                    }
                 }
                 .padding(.top, 8)
             }

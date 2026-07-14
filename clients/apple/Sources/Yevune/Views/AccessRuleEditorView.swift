@@ -33,6 +33,11 @@ struct AccessRuleEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 targetSummary
+                if let error = AccessRuleEditorCompletionPolicy.visibleErrorMessage(model.errorMessage) {
+                    AdminErrorBanner(message: error) {
+                        Task { await model.load() }
+                    }
+                }
                 visibilitySummary
                 memberSelection
                 roleSelection
@@ -242,7 +247,11 @@ struct AccessRuleEditorView: View {
 
     private func save(grants: [Principal]) {
         Task {
-            if await model.saveRule(target: target, grants: grants) {
+            let succeeded = await model.saveRule(target: target, grants: grants)
+            if AccessRuleEditorCompletionPolicy.shouldDismiss(
+                succeeded: succeeded,
+                errorMessage: model.errorMessage
+            ) {
                 onComplete()
             }
         }
@@ -251,10 +260,25 @@ struct AccessRuleEditorView: View {
     private func restoreFamilyVisibility() {
         guard let rule = model.rule(for: target) else { return }
         Task {
-            if await model.restoreFamilyVisibility(ruleID: rule.id) {
+            let succeeded = await model.restoreFamilyVisibility(ruleID: rule.id)
+            if AccessRuleEditorCompletionPolicy.shouldDismiss(
+                succeeded: succeeded,
+                errorMessage: model.errorMessage
+            ) {
                 onComplete()
             }
         }
+    }
+}
+
+enum AccessRuleEditorCompletionPolicy {
+    static func shouldDismiss(succeeded: Bool, errorMessage: String?) -> Bool {
+        succeeded && visibleErrorMessage(errorMessage) == nil
+    }
+
+    static func visibleErrorMessage(_ errorMessage: String?) -> String? {
+        guard let errorMessage, !errorMessage.isEmpty else { return nil }
+        return errorMessage
     }
 }
 

@@ -132,6 +132,41 @@ final class AccessControlViewModelTests: XCTestCase {
             ),
             .unavailable("offline")
         )
+        XCTAssertEqual(
+            AccessManagementPolicy.editorPresentation(
+                hasLoadedSuccessfully: true,
+                isLoading: false,
+                errorMessage: "操作已完成，但刷新失败"
+            ),
+            .editor
+        )
+    }
+
+    func testRuleEditorCompletionRequiresSuccessWithoutRefreshError() {
+        XCTAssertTrue(
+            AccessRuleEditorCompletionPolicy.shouldDismiss(
+                succeeded: true,
+                errorMessage: nil
+            )
+        )
+        XCTAssertFalse(
+            AccessRuleEditorCompletionPolicy.shouldDismiss(
+                succeeded: true,
+                errorMessage: "操作已完成，但刷新失败"
+            )
+        )
+        XCTAssertFalse(
+            AccessRuleEditorCompletionPolicy.shouldDismiss(
+                succeeded: false,
+                errorMessage: nil
+            )
+        )
+        XCTAssertEqual(
+            AccessRuleEditorCompletionPolicy.visibleErrorMessage(
+                "操作已完成，但刷新失败"
+            ),
+            "操作已完成，但刷新失败"
+        )
     }
 
     func testAccessRuleSelectionDropsHiddenPrincipalsAndSortsCompleteGrantList() {

@@ -175,6 +175,7 @@ struct LibraryView: View {
                     AccessRuleEditorView(target: target, model: access) {
                         accessTarget = nil
                     }
+                    .id(access.rule(for: target).map(AccessRuleEditorIdentity.init))
                 case .loading:
                     ProgressView("正在加载可见范围…")
                         .padding(32)
