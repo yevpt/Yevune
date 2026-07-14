@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 enum SidebarSelection: Hashable {
     case library
     case playlist(String)
+    case adminUsers
 }
 
 /// 重命名目标：区分歌单与文件夹。
@@ -21,12 +22,14 @@ enum DeleteTarget: Hashable {
 
 struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
+    let session: SessionValue
     @State private var query = ""
     @State private var selection: SidebarSelection? = .library
     @State private var selectedAlbumID: String?
     @StateObject private var media: MediaViewModel
     @StateObject private var workflow: LibraryWorkflowViewModel
     @StateObject private var playlists: PlaylistViewModel
+    @StateObject private var admin: AdminViewModel
     @State private var importing = false
     @State private var isDropTargeted = false
 
@@ -38,11 +41,13 @@ struct LibraryView: View {
     @State private var renameText = ""
     @State private var deleteTarget: DeleteTarget?
 
-    init(model: LibraryViewModel) {
+    init(model: LibraryViewModel, session: SessionValue) {
         self.model = model
+        self.session = session
         _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
         _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
+        _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: model.clientForViews))
     }
 
     var body: some View {
@@ -60,6 +65,12 @@ struct LibraryView: View {
                         },
                         onDelete: { target in deleteTarget = target }
                     )
+                }
+                if session.admin {
+                    Section("管理") {
+                        Label("用户", systemImage: "person.2")
+                            .tag(SidebarSelection.adminUsers)
+                    }
                 }
                 if let playlistError = playlists.errorMessage {
                     Text(playlistError).foregroundStyle(.red).font(.caption)
@@ -142,6 +153,8 @@ struct LibraryView: View {
 
     @ViewBuilder private var detailContent: some View {
         switch selection {
+        case .adminUsers:
+            AdminUsersView(model: admin)
         case .playlist(let id):
             if let detail = playlists.detail, detail.playlist.id == id {
                 PlaylistDetailView(detail: detail, playlists: playlists, media: media)

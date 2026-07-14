@@ -14,12 +14,12 @@ struct YevuneApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if login.session == nil {
+            if let session = login.session {
+                LibraryView(model: library, session: session)
+                    .frame(minWidth: 920, minHeight: 620)
+            } else {
                 LoginView(model: login)
                     .frame(minWidth: 480, minHeight: 380)
-            } else {
-                LibraryView(model: library)
-                    .frame(minWidth: 920, minHeight: 620)
             }
         }
     }
