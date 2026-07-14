@@ -62,7 +62,20 @@ impl<'a> UserAdmin<'a> {
 
     /// 删除用户，返回是否命中。
     pub async fn delete_user(&self, id: i64) -> Result<bool, AuthError> {
-        Ok(self.index.users().delete_user(id).await?)
+        let mut tx = self.index.pool().begin().await?;
+        sqlx::query(
+            "DELETE FROM access_rule_grants WHERE principal_type = 'user' AND principal_id = ?",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        let affected = sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        tx.commit().await?;
+        Ok(affected > 0)
     }
 
     /// 修改密码（加密存储），返回是否命中用户。
@@ -91,7 +104,22 @@ impl<'a> UserAdmin<'a> {
         match is_builtin {
             None => Ok(false),
             Some(b) if b != 0 => Err(AuthError::Forbidden),
-            Some(_) => Ok(self.index.roles().delete_role(id).await?),
+            Some(_) => {
+                let mut tx = self.index.pool().begin().await?;
+                sqlx::query(
+                    "DELETE FROM access_rule_grants WHERE principal_type = 'role' AND principal_id = ?",
+                )
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+                let affected = sqlx::query("DELETE FROM roles WHERE id = ?")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
+                tx.commit().await?;
+                Ok(affected > 0)
+            }
         }
     }
 

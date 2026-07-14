@@ -96,22 +96,13 @@ async fn delete_role(
     else {
         return response::parameter_error(format, "Required parameter 'id' is missing");
     };
-    let role = match state.index.roles().list_roles().await {
-        Ok(roles) => roles.into_iter().find(|role| role.id == id.to_string()),
-        Err(error) => {
-            tracing::error!(%error, "读取待删角色失败");
-            return response::internal(format);
-        }
-    };
-    let Some(role) = role else {
-        return response::not_found(format);
-    };
-    if role.is_builtin {
-        return response::auth_error(format, crate::auth::AuthError::Forbidden);
-    }
-    match state.index.roles().delete_role(id).await {
+    let admin = crate::auth::UserAdmin::new(&state.index, &state.auth.encryptor);
+    match admin.delete_role(id).await {
         Ok(true) => response::empty(format),
         Ok(false) => response::not_found(format),
+        Err(crate::auth::AuthError::Forbidden) => {
+            response::auth_error(format, crate::auth::AuthError::Forbidden)
+        }
         Err(error) => {
             tracing::error!(%error, "删除角色失败");
             response::internal(format)

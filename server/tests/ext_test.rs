@@ -752,6 +752,108 @@ async fn access_rule_allowlist_round_trips_and_is_admin_only() {
 }
 
 #[tokio::test]
+async fn deleting_principals_cleans_access_grants() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/access/member.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    assert_eq!(uploaded["subsonic-response"]["status"], "ok");
+    let set = json(
+        fixture
+            .get(
+                "admin",
+                &format!(
+                    "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant=user:us-{}",
+                    fixture.member_id
+                ),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(set["subsonic-response"]["status"], "ok", "{set}");
+
+    let deleted = json(
+        fixture
+            .get("admin", "/rest/deleteUser?username=member")
+            .await,
+    )
+    .await;
+    assert_eq!(deleted["subsonic-response"]["status"], "ok", "{deleted}");
+    let user_grants: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = ? AND principal_id = ?",
+    )
+    .bind("user")
+    .bind(fixture.member_id)
+    .fetch_one(fixture.index.pool())
+    .await
+    .unwrap();
+    let user_remaining_rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
+        .fetch_one(fixture.index.pool())
+        .await
+        .unwrap();
+
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/access/role.flac", &flac("b.flac"))
+            .await,
+    )
+    .await;
+    assert_eq!(uploaded["subsonic-response"]["status"], "ok");
+    let created = json(
+        fixture
+            .get("admin", "/rest/ext/createRole?name=listener")
+            .await,
+    )
+    .await;
+    let role_id = payload(&created, "role")["id"].as_str().unwrap().to_owned();
+    let role_id_number = role_id.trim_start_matches("ro-").parse::<i64>().unwrap();
+    let set = json(
+        fixture
+            .get(
+                "admin",
+                &format!(
+                    "/rest/ext/setAccessRule?scopeType=genre&scopeId=Jazz&grant=role:{role_id}"
+                ),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(set["subsonic-response"]["status"], "ok", "{set}");
+
+    let deleted = json(
+        fixture
+            .get("admin", &format!("/rest/ext/deleteRole?id={role_id}"))
+            .await,
+    )
+    .await;
+    assert_eq!(deleted["subsonic-response"]["status"], "ok", "{deleted}");
+    let role_grants: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = ? AND principal_id = ?",
+    )
+    .bind("role")
+    .bind(role_id_number)
+    .fetch_one(fixture.index.pool())
+    .await
+    .unwrap();
+    let role_remaining_rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
+        .fetch_one(fixture.index.pool())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        user_grants, 0,
+        "删除用户后应清理 user grant；删除角色后的 role grant 数为 {role_grants}"
+    );
+    assert_eq!(role_grants, 0, "删除角色后应清理 role grant");
+    assert_eq!(user_remaining_rules, 1, "规则保留并收敛为仅管理员可见");
+    assert_eq!(role_remaining_rules, 1, "规则保留并收敛为仅管理员可见");
+}
+
+#[tokio::test]
 async fn access_rules_include_scope_display_names() {
     let fixture = Fixture::new().await;
     let uploaded = json(
