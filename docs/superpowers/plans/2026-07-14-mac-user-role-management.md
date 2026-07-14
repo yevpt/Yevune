@@ -481,7 +481,7 @@ git commit -m "feat(core): 支持用户与角色管理操作"
 ### Task 4: 重建 UniFFI 并桥接 Swift 协议
 
 **Files:**
-- Modify generated files under: `clients/apple/Packages/YevuneCoreFFI`
+- Regenerate locally (gitignored): `clients/apple/Packages/YevuneCoreFFI/Sources/YevuneCoreFFI` and `YevuneCoreFFI.xcframework`
 - Modify: `clients/apple/Sources/Yevune/Model/LoginViewModel.swift`
 - Modify: `clients/apple/Sources/Yevune/Model/CoreMusicClient.swift`
 - Modify: `clients/apple/Tests/YevuneTests/LoginViewModelTests.swift`
@@ -569,7 +569,7 @@ Expected: PASS。
 - [ ] **Step 5: 提交**
 
 ```bash
-git add clients/apple/Packages/YevuneCoreFFI clients/apple/Sources/Yevune/Model/LoginViewModel.swift clients/apple/Sources/Yevune/Model/CoreMusicClient.swift clients/apple/Tests/YevuneTests/LoginViewModelTests.swift
+git add clients/apple/Sources/Yevune/Model/LoginViewModel.swift clients/apple/Sources/Yevune/Model/CoreMusicClient.swift clients/apple/Tests/YevuneTests/LoginViewModelTests.swift docs/superpowers/plans/2026-07-14-mac-user-role-management.md
 git commit -m "feat(mac): 桥接用户与角色管理接口"
 ```
 

@@ -29,7 +29,10 @@ final class LoginViewModelTests: XCTestCase {
 
         await model.submit()
 
-        XCTAssertEqual(model.session, .init(server: "http://music.local:4533", user: "admin"))
+        XCTAssertEqual(
+            model.session,
+            .init(server: "http://music.local:4533", user: "admin", admin: true)
+        )
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.isSubmitting)
     }
@@ -122,6 +125,7 @@ private final class FakeApplicationActivation: ApplicationActivating {
 private actor FakeMusicClient: MusicClientProviding {
     private let album: Album
     private let scanFails: Bool
+    private let loginIsAdmin: Bool
 
     init(album: Album = Album(
         id: "al-0",
@@ -134,13 +138,14 @@ private actor FakeMusicClient: MusicClientProviding {
         year: nil,
         genre: nil,
         created: nil
-    ), scanFails: Bool = false) {
+    ), scanFails: Bool = false, loginIsAdmin: Bool = true) {
         self.album = album
         self.scanFails = scanFails
+        self.loginIsAdmin = loginIsAdmin
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
-        SessionValue(server: server, user: user)
+        SessionValue(server: server, user: user, admin: loginIsAdmin)
     }
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {

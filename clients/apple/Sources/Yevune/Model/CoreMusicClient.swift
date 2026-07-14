@@ -5,7 +5,7 @@ actor CoreMusicClient: MusicClientProviding {
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         let session = try await client.login(server: server, user: user, password: password)
-        return SessionValue(server: session.server, user: session.user)
+        return SessionValue(server: session.server, user: session.user, admin: session.admin)
     }
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {
@@ -63,4 +63,25 @@ actor CoreMusicClient: MusicClientProviding {
     func renameFolder(id: String, name: String) async throws { try await client.renameFolder(id: id, name: name) }
     func deleteFolder(id: String) async throws { try await client.deleteFolder(id: id) }
     func moveFolder(id: String, parentID: String?) async throws { try await client.moveFolder(id: id, parentId: parentID) }
+
+    func listUsers() async throws -> [User] { try await client.listUsers() }
+    func createUser(username: String, email: String, password: String, admin: Bool) async throws {
+        try await client.createUser(username: username, email: email, password: password, admin: admin)
+    }
+    func updateUser(username: String, email: String, admin: Bool) async throws {
+        try await client.updateUser(username: username, email: email, admin: admin)
+    }
+    func changePassword(username: String, password: String) async throws {
+        try await client.changePassword(username: username, password: password)
+    }
+    func deleteUser(username: String) async throws { try await client.deleteUser(username: username) }
+    func listRoles() async throws -> [Role] { try await client.listRoles() }
+    func createRole(name: String) async throws -> Role { try await client.createRole(name: name) }
+    func deleteRole(id: String) async throws { try await client.deleteRole(id: id) }
+    func assignRole(userID: String, roleID: String) async throws {
+        try await client.assignRole(userId: userID, roleId: roleID)
+    }
+    func unassignRole(userID: String, roleID: String) async throws {
+        try await client.unassignRole(userId: userID, roleId: roleID)
+    }
 }

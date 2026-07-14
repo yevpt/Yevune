@@ -4,6 +4,13 @@ import YevuneCoreFFI
 struct SessionValue: Equatable {
     let server: String
     let user: String
+    let admin: Bool
+
+    init(server: String, user: String, admin: Bool = false) {
+        self.server = server
+        self.user = user
+        self.admin = admin
+    }
 }
 
 protocol MusicClientProviding: Sendable {
@@ -36,6 +43,16 @@ protocol MusicClientProviding: Sendable {
     func renameFolder(id: String, name: String) async throws
     func deleteFolder(id: String) async throws
     func moveFolder(id: String, parentID: String?) async throws
+    func listUsers() async throws -> [User]
+    func createUser(username: String, email: String, password: String, admin: Bool) async throws
+    func updateUser(username: String, email: String, admin: Bool) async throws
+    func changePassword(username: String, password: String) async throws
+    func deleteUser(username: String) async throws
+    func listRoles() async throws -> [Role]
+    func createRole(name: String) async throws -> Role
+    func deleteRole(id: String) async throws
+    func assignRole(userID: String, roleID: String) async throws
+    func unassignRole(userID: String, roleID: String) async throws
 }
 
 extension MusicClientProviding {
@@ -59,6 +76,16 @@ extension MusicClientProviding {
     func renameFolder(id: String, name: String) async throws { throw CocoaError(.featureUnsupported) }
     func deleteFolder(id: String) async throws { throw CocoaError(.featureUnsupported) }
     func moveFolder(id: String, parentID: String?) async throws { throw CocoaError(.featureUnsupported) }
+    func listUsers() async throws -> [User] { throw CocoaError(.featureUnsupported) }
+    func createUser(username: String, email: String, password: String, admin: Bool) async throws { throw CocoaError(.featureUnsupported) }
+    func updateUser(username: String, email: String, admin: Bool) async throws { throw CocoaError(.featureUnsupported) }
+    func changePassword(username: String, password: String) async throws { throw CocoaError(.featureUnsupported) }
+    func deleteUser(username: String) async throws { throw CocoaError(.featureUnsupported) }
+    func listRoles() async throws -> [Role] { throw CocoaError(.featureUnsupported) }
+    func createRole(name: String) async throws -> Role { throw CocoaError(.featureUnsupported) }
+    func deleteRole(id: String) async throws { throw CocoaError(.featureUnsupported) }
+    func assignRole(userID: String, roleID: String) async throws { throw CocoaError(.featureUnsupported) }
+    func unassignRole(userID: String, roleID: String) async throws { throw CocoaError(.featureUnsupported) }
 }
 
 @MainActor
