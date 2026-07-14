@@ -7,6 +7,7 @@ enum SidebarSelection: Hashable {
     case playlist(String)
     case adminUsers
     case adminRoles
+    case adminAccess
 }
 
 /// 重命名目标：区分歌单与文件夹。
@@ -31,6 +32,8 @@ struct LibraryView: View {
     @StateObject private var workflow: LibraryWorkflowViewModel
     @StateObject private var playlists: PlaylistViewModel
     @StateObject private var admin: AdminViewModel
+    @StateObject private var access: AccessControlViewModel
+    @State private var accessTarget: AccessScopeTarget?
     @State private var importing = false
     @State private var isDropTargeted = false
 
@@ -49,6 +52,7 @@ struct LibraryView: View {
         _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
         _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: model.clientForViews))
+        _access = StateObject(wrappedValue: AccessControlViewModel(client: model.clientForViews))
     }
 
     var body: some View {
@@ -73,6 +77,8 @@ struct LibraryView: View {
                             .tag(SidebarSelection.adminUsers)
                         Label("角色", systemImage: "person.badge.key")
                             .tag(SidebarSelection.adminRoles)
+                        Label("访问控制", systemImage: "eye.badge")
+                            .tag(SidebarSelection.adminAccess)
                     }
                 }
                 if let playlistError = playlists.errorMessage {
@@ -92,6 +98,9 @@ struct LibraryView: View {
         .task {
             await model.load()
             await playlists.loadTree()
+            if session.admin, !accessHasLoadedState, !access.isLoading {
+                await access.load()
+            }
         }
         .toolbar {
             Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
@@ -152,14 +161,23 @@ struct LibraryView: View {
             }
             Button("取消", role: .cancel) { deleteTarget = nil }
         }
+        .sheet(isPresented: accessTargetIsPresented) {
+            if let target = accessTarget {
+                AccessRuleEditorView(target: target, model: access) {
+                    accessTarget = nil
+                }
+            }
+        }
     }
 
     @ViewBuilder private var detailContent: some View {
         switch selection {
         case .adminUsers:
-            AdminUsersView(model: admin)
+            AdminUsersView(model: admin, access: access)
         case .adminRoles:
-            AdminRolesView(model: admin)
+            AdminRolesView(model: admin, access: access)
+        case .adminAccess:
+            AdminAccessRulesView(model: access)
         case .playlist(let id):
             if let detail = playlists.detail, detail.playlist.id == id {
                 PlaylistDetailView(detail: detail, playlists: playlists, media: media)
@@ -183,7 +201,8 @@ struct LibraryView: View {
                             albums: model.albums,
                             client: model.clientForViews,
                             newAlbumIDs: workflow.newAlbumIDs,
-                            onSelect: { selectedAlbumID = $0.id }
+                            onSelect: { selectedAlbumID = $0.id },
+                            onManageAccess: manageAccess
                         )
                     } else {
                         List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
@@ -199,6 +218,13 @@ struct LibraryView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .tag(album.id)
+                            .contextMenu {
+                                if let manageAccess {
+                                    Button("设置专辑可见范围") {
+                                        manageAccess(albumAccessTarget(album))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -207,7 +233,12 @@ struct LibraryView: View {
                 Divider()
 
                 if let selection = model.album(id: selectedAlbumID) {
-                    MediaDetailView(album: selection, model: media, playlists: playlists)
+                    MediaDetailView(
+                        album: selection,
+                        model: media,
+                        playlists: playlists,
+                        onManageAccess: manageAccess
+                    )
                 } else {
                     VStack(spacing: 18) {
                         TextField("搜索艺人、专辑或曲目", text: $query)
@@ -262,6 +293,19 @@ struct LibraryView: View {
 
             Spacer()
 
+            if session.admin, let genre = model.genreFilter {
+                Button {
+                    accessTarget = AccessScopeTarget(
+                        scopeType: .genre,
+                        id: genre,
+                        name: genre,
+                        context: nil
+                    )
+                } label: {
+                    Label("可见范围", systemImage: "eye")
+                }
+            }
+
             Picker("视图", selection: $model.viewMode) {
                 ForEach(LibraryViewMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -292,6 +336,27 @@ struct LibraryView: View {
 
     private var deleteIsPresented: Binding<Bool> {
         Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
+    }
+
+    private var accessTargetIsPresented: Binding<Bool> {
+        Binding(get: { accessTarget != nil }, set: { if !$0 { accessTarget = nil } })
+    }
+
+    private var manageAccess: ((AccessScopeTarget) -> Void)? {
+        session.admin ? { accessTarget = $0 } : nil
+    }
+
+    private var accessHasLoadedState: Bool {
+        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
+    }
+
+    private func albumAccessTarget(_ album: Album) -> AccessScopeTarget {
+        AccessScopeTarget(
+            scopeType: .album,
+            id: album.id,
+            name: album.name,
+            context: album.artist
+        )
     }
 }
 

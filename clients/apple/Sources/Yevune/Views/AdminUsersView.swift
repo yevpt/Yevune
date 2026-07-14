@@ -3,6 +3,7 @@ import YevuneCoreFFI
 
 struct AdminUsersView: View {
     @ObservedObject var model: AdminViewModel
+    @ObservedObject var access: AccessControlViewModel
     @State private var isCreatingUser = false
 
     var body: some View {
@@ -47,7 +48,7 @@ struct AdminUsersView: View {
 
             Group {
                 if let user = selectedUser {
-                    AdminUserDetailView(user: user, model: model)
+                    AdminUserDetailView(user: user, model: model, access: access)
                         .id(user)
                 } else {
                     ContentUnavailableView(
@@ -70,6 +71,7 @@ struct AdminUsersView: View {
         }
         .task {
             if model.users.isEmpty { await model.load() }
+            if !accessHasLoadedState, !access.isLoading { await access.load() }
         }
         .sheet(isPresented: $isCreatingUser) {
             CreateUserSheet(model: model)
@@ -78,6 +80,10 @@ struct AdminUsersView: View {
 
     private var selectedUser: User? {
         model.users.first { $0.id == model.selectedUserID }
+    }
+
+    private var accessHasLoadedState: Bool {
+        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
     }
 }
 
@@ -134,14 +140,16 @@ private struct AdminUserRow: View {
 private struct AdminUserDetailView: View {
     let user: User
     @ObservedObject var model: AdminViewModel
+    @ObservedObject var access: AccessControlViewModel
     @State private var email: String
     @State private var isAdmin: Bool
     @State private var isResettingPassword = false
     @State private var isConfirmingDelete = false
 
-    init(user: User, model: AdminViewModel) {
+    init(user: User, model: AdminViewModel, access: AccessControlViewModel) {
         self.user = user
         self.model = model
+        self.access = access
         _email = State(initialValue: user.email ?? "")
         _isAdmin = State(initialValue: user.admin)
     }
@@ -229,6 +237,7 @@ private struct AdminUserDetailView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("该用户的账号将被永久删除，曲库中的音乐不会受影响。")
+            Text("该用户会从 \(access.ruleReferenceCount(userID: user.id)) 条可见范围规则中移除。")
         }
     }
 

@@ -18,8 +18,23 @@ struct AlbumGridView: View {
     let client: any MusicClientProviding
     let newAlbumIDs: Set<String>
     let onSelect: (Album) -> Void
+    let onManageAccess: ((AccessScopeTarget) -> Void)?
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 20)]
+
+    init(
+        albums: [Album],
+        client: any MusicClientProviding,
+        newAlbumIDs: Set<String>,
+        onSelect: @escaping (Album) -> Void,
+        onManageAccess: ((AccessScopeTarget) -> Void)? = nil
+    ) {
+        self.albums = albums
+        self.client = client
+        self.newAlbumIDs = newAlbumIDs
+        self.onSelect = onSelect
+        self.onManageAccess = onManageAccess
+    }
 
     var body: some View {
         ScrollView {
@@ -27,6 +42,20 @@ struct AlbumGridView: View {
                 ForEach(albums, id: \.id) { album in
                     AlbumGridCell(album: album, client: client, isNew: newAlbumIDs.contains(album.id))
                         .onTapGesture { onSelect(album) }
+                        .contextMenu {
+                            if let onManageAccess {
+                                Button("设置专辑可见范围") {
+                                    onManageAccess(
+                                        AccessScopeTarget(
+                                            scopeType: .album,
+                                            id: album.id,
+                                            name: album.name,
+                                            context: album.artist
+                                        )
+                                    )
+                                }
+                            }
+                        }
                 }
             }
             .padding()

@@ -5,11 +5,24 @@ struct MediaDetailView: View {
     let album: Album
     @ObservedObject var model: MediaViewModel
     @ObservedObject var playlists: PlaylistViewModel
+    let onManageAccess: ((AccessScopeTarget) -> Void)?
     @State private var importing = false
     @State private var selectedTrackIDs: Set<String> = []
     @State private var tagEditor: TagEditorViewModel?
     @State private var batchTagTrackIDs: [String]?
     @State private var pendingDeletion: [String]?
+
+    init(
+        album: Album,
+        model: MediaViewModel,
+        playlists: PlaylistViewModel,
+        onManageAccess: ((AccessScopeTarget) -> Void)? = nil
+    ) {
+        self.album = album
+        self.model = model
+        self.playlists = playlists
+        self.onManageAccess = onManageAccess
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -17,7 +30,23 @@ struct MediaDetailView: View {
                 AsyncImage(url: model.coverURL) { image in image.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
                     .frame(width: 180, height: 180).clipped().cornerRadius(8)
                 VStack(alignment: .leading) {
-                    Text(album.name).font(.largeTitle)
+                    HStack {
+                        Text(album.name).font(.largeTitle)
+                        if let onManageAccess {
+                            Menu {
+                                Button("专辑可见范围") {
+                                    onManageAccess(albumAccessTarget)
+                                }
+                                if let artistAccessTarget {
+                                    Button("艺人可见范围") {
+                                        onManageAccess(artistAccessTarget)
+                                    }
+                                }
+                            } label: {
+                                Label("可见范围", systemImage: "eye")
+                            }
+                        }
+                    }
                     Text(album.artist ?? "未知艺人").foregroundStyle(.secondary)
                     Button("替换封面") { importing = true }
                 }
@@ -31,6 +60,19 @@ struct MediaDetailView: View {
                             Menu("加入歌单") {
                                 ForEach(playlists.tree?.playlists ?? [], id: \.id) { pl in
                                     Button(pl.name) { Task { await playlists.addTracks(playlistID: pl.id, songIDs: [track.id]) } }
+                                }
+                            }
+                            if let onManageAccess {
+                                Divider()
+                                Button("设置曲目可见范围") {
+                                    onManageAccess(
+                                        AccessScopeTarget(
+                                            scopeType: .track,
+                                            id: track.id,
+                                            name: track.title,
+                                            context: track.album
+                                        )
+                                    )
                                 }
                             }
                             Divider()
@@ -92,5 +134,24 @@ struct MediaDetailView: View {
             Text("将删除 \(pendingDeletion?.count ?? 0) 首曲目，此操作无法撤销。")
         }
         .onChange(of: album.id) { _, _ in selectedTrackIDs.removeAll() }
+    }
+
+    private var albumAccessTarget: AccessScopeTarget {
+        AccessScopeTarget(
+            scopeType: .album,
+            id: album.id,
+            name: album.name,
+            context: album.artist
+        )
+    }
+
+    private var artistAccessTarget: AccessScopeTarget? {
+        guard let artistID = album.artistId, !artistID.isEmpty else { return nil }
+        return AccessScopeTarget(
+            scopeType: .artist,
+            id: artistID,
+            name: album.artist ?? artistID,
+            context: album.name
+        )
     }
 }

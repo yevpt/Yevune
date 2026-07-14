@@ -3,6 +3,7 @@ import YevuneCoreFFI
 
 struct AdminRolesView: View {
     @ObservedObject var model: AdminViewModel
+    @ObservedObject var access: AccessControlViewModel
     @State private var isCreatingRole = false
 
     var body: some View {
@@ -53,7 +54,7 @@ struct AdminRolesView: View {
 
             Group {
                 if let role = selectedRole {
-                    AdminRoleDetailView(role: role, model: model)
+                    AdminRoleDetailView(role: role, model: model, access: access)
                         .id(role)
                 } else {
                     ContentUnavailableView(
@@ -76,6 +77,7 @@ struct AdminRolesView: View {
         }
         .task {
             if model.roles.isEmpty { await model.load() }
+            if !accessHasLoadedState, !access.isLoading { await access.load() }
         }
         .sheet(isPresented: $isCreatingRole) {
             CreateRoleSheet(model: model)
@@ -84,6 +86,10 @@ struct AdminRolesView: View {
 
     private var selectedRole: Role? {
         model.roles.first { $0.id == model.selectedRoleID }
+    }
+
+    private var accessHasLoadedState: Bool {
+        !access.rules.isEmpty || !access.users.isEmpty || !access.roles.isEmpty
     }
 }
 
@@ -122,6 +128,7 @@ private struct RoleRow: View {
 private struct AdminRoleDetailView: View {
     let role: Role
     @ObservedObject var model: AdminViewModel
+    @ObservedObject var access: AccessControlViewModel
     @State private var isConfirmingDelete = false
 
     var body: some View {
@@ -205,6 +212,7 @@ private struct AdminRoleDetailView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("将从 \(model.affectedUserCount(for: role)) 位用户移除此角色。")
+            Text("该角色会从 \(access.ruleReferenceCount(roleID: role.id)) 条可见范围规则中移除。")
         }
     }
 
