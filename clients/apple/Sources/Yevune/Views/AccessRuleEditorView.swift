@@ -20,17 +20,13 @@ struct AccessRuleEditorView: View {
         self.model = model
         self.onComplete = onComplete
 
-        let grants = model.rule(for: target)?.grants ?? []
-        _selectedUserIDs = State(
-            initialValue: Set(
-                grants.filter { $0.principalType == .user }.map(\.id)
-            )
+        let selection = AccessRuleSelection(
+            grants: model.rule(for: target)?.grants ?? [],
+            assignableUserIDs: Set(model.assignableUsers.map(\.id)),
+            assignableRoleIDs: Set(model.assignableRoles.map(\.id))
         )
-        _selectedRoleIDs = State(
-            initialValue: Set(
-                grants.filter { $0.principalType == .role }.map(\.id)
-            )
-        )
+        _selectedUserIDs = State(initialValue: selection.userIDs)
+        _selectedRoleIDs = State(initialValue: selection.roleIDs)
     }
 
     var body: some View {
@@ -200,12 +196,17 @@ struct AccessRuleEditorView: View {
     }
 
     private var selectedPrincipals: [Principal] {
-        selectedUserIDs.sorted().map { Principal(principalType: .user, id: $0) }
-            + selectedRoleIDs.sorted().map { Principal(principalType: .role, id: $0) }
+        let pendingGrants = selectedUserIDs.map { Principal(principalType: .user, id: $0) }
+            + selectedRoleIDs.map { Principal(principalType: .role, id: $0) }
+        return AccessRuleSelection(
+            grants: pendingGrants,
+            assignableUserIDs: Set(model.assignableUsers.map(\.id)),
+            assignableRoleIDs: Set(model.assignableRoles.map(\.id))
+        ).principals
     }
 
     private var selectionIsEmpty: Bool {
-        selectedUserIDs.isEmpty && selectedRoleIDs.isEmpty
+        selectedPrincipals.isEmpty
     }
 
     private var currentVisibilityLabel: String {
@@ -254,6 +255,66 @@ struct AccessRuleEditorView: View {
                 onComplete()
             }
         }
+    }
+}
+
+struct AccessRuleSelection: Equatable {
+    let userIDs: Set<String>
+    let roleIDs: Set<String>
+
+    init(
+        grants: [Principal],
+        assignableUserIDs: Set<String>,
+        assignableRoleIDs: Set<String>
+    ) {
+        userIDs = Set(
+            grants.lazy
+                .filter { $0.principalType == .user && assignableUserIDs.contains($0.id) }
+                .map(\.id)
+        )
+        roleIDs = Set(
+            grants.lazy
+                .filter { $0.principalType == .role && assignableRoleIDs.contains($0.id) }
+                .map(\.id)
+        )
+    }
+
+    var principals: [Principal] {
+        userIDs.sorted().map { Principal(principalType: .user, id: $0) }
+            + roleIDs.sorted().map { Principal(principalType: .role, id: $0) }
+    }
+
+    var isEmpty: Bool {
+        userIDs.isEmpty && roleIDs.isEmpty
+    }
+}
+
+struct AccessRuleEditorIdentity: Hashable {
+    private let ruleID: String
+    private let scopeType: ScopeType
+    private let scopeID: String
+    private let grants: [GrantIdentity]
+
+    init(rule: AccessRule) {
+        ruleID = rule.id
+        scopeType = rule.scopeType
+        scopeID = rule.scopeId
+        grants = rule.grants
+            .map(GrantIdentity.init)
+            .sorted {
+                if $0.typeOrder != $1.typeOrder { return $0.typeOrder < $1.typeOrder }
+                return $0.id < $1.id
+            }
+    }
+}
+
+private struct GrantIdentity: Hashable {
+    let typeOrder: Int
+    let id: String
+
+    init(principal: Principal) {
+        typeOrder = principal.principalType == .user ? 0 : 1
+        id = principal.id
     }
 }
 

@@ -119,7 +119,7 @@ struct AdminAccessRulesView: View {
             AccessRuleEditorView(target: target, model: model) {
                 model.selectedRuleID = model.rule(for: target)?.id
             }
-            .id(rule.id)
+            .id(AccessRuleEditorIdentity(rule: rule))
         } else if model.rules.isEmpty, model.errorMessage == nil, !model.isLoading {
             ContentUnavailableView {
                 Label("曲库默认全家可见", systemImage: "music.note.house")
@@ -222,6 +222,12 @@ private struct AddAccessRestrictionSheet: View {
         }
         .frame(minWidth: 560, minHeight: 560)
         .interactiveDismissDisabled(model.isMutating)
+        .task {
+            await model.searchTargets(scopeType: scopeType, query: "")
+        }
+        .onDisappear {
+            Task { await model.searchTargets(scopeType: scopeType, query: "") }
+        }
     }
 
     private var searchPane: some View {
@@ -244,6 +250,7 @@ private struct AddAccessRestrictionSheet: View {
                 }
             }
             .pickerStyle(.segmented)
+            .disabled(model.isSearching)
             .onChange(of: scopeType) {
                 query = ""
                 Task { await model.searchTargets(scopeType: scopeType, query: "") }
@@ -253,6 +260,7 @@ private struct AddAccessRestrictionSheet: View {
                 TextField("搜索\(scopeType.accessDisplayName)", text: $query)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(search)
+                    .disabled(model.isSearching)
                 Button("搜索", action: search)
                     .buttonStyle(.borderedProminent)
                     .disabled(trimmedQuery.isEmpty || model.isSearching)

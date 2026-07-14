@@ -4,6 +4,87 @@ import YevuneCoreFFI
 
 @MainActor
 final class AccessControlViewModelTests: XCTestCase {
+    func testAccessRuleSelectionDropsHiddenPrincipalsAndSortsCompleteGrantList() {
+        let grants = [
+            Principal(principalType: .role, id: "ro-hidden-admin"),
+            Principal(principalType: .user, id: "us-listener-b"),
+            Principal(principalType: .user, id: "us-hidden-admin"),
+            Principal(principalType: .role, id: "ro-listeners"),
+            Principal(principalType: .user, id: "us-listener-a"),
+        ]
+        let selection = AccessRuleSelection(
+            grants: grants,
+            assignableUserIDs: ["us-listener-a", "us-listener-b"],
+            assignableRoleIDs: ["ro-listeners"]
+        )
+
+        XCTAssertEqual(selection.userIDs, ["us-listener-a", "us-listener-b"])
+        XCTAssertEqual(selection.roleIDs, ["ro-listeners"])
+        XCTAssertEqual(
+            selection.principals,
+            [
+                Principal(principalType: .user, id: "us-listener-a"),
+                Principal(principalType: .user, id: "us-listener-b"),
+                Principal(principalType: .role, id: "ro-listeners"),
+            ]
+        )
+        XCTAssertFalse(selection.isEmpty)
+    }
+
+    func testAccessRuleSelectionTreatsHiddenOnlyGrantsAsEmpty() {
+        let selection = AccessRuleSelection(
+            grants: [
+                Principal(principalType: .user, id: "us-hidden-admin"),
+                Principal(principalType: .role, id: "ro-hidden-admin"),
+            ],
+            assignableUserIDs: ["us-listener"],
+            assignableRoleIDs: ["ro-listeners"]
+        )
+
+        XCTAssertTrue(selection.userIDs.isEmpty)
+        XCTAssertTrue(selection.roleIDs.isEmpty)
+        XCTAssertTrue(selection.principals.isEmpty)
+        XCTAssertTrue(selection.isEmpty)
+    }
+
+    func testRuleEditorIdentityIgnoresGrantOrderButChangesWithEditableContent() {
+        let original = AccessRule(
+            id: "ru-1",
+            scopeType: .album,
+            scopeId: "al-1",
+            scopeName: "Blue Train",
+            grants: [
+                Principal(principalType: .role, id: "ro-2"),
+                Principal(principalType: .user, id: "us-2"),
+            ]
+        )
+        let reordered = AccessRule(
+            id: "ru-1",
+            scopeType: .album,
+            scopeId: "al-1",
+            scopeName: "Renamed display only",
+            grants: Array(original.grants.reversed())
+        )
+        let changedGrants = AccessRule(
+            id: "ru-1",
+            scopeType: .album,
+            scopeId: "al-1",
+            scopeName: "Blue Train",
+            grants: [Principal(principalType: .user, id: "us-3")]
+        )
+        let changedScope = AccessRule(
+            id: "ru-1",
+            scopeType: .artist,
+            scopeId: "ar-1",
+            scopeName: "John Coltrane",
+            grants: original.grants
+        )
+
+        XCTAssertEqual(AccessRuleEditorIdentity(rule: original), AccessRuleEditorIdentity(rule: reordered))
+        XCTAssertNotEqual(AccessRuleEditorIdentity(rule: original), AccessRuleEditorIdentity(rule: changedGrants))
+        XCTAssertNotEqual(AccessRuleEditorIdentity(rule: original), AccessRuleEditorIdentity(rule: changedScope))
+    }
+
     func testLoadPublishesStatePreservesValidSelectionAndExcludesAdministrators() async {
         let fake = FakeAccessControlClient(
             rules: Self.rules,
