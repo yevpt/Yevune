@@ -17,7 +17,7 @@ pub mod repo_transcode_cache;
 pub mod repo_user;
 
 pub use access::{AccessControl, Viewer};
-pub use repo_access::{AccessRepo, TrackScope};
+pub use repo_access::{AccessRepo, SetRuleOutcome, TrackScope};
 pub use repo_annotation::{Annotation, AnnotationRepo};
 pub use repo_media::{MediaRepo, MediaSource, NewTrack, SearchPage, SearchResults};
 pub use repo_playlist::PlaylistRepo;

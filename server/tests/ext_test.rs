@@ -752,6 +752,89 @@ async fn access_rule_allowlist_round_trips_and_is_admin_only() {
 }
 
 #[tokio::test]
+async fn concurrent_principal_delete_maps_to_not_found_without_orphans() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/access/race.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    assert_eq!(uploaded["subsonic-response"]["status"], "ok");
+    let role_id = fixture
+        .index
+        .roles()
+        .create_role("racing-role", false)
+        .await
+        .unwrap();
+
+    for (principal_type, prefix, table, principal_id) in [
+        ("user", "us", "users", fixture.member_id),
+        ("role", "ro", "roles", role_id),
+    ] {
+        let mut writer = fixture
+            .index
+            .pool()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .unwrap();
+        let app = yevune_server::app(fixture.state.clone());
+        let uri = fixture.uri(
+            "admin",
+            &format!(
+                "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant={principal_type}:{prefix}-{principal_id}"
+            ),
+        );
+        let set = tokio::spawn(async move {
+            app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap()
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            let mut consecutive_observations = 0;
+            loop {
+                if fixture.index.pool().num_idle() + 2 <= fixture.index.pool().size() as usize {
+                    consecutive_observations += 1;
+                    if consecutive_observations == 64 {
+                        break;
+                    }
+                } else {
+                    consecutive_observations = 0;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("setAccessRule 应等待 writer lock");
+        assert!(!set.is_finished());
+        sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
+            .bind(principal_id)
+            .execute(&mut *writer)
+            .await
+            .unwrap();
+        writer.commit().await.unwrap();
+
+        let body = json(set.await.unwrap()).await;
+        assert_eq!(body["subsonic-response"]["error"]["code"], 70, "{body}");
+        let rule_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
+            .fetch_one(fixture.index.pool())
+            .await
+            .unwrap();
+        let orphan_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = ? AND principal_id = ?",
+        )
+        .bind(principal_type)
+        .bind(principal_id)
+        .fetch_one(fixture.index.pool())
+        .await
+        .unwrap();
+        assert_eq!(rule_count, 0);
+        assert_eq!(orphan_count, 0);
+    }
+}
+
+#[tokio::test]
 async fn deleting_principals_cleans_access_grants() {
     let fixture = Fixture::new().await;
     let uploaded = json(

@@ -1,6 +1,6 @@
 //! index 层集成测试：迁移、模式、WAL 与各仓储行为（临时 SQLite 文件）。
 
-use yevune_server::index::{Index, NewTrack, NewTranscodeCache};
+use yevune_server::index::{Index, NewTrack, NewTranscodeCache, SetRuleOutcome};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
@@ -545,22 +545,165 @@ fn user_grant(id: i64) -> Principal {
     }
 }
 
+fn role_grant(id: i64) -> Principal {
+    Principal {
+        principal_type: PrincipalType::Role,
+        id: id.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn access_拒绝为已删除主体写入孤儿授权() {
+    for (principal_type, principal_id, outcome, orphan_count) in [
+        {
+            let (index, _dir) = temp_index().await;
+            let user_id = seed_user(&index, "deleted-user").await;
+            sqlx::query("DELETE FROM users WHERE id = ?")
+                .bind(user_id)
+                .execute(index.pool())
+                .await
+                .unwrap();
+            let outcome = index
+                .access()
+                .set_rule(ScopeType::Genre, "Rock", None, &[user_grant(user_id)])
+                .await
+                .unwrap();
+            let orphan_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = 'user' AND principal_id = ?",
+            )
+            .bind(user_id)
+            .fetch_one(index.pool())
+            .await
+            .unwrap();
+            ("user", user_id, outcome, orphan_count)
+        },
+        {
+            let (index, _dir) = temp_index().await;
+            let role_id = index
+                .roles()
+                .create_role("deleted-role", false)
+                .await
+                .unwrap();
+            sqlx::query("DELETE FROM roles WHERE id = ?")
+                .bind(role_id)
+                .execute(index.pool())
+                .await
+                .unwrap();
+            let outcome = index
+                .access()
+                .set_rule(ScopeType::Genre, "Rock", None, &[role_grant(role_id)])
+                .await
+                .unwrap();
+            let orphan_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = 'role' AND principal_id = ?",
+            )
+            .bind(role_id)
+            .fetch_one(index.pool())
+            .await
+            .unwrap();
+            ("role", role_id, outcome, orphan_count)
+        },
+    ] {
+        assert_eq!(outcome, SetRuleOutcome::MissingPrincipal);
+        assert_eq!(
+            orphan_count, 0,
+            "已删除 {principal_type} {principal_id} 不得留下孤儿 grant"
+        );
+    }
+}
+
+#[tokio::test]
+async fn access_set_在删除先提交时串行校验主体且不泄漏_busy() {
+    for principal_type in [PrincipalType::User, PrincipalType::Role] {
+        let (index, _dir) = temp_index().await;
+        let principal_id = match principal_type {
+            PrincipalType::User => seed_user(&index, "racing-user").await,
+            PrincipalType::Role => index
+                .roles()
+                .create_role("racing-role", false)
+                .await
+                .unwrap(),
+        };
+        let table = match principal_type {
+            PrincipalType::User => "users",
+            PrincipalType::Role => "roles",
+        };
+        let mut writer = index.pool().begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let spawned_index = index.clone();
+        let grant = Principal {
+            principal_type,
+            id: principal_id.to_string(),
+        };
+        let set = tokio::spawn(async move {
+            spawned_index
+                .access()
+                .set_rule(ScopeType::Genre, "Rock", None, &[grant])
+                .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if index.pool().num_idle() + 2 <= index.pool().size() as usize {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("set_rule 应已取得第二条连接并阻塞于首个 DB 操作 BEGIN IMMEDIATE");
+        assert!(
+            !set.is_finished(),
+            "set 应等待已持有的 immediate writer lock"
+        );
+        sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
+            .bind(principal_id)
+            .execute(&mut *writer)
+            .await
+            .unwrap();
+        writer.commit().await.unwrap();
+
+        assert_eq!(
+            set.await.unwrap().unwrap(),
+            SetRuleOutcome::MissingPrincipal
+        );
+        let orphan_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM access_rule_grants WHERE principal_type = ? AND principal_id = ?",
+        )
+        .bind(match principal_type {
+            PrincipalType::User => "user",
+            PrincipalType::Role => "role",
+        })
+        .bind(principal_id)
+        .fetch_one(index.pool())
+        .await
+        .unwrap();
+        let rule_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
+            .fetch_one(index.pool())
+            .await
+            .unwrap();
+        assert_eq!(orphan_count, 0);
+        assert_eq!(rule_count, 0, "主体缺失时不得写入 rule");
+    }
+}
+
 #[tokio::test]
 async fn access_规则_upsert_读取与删除() {
     let (index, _dir) = temp_index().await;
     let creator = seed_user(&index, "admin").await;
+    let listener = seed_user(&index, "listener").await;
+    let replacement = seed_user(&index, "replacement").await;
     let acc = index.access();
 
-    let rid = acc
+    let outcome = acc
         .set_rule(
             ScopeType::Album,
             "10",
             Some(creator),
-            &[user_grant(1), user_grant(2)],
+            &[user_grant(creator), user_grant(listener)],
         )
         .await
         .unwrap();
-    assert!(rid > 0);
+    assert!(matches!(outcome, SetRuleOutcome::Saved(id) if id > 0));
 
     let rule = acc
         .get_rule(ScopeType::Album, "10")
@@ -572,12 +715,17 @@ async fn access_规则_upsert_读取与删除() {
     assert_eq!(rule.grants.len(), 2);
 
     // upsert 覆盖名单
-    acc.set_rule(ScopeType::Album, "10", Some(1), &[user_grant(3)])
-        .await
-        .unwrap();
+    acc.set_rule(
+        ScopeType::Album,
+        "10",
+        Some(creator),
+        &[user_grant(replacement)],
+    )
+    .await
+    .unwrap();
     let rule2 = acc.get_rule(ScopeType::Album, "10").await.unwrap().unwrap();
     assert_eq!(rule2.grants.len(), 1);
-    assert_eq!(rule2.grants[0].id, "3");
+    assert_eq!(rule2.grants[0].id, replacement.to_string());
 
     assert!(acc.delete_rule(ScopeType::Album, "10").await.unwrap());
     assert!(acc
@@ -590,16 +738,24 @@ async fn access_规则_upsert_读取与删除() {
 #[tokio::test]
 async fn access_最具体作用域优先() {
     let (index, _dir) = temp_index().await;
+    let artist_listener = seed_user(&index, "artist-listener").await;
+    let album_listener = seed_user(&index, "album-listener").await;
+    let track_listener = seed_user(&index, "track-listener").await;
     let acc = index.access();
 
     // 艺人级限制给用户 1；专辑级限制给用户 2；曲目级限制给用户 3
-    acc.set_rule(ScopeType::Artist, "100", None, &[user_grant(1)])
+    acc.set_rule(
+        ScopeType::Artist,
+        "100",
+        None,
+        &[user_grant(artist_listener)],
+    )
+    .await
+    .unwrap();
+    acc.set_rule(ScopeType::Album, "10", None, &[user_grant(album_listener)])
         .await
         .unwrap();
-    acc.set_rule(ScopeType::Album, "10", None, &[user_grant(2)])
-        .await
-        .unwrap();
-    acc.set_rule(ScopeType::Track, "1", None, &[user_grant(3)])
+    acc.set_rule(ScopeType::Track, "1", None, &[user_grant(track_listener)])
         .await
         .unwrap();
 
@@ -616,7 +772,7 @@ async fn access_最具体作用域优先() {
         .expect("应命中规则");
     // 曲目级最具体
     assert_eq!(rule.scope_type, ScopeType::Track);
-    assert_eq!(rule.grants[0].id, "3");
+    assert_eq!(rule.grants[0].id, track_listener.to_string());
 
     // 无曲目规则时回落到专辑级
     acc.delete_rule(ScopeType::Track, "1").await.unwrap();

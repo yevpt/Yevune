@@ -7,6 +7,8 @@ use axum::Router;
 use contract::{Principal, PrincipalType, ScopeType};
 use serde::Deserialize;
 
+use crate::index::SetRuleOutcome;
+
 use super::super::response::{self, Format};
 use super::super::{ApiAdmin, ApiQuery, AppState};
 
@@ -54,21 +56,14 @@ async fn set_rule(
             return response::internal(format);
         }
     }
-    match principals_exist(&state, &grants).await {
-        Ok(true) => {}
-        Ok(false) => return response::not_found(format),
-        Err(error) => {
-            tracing::error!(%error, "检查访问规则授权主体是否存在失败");
-            return response::internal(format);
-        }
-    }
     let id = match state
         .index
         .access()
         .set_rule(scope_type, &scope_id, Some(admin.id), &grants)
         .await
     {
-        Ok(value) => value,
+        Ok(SetRuleOutcome::Saved(id)) => id,
+        Ok(SetRuleOutcome::MissingPrincipal) => return response::not_found(format),
         Err(error) => {
             tracing::error!(%error, "设置访问规则失败");
             return response::internal(format);
@@ -209,24 +204,6 @@ async fn scope_exists(
         .map(|count| count > 0)
 }
 
-async fn principals_exist(state: &AppState, grants: &[Principal]) -> sqlx::Result<bool> {
-    for grant in grants {
-        let table = match grant.principal_type {
-            PrincipalType::User => "users",
-            PrincipalType::Role => "roles",
-        };
-        let query = format!("SELECT COUNT(*) FROM {table} WHERE id = ?");
-        let count = sqlx::query_scalar::<_, i64>(&query)
-            .bind(&grant.id)
-            .fetch_one(state.index.pool())
-            .await?;
-        if count == 0 {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 async fn scope_name(state: &AppState, rule: &contract::AccessRule) -> sqlx::Result<Option<String>> {
     match rule.scope_type {
         ScopeType::Track => {
@@ -287,7 +264,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn existence_helpers_propagate_database_errors() {
+    async fn scope_existence_helper_propagates_database_errors() {
         let dir = tempfile::tempdir().unwrap();
         let index = Index::connect(&dir.path().join("access.sqlite"))
             .await
@@ -297,11 +274,5 @@ mod tests {
         index.pool().close().await;
 
         assert!(scope_exists(&state, ScopeType::Track, "1").await.is_err());
-        assert!(principals_exist(&state, &[]).await.is_ok());
-        let grants = [Principal {
-            principal_type: PrincipalType::User,
-            id: "1".to_owned(),
-        }];
-        assert!(principals_exist(&state, &grants).await.is_err());
     }
 }

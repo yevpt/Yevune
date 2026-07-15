@@ -64,21 +64,56 @@ pub struct AccessRepo<'a> {
     pool: &'a SqlitePool,
 }
 
+/// 原子设置访问规则的业务结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetRuleOutcome {
+    /// 规则及允许名单已保存，携带规则主键。
+    Saved(i64),
+    /// 至少一个授权主体在获得 writer lock 后已不存在，未写入任何规则数据。
+    MissingPrincipal,
+}
+
 impl<'a> AccessRepo<'a> {
     /// 绑定连接池。
     pub fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
     }
 
-    /// upsert 一条规则并整体替换其允许名单，返回规则主键。
+    /// 原子校验授权主体、upsert 规则并整体替换允许名单。
     pub async fn set_rule(
         &self,
         scope_type: ScopeType,
         scope_id: &str,
         created_by: Option<i64>,
         grants: &[Principal],
-    ) -> Result<i64> {
-        let mut tx = self.pool.begin().await?;
+    ) -> Result<SetRuleOutcome> {
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut principal_ids = Vec::with_capacity(grants.len());
+        for grant in grants {
+            let Ok(principal_id) = grant.id.parse::<i64>() else {
+                tx.rollback().await?;
+                return Ok(SetRuleOutcome::MissingPrincipal);
+            };
+            let exists: Option<i64> = match grant.principal_type {
+                PrincipalType::User => {
+                    sqlx::query_scalar("SELECT 1 FROM users WHERE id = ?")
+                        .bind(principal_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                }
+                PrincipalType::Role => {
+                    sqlx::query_scalar("SELECT 1 FROM roles WHERE id = ?")
+                        .bind(principal_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                }
+            };
+            if exists.is_none() {
+                tx.rollback().await?;
+                return Ok(SetRuleOutcome::MissingPrincipal);
+            }
+            principal_ids.push(principal_id);
+        }
         let rule_id: i64 = sqlx::query_scalar(
             "INSERT INTO access_rules(scope_type, scope_id, created_by) VALUES(?, ?, ?) \
              ON CONFLICT(scope_type, scope_id) DO UPDATE SET created_by = excluded.created_by \
@@ -94,8 +129,7 @@ impl<'a> AccessRepo<'a> {
             .bind(rule_id)
             .execute(&mut *tx)
             .await?;
-        for g in grants {
-            let pid: i64 = g.id.parse().unwrap_or_default();
+        for (g, pid) in grants.iter().zip(principal_ids) {
             sqlx::query(
                 "INSERT INTO access_rule_grants(rule_id, principal_type, principal_id) \
                  VALUES(?, ?, ?)",
@@ -107,7 +141,7 @@ impl<'a> AccessRepo<'a> {
             .await?;
         }
         tx.commit().await?;
-        Ok(rule_id)
+        Ok(SetRuleOutcome::Saved(rule_id))
     }
 
     /// 取某作用域的规则（含允许名单）。
