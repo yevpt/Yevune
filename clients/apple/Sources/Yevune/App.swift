@@ -13,14 +13,24 @@ struct YevuneApp: App {
         _library = StateObject(wrappedValue: LibraryViewModel(client: client))
         _playback = StateObject(wrappedValue: PlaybackController(
             resolver: MusicClientMediaResolver(client: client),
-            engine: AVQueuePlaybackEngine()
+            engine: AVQueuePlaybackEngine(),
+            systemMedia: SystemMediaCoordinator(),
+            artworkLoader: URLSessionPlaybackArtworkLoader()
         ))
     }
 
     var body: some Scene {
         WindowGroup {
             if let session = login.session {
-                LibraryView(model: library, session: session, playback: playback)
+                LibraryView(
+                    model: library,
+                    session: session,
+                    playback: playback,
+                    onLogout: {
+                        playback.shutdown()
+                        login.logout()
+                    }
+                )
                     .frame(minWidth: 920, minHeight: 620)
             } else {
                 LoginView(model: login)

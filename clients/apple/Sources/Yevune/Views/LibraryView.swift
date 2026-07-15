@@ -26,6 +26,7 @@ struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     @ObservedObject var playback: PlaybackController
     let session: SessionValue
+    let onLogout: () -> Void
     @State private var query = ""
     @State private var selection: SidebarSelection? = .library
     @State private var selectedAlbumID: String?
@@ -47,10 +48,16 @@ struct LibraryView: View {
     @State private var renameText = ""
     @State private var deleteTarget: DeleteTarget?
 
-    init(model: LibraryViewModel, session: SessionValue, playback: PlaybackController) {
+    init(
+        model: LibraryViewModel,
+        session: SessionValue,
+        playback: PlaybackController,
+        onLogout: @escaping () -> Void
+    ) {
         self.model = model
         self.session = session
         self.playback = playback
+        self.onLogout = onLogout
         _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
         _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
@@ -128,6 +135,11 @@ struct LibraryView: View {
             Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
             Button { Task { await workflow.scanLibrary() } } label: { Label("扫描曲库", systemImage: "arrow.clockwise") }
             Button { workflow.isDrawerPresented.toggle() } label: { Label("任务", systemImage: "tray.full") }
+            Menu {
+                Button("退出登录", role: .destructive, action: onLogout)
+            } label: {
+                Label(session.user, systemImage: "person.crop.circle")
+            }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { Task { await workflow.importFiles(urls) } }

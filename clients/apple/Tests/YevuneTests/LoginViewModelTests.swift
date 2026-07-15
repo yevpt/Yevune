@@ -52,6 +52,20 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertFalse(model.isSubmitting)
     }
 
+    func testLogoutClearsSessionAndPassword() async {
+        let model = LoginViewModel(client: FakeMusicClient())
+        model.server = "http://localhost"
+        model.user = "u"
+        model.password = "secret"
+        await model.submit()
+        XCTAssertNotNil(model.session)
+
+        model.logout()
+
+        XCTAssertNil(model.session)
+        XCTAssertEqual(model.password, "")
+    }
+
     func testLibraryLoadAndSearchPublishCoreResults() async {
         let album = Album(
             id: "al-1",

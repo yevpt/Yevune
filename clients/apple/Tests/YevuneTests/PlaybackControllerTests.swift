@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import YevuneCoreFFI
 import XCTest
@@ -5,6 +6,137 @@ import XCTest
 
 @MainActor
 final class PlaybackControllerTests: XCTestCase {
+    func testControllerLoadsArtworkForCurrentSystemMetadata() async {
+        let artwork = NSImage(size: NSSize(width: 10, height: 10))
+        let loader = FakeArtworkLoader(image: artwork)
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(), engine: RecordingPlaybackEngine(),
+            systemMedia: system, artworkLoader: loader
+        )
+
+        await controller.play(tracks: [playbackTrack("1")], startingAt: 0)
+        await controller.waitForPendingArtworkForTesting()
+
+        XCTAssertEqual(loader.loadedURLs.map(\.lastPathComponent), ["cover-1"])
+        XCTAssertTrue(system.lastArtwork === artwork)
+    }
+
+    func testControllerPublishesTrackDurationBeforeEngineTimingArrives() async {
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: RecordingPlaybackEngine(),
+            systemMedia: system
+        )
+
+        await controller.play(
+            tracks: [playbackTrack("1", title: "Song", duration: 180)],
+            startingAt: 0
+        )
+
+        XCTAssertEqual(system.lastTrack?.title, "Song")
+        XCTAssertEqual(system.lastDuration, 180)
+    }
+
+    func testControllerRegistersSystemHandlersOncePerPlaybackLifecycle() async {
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: RecordingPlaybackEngine(),
+            systemMedia: system
+        )
+
+        await controller.playNow(playbackTrack("1"))
+        await controller.playNow(playbackTrack("2"))
+
+        XCTAssertEqual(system.registerCalls, 1)
+
+        controller.shutdown()
+        await controller.playNow(playbackTrack("3"))
+        XCTAssertEqual(system.registerCalls, 2)
+    }
+
+    func testLateRemoteCommandAfterShutdownCannotReachEngine() async {
+        let engine = RecordingPlaybackEngine()
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(), engine: engine, systemMedia: system
+        )
+        await controller.playNow(playbackTrack("1"))
+        let staleHandlers = system.handlers
+
+        controller.shutdown()
+        staleHandlers?.play()
+        staleHandlers?.pause()
+        staleHandlers?.seek(42)
+
+        XCTAssertEqual(engine.playCalls, 0)
+        XCTAssertEqual(engine.pauseCalls, 0)
+        XCTAssertTrue(engine.seekValues.isEmpty)
+
+        await controller.play(
+            tracks: [playbackTrack("2"), playbackTrack("3")],
+            startingAt: 0
+        )
+        staleHandlers?.play()
+        staleHandlers?.pause()
+        staleHandlers?.next()
+        staleHandlers?.seek(99)
+        await Task.yield()
+
+        XCTAssertEqual(controller.currentTrack?.id, "2")
+        XCTAssertEqual(engine.playCalls, 0)
+        XCTAssertEqual(engine.pauseCalls, 0)
+        XCTAssertTrue(engine.seekValues.isEmpty)
+    }
+
+    func testSupersededArtworkCannotReplaceCurrentTrackArtwork() async {
+        let firstStarted = expectation(description: "first artwork request started")
+        let oldArtwork = NSImage(size: NSSize(width: 10, height: 10))
+        let currentArtwork = NSImage(size: NSSize(width: 20, height: 20))
+        let loader = SupersedingArtworkLoader(
+            currentImage: currentArtwork,
+            onFirstRequest: { firstStarted.fulfill() }
+        )
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(), engine: RecordingPlaybackEngine(),
+            systemMedia: system, artworkLoader: loader
+        )
+
+        await controller.playNow(playbackTrack("1"))
+        await fulfillment(of: [firstStarted], timeout: 1)
+        await controller.playNow(playbackTrack("2"))
+        await controller.waitForPendingArtworkForTesting()
+        loader.resumeFirst(with: oldArtwork)
+        await Task.yield()
+
+        XCTAssertTrue(system.lastArtwork === currentArtwork)
+    }
+
+    func testArtworkArrivingAfterShutdownCannotRestoreSystemMetadata() async {
+        let requestStarted = expectation(description: "artwork request started")
+        let loader = SupersedingArtworkLoader(
+            currentImage: NSImage(size: NSSize(width: 20, height: 20)),
+            onFirstRequest: { requestStarted.fulfill() }
+        )
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(), engine: RecordingPlaybackEngine(),
+            systemMedia: system, artworkLoader: loader
+        )
+
+        await controller.playNow(playbackTrack("1"))
+        await fulfillment(of: [requestStarted], timeout: 1)
+        controller.shutdown()
+        loader.resumeFirst(with: NSImage(size: NSSize(width: 10, height: 10)))
+        await Task.yield()
+
+        XCTAssertNil(system.lastTrack)
+        XCTAssertNil(system.lastArtwork)
+    }
+
     func testPlayLoadsRequestedTrackAndPublishesQueue() async {
         let engine = RecordingPlaybackEngine()
         let resolver = RecordingMediaResolver()
@@ -605,6 +737,74 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.elapsed, 3)
         XCTAssertEqual(controller.duration, 30)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "3"])
+    }
+}
+
+@MainActor
+private final class FakeArtworkLoader: PlaybackArtworkLoading {
+    let image: NSImage?
+    private(set) var loadedURLs: [URL] = []
+
+    init(image: NSImage?) { self.image = image }
+
+    func load(url: URL) async -> NSImage? {
+        loadedURLs.append(url)
+        return image
+    }
+}
+
+@MainActor
+private final class RecordingSystemMediaCoordinator: SystemMediaCoordinating {
+    private(set) var registerCalls = 0
+    private(set) var handlers: RemotePlaybackHandlers?
+    private(set) var lastTrack: Track?
+    private(set) var lastDuration: TimeInterval = 0
+    private(set) var lastArtwork: NSImage?
+
+    func register(_ handlers: RemotePlaybackHandlers) {
+        registerCalls += 1
+        self.handlers = handlers
+    }
+    func update(
+        track: Track?, elapsed: TimeInterval, duration: TimeInterval,
+        state: PlaybackEngineState, artwork: NSImage?
+    ) {
+        lastTrack = track
+        lastDuration = duration
+        lastArtwork = artwork
+    }
+    func clear() {
+        handlers = nil
+        lastTrack = nil
+        lastDuration = 0
+        lastArtwork = nil
+    }
+}
+
+@MainActor
+private final class SupersedingArtworkLoader: PlaybackArtworkLoading {
+    private let currentImage: NSImage
+    private let onFirstRequest: () -> Void
+    private var requestCount = 0
+    private var firstContinuation: CheckedContinuation<NSImage?, Never>?
+
+    init(currentImage: NSImage, onFirstRequest: @escaping () -> Void) {
+        self.currentImage = currentImage
+        self.onFirstRequest = onFirstRequest
+    }
+
+    func load(url: URL) async -> NSImage? {
+        requestCount += 1
+        guard requestCount == 1 else { return currentImage }
+        onFirstRequest()
+        return await withCheckedContinuation { continuation in
+            firstContinuation = continuation
+        }
+    }
+
+    func resumeFirst(with image: NSImage?) {
+        firstContinuation?.resume(returning: image)
+        firstContinuation = nil
     }
 }
 

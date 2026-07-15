@@ -125,4 +125,10 @@ final class LoginViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func logout() {
+        password = ""
+        session = nil
+        errorMessage = nil
+    }
 }

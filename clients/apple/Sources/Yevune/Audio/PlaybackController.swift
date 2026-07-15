@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import YevuneCoreFFI
 
@@ -24,25 +25,37 @@ final class PlaybackController: ObservableObject {
 
     private let resolver: any PlaybackMediaResolving
     private let engine: any PlaybackEngine
+    private let systemMedia: any SystemMediaCoordinating
+    private let artworkLoader: any PlaybackArtworkLoading
     private let shuffle: ([QueueEntry]) -> [QueueEntry]
     private var queue = PlaybackQueue()
     private var loadGeneration = 0
     private var hasActiveMediaSession = false
     private var pendingTransition: Task<Void, Never>?
+    private var pendingArtwork: Task<Void, Never>?
+    private var systemArtwork: NSImage?
+    private var systemMediaNeedsRegistration = true
+    private var systemMediaGeneration = 0
     private var retryCounts: [UUID: Int] = [:]
     private var failedInCycle: Set<UUID> = []
 
     init(
         resolver: any PlaybackMediaResolving,
         engine: any PlaybackEngine,
+        systemMedia: (any SystemMediaCoordinating)? = nil,
+        artworkLoader: (any PlaybackArtworkLoading)? = nil,
         shuffle: @escaping ([QueueEntry]) -> [QueueEntry] = { $0.shuffled() }
     ) {
         self.resolver = resolver
         self.engine = engine
+        self.systemMedia = systemMedia ?? NoopSystemMediaCoordinator()
+        self.artworkLoader = artworkLoader ?? NoopPlaybackArtworkLoader()
         self.shuffle = shuffle
+        registerSystemMediaHandlers()
     }
 
     func play(tracks: [Track], startingAt index: Int) async {
+        registerSystemMediaHandlers()
         retryCounts.removeAll()
         failedInCycle.removeAll()
         queue.replace(with: tracks, startingAt: index)
@@ -130,6 +143,16 @@ final class PlaybackController: ObservableObject {
         }
     }
 
+    func play() {
+        guard hasActiveMediaSession else { return }
+        engine.play()
+    }
+
+    func pause() {
+        guard hasActiveMediaSession else { return }
+        engine.pause()
+    }
+
     func previous() async {
         guard let entry = queue.previous() else { return }
         clearFailureState(for: entry.id)
@@ -152,6 +175,7 @@ final class PlaybackController: ObservableObject {
     }
 
     func seek(to seconds: TimeInterval) {
+        guard hasActiveMediaSession else { return }
         engine.seek(to: seconds)
     }
 
@@ -166,17 +190,29 @@ final class PlaybackController: ObservableObject {
     }
 
     func shutdown() {
+        systemMediaGeneration += 1
+        pendingTransition?.cancel()
+        pendingTransition = nil
+        pendingArtwork?.cancel()
+        pendingArtwork = nil
         beginMediaTransition(stopEngine: false)
         engine.stop()
         queue = PlaybackQueue()
         retryCounts.removeAll()
         failedInCycle.removeAll()
         synchronizeQueueState()
+        systemMedia.clear()
+        systemMediaNeedsRegistration = true
     }
 
     func waitForPendingTransitionForTesting() async {
         let transition = pendingTransition
         await transition?.value
+    }
+
+    func waitForPendingArtworkForTesting() async {
+        let artwork = pendingArtwork
+        await artwork?.value
     }
 
     @discardableResult
@@ -186,9 +222,13 @@ final class PlaybackController: ObservableObject {
             let media = try await resolver.resolve(track: entry.track)
             guard generation == loadGeneration else { return .superseded }
             coverURL = media.coverURL
+            duration = TimeInterval(entry.track.duration)
+            systemArtwork = nil
             hasActiveMediaSession = true
             installEngineObserver()
             engine.load(url: media.streamURL, autoplay: true)
+            publishSystemMetadata()
+            loadArtwork(from: media.coverURL, for: entry.id, generation: generation)
             return .loaded
         } catch {
             guard generation == loadGeneration else { return .superseded }
@@ -203,11 +243,15 @@ final class PlaybackController: ObservableObject {
         currentTrack = queue.current?.track
         isShuffled = queue.isShuffled
         repeatMode = queue.repeatMode
+        publishSystemMetadata()
     }
 
     @discardableResult
     private func beginMediaTransition(stopEngine: Bool = true) -> Int {
         loadGeneration += 1
+        pendingArtwork?.cancel()
+        pendingArtwork = nil
+        systemArtwork = nil
         engine.onEvent = nil
         if hasActiveMediaSession {
             hasActiveMediaSession = false
@@ -220,6 +264,7 @@ final class PlaybackController: ObservableObject {
         duration = 0
         coverURL = nil
         errorMessage = nil
+        publishSystemMetadata()
         return loadGeneration
     }
 
@@ -234,9 +279,11 @@ final class PlaybackController: ObservableObject {
         switch event {
         case let .state(state):
             engineState = state
+            publishSystemMetadata()
         case let .time(elapsed, duration):
             self.elapsed = elapsed
             self.duration = duration
+            publishSystemMetadata()
         case .ended:
             let generation = loadGeneration
             pendingTransition = Task { @MainActor [weak self] in
@@ -343,5 +390,65 @@ final class PlaybackController: ObservableObject {
     private func safePlaybackErrorMessage() -> String {
         guard let title = currentTrack?.title, !title.isEmpty else { return "播放失败" }
         return "无法播放「\(title)」"
+    }
+
+    private func registerSystemMediaHandlers() {
+        guard systemMediaNeedsRegistration else { return }
+        systemMedia.register(systemMediaHandlers(generation: systemMediaGeneration))
+        systemMediaNeedsRegistration = false
+    }
+
+    private func systemMediaHandlers(generation: Int) -> RemotePlaybackHandlers {
+        RemotePlaybackHandlers(
+            play: { [weak self] in
+                guard let self, generation == self.systemMediaGeneration else { return }
+                self.play()
+            },
+            pause: { [weak self] in
+                guard let self, generation == self.systemMediaGeneration else { return }
+                self.pause()
+            },
+            previous: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, generation == self.systemMediaGeneration else { return }
+                    await self.previous()
+                }
+            },
+            next: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, generation == self.systemMediaGeneration else { return }
+                    await self.next()
+                }
+            },
+            seek: { [weak self] seconds in
+                guard let self, generation == self.systemMediaGeneration else { return }
+                self.seek(to: seconds)
+            }
+        )
+    }
+
+    private func publishSystemMetadata() {
+        systemMedia.update(
+            track: currentTrack,
+            elapsed: elapsed,
+            duration: duration,
+            state: engineState,
+            artwork: systemArtwork
+        )
+    }
+
+    private func loadArtwork(from url: URL?, for entryID: UUID, generation: Int) {
+        guard let url else { return }
+        pendingArtwork = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let image = await self.artworkLoader.load(url: url)
+            guard !Task.isCancelled,
+                  generation == self.loadGeneration,
+                  self.queue.current?.id == entryID,
+                  self.coverURL == url
+            else { return }
+            self.systemArtwork = image
+            self.publishSystemMetadata()
+        }
     }
 }
