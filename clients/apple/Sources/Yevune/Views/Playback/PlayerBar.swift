@@ -36,18 +36,29 @@ private struct CurrentTrackSummary: View {
     let action: (() -> Void)?
 
     var body: some View {
-        Group {
-            if let action {
-                Button(action: action) {
+        VStack(alignment: .leading, spacing: 4) {
+            Group {
+                if let action {
+                    Button(action: action) {
+                        summaryContent
+                    }
+                    .buttonStyle(.plain)
+                    .help("打开当前播放")
+                } else {
                     summaryContent
                 }
-                .buttonStyle(.plain)
-                .help("打开当前播放")
-            } else {
-                summaryContent
+            }
+            .accessibilityLabel("当前播放：\(playback.currentTrack?.title ?? "无")")
+
+            if let error = PlaybackViewPolicy.errorPresentation(for: playback.errorMessage) {
+                Label(error.message, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(error.accessibilityLabel)
             }
         }
-        .accessibilityLabel("当前播放：\(playback.currentTrack?.title ?? "无")")
     }
 
     private var summaryContent: some View {
@@ -96,13 +107,13 @@ private struct TransportControls: View {
                 Button {
                     playback.togglePlayPause()
                 } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: transport.primaryAction == .pause ? "pause.fill" : "play.fill")
                         .font(.title3)
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.circle)
-                .accessibilityLabel(isPlaying ? "暂停" : "播放")
+                .accessibilityLabel(transport.primaryActionAccessibilityLabel)
 
                 Button {
                     Task { await playback.next() }
@@ -112,6 +123,17 @@ private struct TransportControls: View {
                 .accessibilityLabel("下一首")
             }
             .buttonStyle(.plain)
+
+            if transport.showsBufferingIndicator, let statusText = transport.statusText {
+                HStack(spacing: 5) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(statusText)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            }
 
             HStack(spacing: 8) {
                 Text(playbackTime(draggedTime ?? playback.elapsed))
@@ -125,6 +147,8 @@ private struct TransportControls: View {
                     onEditingChanged: finishSeeking
                 )
                 .accessibilityLabel("播放进度")
+                .accessibilityValue(progressAccessibilityValue)
+                .disabled(!canSeek)
                 Text(playbackTime(playback.duration))
                     .frame(width: 38, alignment: .leading)
             }
@@ -133,8 +157,19 @@ private struct TransportControls: View {
         }
     }
 
-    private var isPlaying: Bool {
-        playback.engineState == .playing || playback.engineState == .buffering
+    private var transport: PlaybackViewPolicy.TransportPresentation {
+        PlaybackViewPolicy.transportPresentation(for: playback.engineState)
+    }
+
+    private var canSeek: Bool {
+        PlaybackViewPolicy.canSeek(duration: playback.duration)
+    }
+
+    private var progressAccessibilityValue: String {
+        PlaybackViewPolicy.progressAccessibilityValue(
+            elapsed: draggedTime ?? playback.elapsed,
+            duration: playback.duration
+        ) ?? "总时长未知"
     }
 
     private var sliderUpperBound: Double {
@@ -142,9 +177,10 @@ private struct TransportControls: View {
     }
 
     private func finishSeeking(_ isEditing: Bool) {
-        guard !isEditing, let draggedTime else { return }
+        guard !isEditing else { return }
+        defer { self.draggedTime = nil }
+        guard canSeek, let draggedTime else { return }
         playback.seek(to: draggedTime)
-        self.draggedTime = nil
     }
 }
 

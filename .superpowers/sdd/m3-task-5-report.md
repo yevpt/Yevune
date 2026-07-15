@@ -39,3 +39,21 @@
 
 - 队列拖动依赖 macOS SwiftUI `List.onMove` 的系统交互；同时提供“上移/下移”菜单作为键盘与 VoiceOver 可操作替代。
 - `openNowPlaying` 接口为后续专注页保留；本任务传入 `nil` 时摘要是非交互内容，不暴露空按钮。
+
+## 审查修复（2026-07-16）
+
+### RED
+
+- 扩展 `PlaybackViewPolicyTests`，覆盖播放/缓冲展示与 VoiceOver 标签不同且均保持暂停动作、非空播放错误产生可见展示、未知时长禁用 seek、已知时长输出格式化进度 accessibility value。
+- 执行 `swift test --package-path clients/apple --filter PlaybackViewPolicyTests`，按预期因 `transportPresentation`、`errorPresentation`、`canSeek` 与 `progressAccessibilityValue` 尚不存在而编译失败。
+
+### GREEN
+
+- `PlaybackViewPolicy` 集中提供 transport、错误、seek 与进度可访问性展示规则，未复制或修改 Controller 状态逻辑。
+- `PlayerBar` 为缓冲状态显示克制的系统 `ProgressView` 与“正在缓冲”，暂停按钮保持可用且 VoiceOver 标签明确；播放错误以内联、可换行且可访问的状态显示在当前歌曲摘要旁。
+- duration 未知或无效时禁用 Slider，提交拖动时再次 guard；duration 已知时 accessibility value 使用“已播放 / 总时长”格式。
+- focused policy tests：8/8 通过；Swift 全量测试：128/128 通过；`swift build` 与 `git diff --check` 通过。
+
+### Commit
+
+- `fix(mac): 完善播放栏状态反馈`
