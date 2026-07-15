@@ -88,12 +88,17 @@ impl<'a> AccessRepo<'a> {
         grants: &[Principal],
     ) -> Result<SetRuleOutcome> {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let mut principal_ids = Vec::with_capacity(grants.len());
+        let mut principals = Vec::with_capacity(grants.len());
         for grant in grants {
             let Ok(principal_id) = grant.id.parse::<i64>() else {
                 tx.rollback().await?;
                 return Ok(SetRuleOutcome::MissingPrincipal);
             };
+            if principals.iter().any(|&(principal_type, id)| {
+                principal_type == grant.principal_type && id == principal_id
+            }) {
+                continue;
+            }
             let exists: Option<i64> = match grant.principal_type {
                 PrincipalType::User => {
                     sqlx::query_scalar("SELECT 1 FROM users WHERE id = ?")
@@ -112,7 +117,7 @@ impl<'a> AccessRepo<'a> {
                 tx.rollback().await?;
                 return Ok(SetRuleOutcome::MissingPrincipal);
             }
-            principal_ids.push(principal_id);
+            principals.push((grant.principal_type, principal_id));
         }
         let rule_id: i64 = sqlx::query_scalar(
             "INSERT INTO access_rules(scope_type, scope_id, created_by) VALUES(?, ?, ?) \
@@ -129,14 +134,14 @@ impl<'a> AccessRepo<'a> {
             .bind(rule_id)
             .execute(&mut *tx)
             .await?;
-        for (g, pid) in grants.iter().zip(principal_ids) {
+        for (principal_type, principal_id) in principals {
             sqlx::query(
                 "INSERT INTO access_rule_grants(rule_id, principal_type, principal_id) \
                  VALUES(?, ?, ?)",
             )
             .bind(rule_id)
-            .bind(principal_str(g.principal_type))
-            .bind(pid)
+            .bind(principal_str(principal_type))
+            .bind(principal_id)
             .execute(&mut *tx)
             .await?;
         }

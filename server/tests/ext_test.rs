@@ -752,7 +752,69 @@ async fn access_rule_allowlist_round_trips_and_is_admin_only() {
 }
 
 #[tokio::test]
-async fn concurrent_principal_delete_maps_to_not_found_without_orphans() {
+async fn duplicate_access_grants_are_idempotent_in_response() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/access/duplicates.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    assert_eq!(uploaded["subsonic-response"]["status"], "ok");
+    let role_id = fixture
+        .index
+        .roles()
+        .create_role("duplicate-role", false)
+        .await
+        .unwrap();
+    let baseline = json(
+        fixture
+            .get(
+                "admin",
+                &format!(
+                    "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant=user:us-{0}&grant=role:ro-{role_id}",
+                    fixture.member_id
+                ),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(baseline["subsonic-response"]["status"], "ok", "{baseline}");
+    let baseline_grants = payload(&baseline, "accessRule")["grants"].clone();
+    let body = json(
+        fixture
+            .get(
+                "admin",
+                &format!(
+                    "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant=user:us-{0}&grant=role:ro-{role_id}&grant=user:us-{0}&grant=role:ro-{role_id}",
+                    fixture.member_id
+                ),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(body["subsonic-response"]["status"], "ok", "{body}");
+    let grants = payload(&body, "accessRule")["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 2, "{body}");
+    assert_eq!(payload(&body, "accessRule")["grants"], baseline_grants);
+    assert_eq!(
+        grants
+            .iter()
+            .filter(|grant| grant["id"] == format!("us-{}", fixture.member_id))
+            .count(),
+        1
+    );
+    assert_eq!(
+        grants
+            .iter()
+            .filter(|grant| grant["id"] == format!("ro-{role_id}"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn deleted_principals_map_to_not_found_without_orphans() {
     let fixture = Fixture::new().await;
     let uploaded = json(
         fixture
@@ -772,50 +834,23 @@ async fn concurrent_principal_delete_maps_to_not_found_without_orphans() {
         ("user", "us", "users", fixture.member_id),
         ("role", "ro", "roles", role_id),
     ] {
-        let mut writer = fixture
-            .index
-            .pool()
-            .begin_with("BEGIN IMMEDIATE")
-            .await
-            .unwrap();
-        let app = yevune_server::app(fixture.state.clone());
-        let uri = fixture.uri(
-            "admin",
-            &format!(
-                "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant={principal_type}:{prefix}-{principal_id}"
-            ),
-        );
-        let set = tokio::spawn(async move {
-            app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
-                .await
-                .unwrap()
-        });
-
-        tokio::time::timeout(std::time::Duration::from_secs(1), async {
-            let mut consecutive_observations = 0;
-            loop {
-                if fixture.index.pool().num_idle() + 2 <= fixture.index.pool().size() as usize {
-                    consecutive_observations += 1;
-                    if consecutive_observations == 64 {
-                        break;
-                    }
-                } else {
-                    consecutive_observations = 0;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("setAccessRule 应等待 writer lock");
-        assert!(!set.is_finished());
         sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
             .bind(principal_id)
-            .execute(&mut *writer)
+            .execute(fixture.index.pool())
             .await
             .unwrap();
-        writer.commit().await.unwrap();
 
-        let body = json(set.await.unwrap()).await;
+        let body = json(
+            fixture
+                .get(
+                    "admin",
+                    &format!(
+                        "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock&grant={principal_type}:{prefix}-{principal_id}"
+                    ),
+                )
+                .await,
+        )
+        .await;
         assert_eq!(body["subsonic-response"]["error"]["code"], 70, "{body}");
         let rule_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
             .fetch_one(fixture.index.pool())

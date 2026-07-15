@@ -1,6 +1,8 @@
 //! index 层集成测试：迁移、模式、WAL 与各仓储行为（临时 SQLite 文件）。
 
-use yevune_server::index::{Index, NewTrack, NewTranscodeCache, SetRuleOutcome};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::SqlitePool;
+use yevune_server::index::{AccessRepo, Index, NewTrack, NewTranscodeCache, SetRuleOutcome};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
@@ -8,6 +10,23 @@ async fn temp_index() -> (Index, tempfile::TempDir) {
     let path = dir.path().join("yevune.sqlite");
     let index = Index::connect(&path).await.expect("连接并迁移失败");
     (index, dir)
+}
+
+async fn temp_access_pool() -> (SqlitePool, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let options = SqliteConnectOptions::new()
+        .filename(dir.path().join("access.sqlite"))
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .foreign_keys(true);
+    let pool = SqlitePoolOptions::new()
+        .min_connections(2)
+        .max_connections(2)
+        .connect_with(options)
+        .await
+        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+    (pool, dir)
 }
 
 #[tokio::test]
@@ -553,6 +572,80 @@ fn role_grant(id: i64) -> Principal {
 }
 
 #[tokio::test]
+async fn access_set_稳定去重重复的用户与角色授权() {
+    let (index, _dir) = temp_index().await;
+    let user_id = seed_user(&index, "listener").await;
+    let role_id = index
+        .roles()
+        .create_role("listener-role", false)
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(
+            ScopeType::Genre,
+            "Rock",
+            None,
+            &[user_grant(user_id), role_grant(role_id)],
+        )
+        .await
+        .unwrap();
+    let baseline_grants = index
+        .access()
+        .get_rule(ScopeType::Genre, "Rock")
+        .await
+        .unwrap()
+        .unwrap()
+        .grants;
+    let outcome = index
+        .access()
+        .set_rule(
+            ScopeType::Genre,
+            "Rock",
+            None,
+            &[
+                user_grant(user_id),
+                role_grant(role_id),
+                user_grant(user_id),
+                role_grant(role_id),
+            ],
+        )
+        .await
+        .expect("重复 grant 应幂等成功");
+    assert!(matches!(outcome, SetRuleOutcome::Saved(_)));
+
+    let rule = index
+        .access()
+        .get_rule(ScopeType::Genre, "Rock")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rule.grants.len(), 2);
+    assert_eq!(
+        rule.grants, baseline_grants,
+        "重复项不得改变既有 grants 顺序"
+    );
+    assert_eq!(
+        rule.grants
+            .iter()
+            .filter(|grant| {
+                grant.principal_type == PrincipalType::User && grant.id == user_id.to_string()
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        rule.grants
+            .iter()
+            .filter(|grant| {
+                grant.principal_type == PrincipalType::Role && grant.id == role_id.to_string()
+            })
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn access_拒绝为已删除主体写入孤儿授权() {
     for (principal_type, principal_id, outcome, orphan_count) in [
         {
@@ -615,42 +708,52 @@ async fn access_拒绝为已删除主体写入孤儿授权() {
 #[tokio::test]
 async fn access_set_在删除先提交时串行校验主体且不泄漏_busy() {
     for principal_type in [PrincipalType::User, PrincipalType::Role] {
-        let (index, _dir) = temp_index().await;
-        let principal_id = match principal_type {
-            PrincipalType::User => seed_user(&index, "racing-user").await,
-            PrincipalType::Role => index
-                .roles()
-                .create_role("racing-role", false)
-                .await
-                .unwrap(),
+        let (pool, _dir) = temp_access_pool().await;
+        assert_eq!(pool.size(), 2);
+        let principal_id: i64 = match principal_type {
+            PrincipalType::User => sqlx::query_scalar(
+                "INSERT INTO users(name, password_enc) VALUES(?, ?) RETURNING id",
+            )
+            .bind("racing-user")
+            .bind("enc")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            PrincipalType::Role => {
+                sqlx::query_scalar("INSERT INTO roles(name, is_builtin) VALUES(?, 0) RETURNING id")
+                    .bind("racing-role")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+            }
         };
         let table = match principal_type {
             PrincipalType::User => "users",
             PrincipalType::Role => "roles",
         };
-        let mut writer = index.pool().begin_with("BEGIN IMMEDIATE").await.unwrap();
-        let spawned_index = index.clone();
+        let mut writer = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        assert_eq!(pool.num_idle(), 1);
+        let spawned_pool = pool.clone();
         let grant = Principal {
             principal_type,
             id: principal_id.to_string(),
         };
         let set = tokio::spawn(async move {
-            spawned_index
-                .access()
+            AccessRepo::new(&spawned_pool)
                 .set_rule(ScopeType::Genre, "Rock", None, &[grant])
                 .await
         });
 
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             loop {
-                if index.pool().num_idle() + 2 <= index.pool().size() as usize {
+                if pool.num_idle() == 0 {
                     break;
                 }
                 tokio::task::yield_now().await;
             }
         })
         .await
-        .expect("set_rule 应已取得第二条连接并阻塞于首个 DB 操作 BEGIN IMMEDIATE");
+        .expect("set_rule 应已 checkout 第二条且最后一条连接，并阻塞于 BEGIN IMMEDIATE");
         assert!(
             !set.is_finished(),
             "set 应等待已持有的 immediate writer lock"
@@ -674,11 +777,11 @@ async fn access_set_在删除先提交时串行校验主体且不泄漏_busy() {
             PrincipalType::Role => "role",
         })
         .bind(principal_id)
-        .fetch_one(index.pool())
+        .fetch_one(&pool)
         .await
         .unwrap();
         let rule_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM access_rules")
-            .fetch_one(index.pool())
+            .fetch_one(&pool)
             .await
             .unwrap();
         assert_eq!(orphan_count, 0);
