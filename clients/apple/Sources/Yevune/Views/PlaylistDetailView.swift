@@ -35,16 +35,9 @@ struct PlaylistDetailView: View {
                     Text("歌单还没有曲目").foregroundStyle(.secondary)
                 }
                 ForEach(Array(detail.tracks.enumerated()), id: \.offset) { index, track in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(track.title)
-                            Text(track.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(media.playingTrackID == track.id ? "暂停" : "试听") {
-                            Task { await media.toggle(track: track) }
-                        }
-                        .buttonStyle(.borderless)
+                    VStack(alignment: .leading) {
+                        Text(track.title)
+                        Text(track.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary)
                     }
                     .contextMenu {
                         Button("移出歌单", role: .destructive) {

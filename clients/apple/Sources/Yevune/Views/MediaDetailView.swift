@@ -53,7 +53,7 @@ struct MediaDetailView: View {
             }
             if let detail = model.detail {
                 List(detail.tracks, id: \.id, selection: $selectedTrackIDs) { track in
-                    HStack { Text(track.title); Spacer(); Button(model.playingTrackID == track.id ? "暂停" : "试听") { Task { await model.toggle(track: track) } } }
+                    Text(track.title)
                         .contextMenu {
                             Button("编辑标签…") { tagEditor = model.makeTagEditor(for: track) }
                             Button("移动…") { tagEditor = model.makeTagEditor(for: track) }
