@@ -317,6 +317,58 @@ async fn 流派级规则生效() {
 }
 
 #[tokio::test]
+async fn 流派覆盖后按有效流派强制规则() {
+    let (index, _dir) = temp_index().await;
+    let bob = user_with_roles(&index, "bob", &["kids"]).await;
+    let root = user_with_roles(&index, "root", &["admin"]).await;
+    let kids_role = role_id(&index, "kids").await;
+    let mut track = new_track("覆盖流派曲目", None, None, "override-genre.flac");
+    track.genre = Some("Rock".into());
+    let track_id = index.media().upsert_track(&track).await.unwrap();
+    index
+        .media()
+        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .await
+        .unwrap();
+    index
+        .access()
+        .set_rule(ScopeType::Genre, "Kids", None, &[])
+        .await
+        .unwrap();
+
+    let access = index.access_control();
+    let bob_viewer = access.resolve_viewer(bob).await.unwrap();
+    let root_viewer = access.resolve_viewer(root).await.unwrap();
+    assert!(
+        !access
+            .can_access_track(&bob_viewer, track_id)
+            .await
+            .unwrap(),
+        "空允许名单必须按覆盖后的 Kids 流派拒绝普通用户"
+    );
+    assert!(
+        access
+            .can_access_track(&root_viewer, track_id)
+            .await
+            .unwrap(),
+        "管理员始终绕过流派规则"
+    );
+
+    index
+        .access()
+        .set_rule(ScopeType::Genre, "Kids", None, &[grant_role(kids_role)])
+        .await
+        .unwrap();
+    assert!(
+        access
+            .can_access_track(&bob_viewer, track_id)
+            .await
+            .unwrap(),
+        "角色授权应让普通用户恢复可见"
+    );
+}
+
+#[tokio::test]
 async fn 无规则时曲目对所有用户可见() {
     let (index, _dir) = temp_index().await;
     let uid = user_with_roles(&index, "alice", &[]).await;

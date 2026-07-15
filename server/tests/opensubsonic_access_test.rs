@@ -246,6 +246,97 @@ async fn search3_过滤受限命中() {
 }
 
 #[tokio::test]
+async fn 有效流派规则覆盖浏览搜索与取曲路径() {
+    let ctx = common::ctx().await;
+    let bob = ctx.create_user("bob", &[]).await;
+    let root = ctx.create_user("root", &["admin"]).await;
+    let media = ctx.index.media();
+    let artist = media.upsert_artist("覆盖流派歌手").await.unwrap();
+    let album = media
+        .upsert_album("覆盖流派专辑", Some(artist), None, None)
+        .await
+        .unwrap();
+    let mut track = common::track(
+        "OverrideGenreSong",
+        Some(album),
+        Some(artist),
+        "genre/override.flac",
+    );
+    track.genre = Some("Rock".into());
+    let track_id = media.upsert_track(&track).await.unwrap();
+    media
+        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .await
+        .unwrap();
+    ctx.index
+        .access()
+        .set_rule(ScopeType::Genre, "Kids", None, &[])
+        .await
+        .unwrap();
+
+    let album_uri = format!("/rest/getAlbum?id={}&f=json", al(album));
+    let song_uri = format!("/rest/getSong?id={}&f=json", tr(track_id));
+    let (_, bob_album) = ctx.get_json(&album_uri, Some(&ctx.bearer(bob))).await;
+    assert!(
+        ids(&bob_album["subsonic-response"]["album"]["song"]).is_empty(),
+        "曲库浏览必须隐藏有效 Kids 流派曲目"
+    );
+    let (_, bob_search) = ctx
+        .get_json(
+            "/rest/search3?query=OverrideGenreSong&f=json",
+            Some(&ctx.bearer(bob)),
+        )
+        .await;
+    assert!(
+        ids(&bob_search["subsonic-response"]["searchResult3"]["song"]).is_empty(),
+        "搜索必须隐藏有效 Kids 流派曲目"
+    );
+    let (_, bob_song) = ctx.get_json(&song_uri, Some(&ctx.bearer(bob))).await;
+    assert_eq!(bob_song["subsonic-response"]["error"]["code"], 70);
+
+    let (_, root_song) = ctx.get_json(&song_uri, Some(&ctx.bearer(root))).await;
+    assert_eq!(
+        root_song["subsonic-response"]["song"]["id"],
+        tr(track_id),
+        "管理员应绕过有效流派规则"
+    );
+
+    ctx.index
+        .access()
+        .set_rule(
+            ScopeType::Genre,
+            "Kids",
+            None,
+            &[Principal {
+                principal_type: PrincipalType::User,
+                id: bob.to_string(),
+            }],
+        )
+        .await
+        .unwrap();
+    let (_, granted_album) = ctx.get_json(&album_uri, Some(&ctx.bearer(bob))).await;
+    assert_eq!(
+        ids(&granted_album["subsonic-response"]["album"]["song"]),
+        vec![tr(track_id)]
+    );
+    let (_, granted_search) = ctx
+        .get_json(
+            "/rest/search3?query=OverrideGenreSong&f=json",
+            Some(&ctx.bearer(bob)),
+        )
+        .await;
+    assert_eq!(
+        ids(&granted_search["subsonic-response"]["searchResult3"]["song"]),
+        vec![tr(track_id)]
+    );
+    let (_, granted_song) = ctx.get_json(&song_uri, Some(&ctx.bearer(bob))).await;
+    assert_eq!(
+        granted_song["subsonic-response"]["song"]["id"],
+        tr(track_id)
+    );
+}
+
+#[tokio::test]
 async fn 未认证请求被拒() {
     let ctx = common::ctx().await;
     let f = seed(&ctx).await;

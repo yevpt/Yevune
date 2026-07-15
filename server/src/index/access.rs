@@ -90,6 +90,9 @@ impl<'a> AccessControl<'a> {
             return "1 = 1".to_string();
         }
         let m = self.principal_match(viewer);
+        let effective_genre = format!(
+            "COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id={alias}.id AND o.field='genre'), {alias}.genre)"
+        );
         // 各层级裁决：命中规则→1(允许)/0(拒绝)，无规则→NULL(向下一层回退)。
         // COALESCE 取最具体的非空裁决；全空则默认开放(1)。
         format!(
@@ -97,7 +100,7 @@ impl<'a> AccessControl<'a> {
             track = level_verdict("track", &format!("CAST({alias}.id AS TEXT)"), &m),
             album = level_verdict("album", &format!("CAST({alias}.album_id AS TEXT)"), &m),
             artist = level_verdict("artist", &format!("CAST({alias}.artist_id AS TEXT)"), &m),
-            genre = level_verdict("genre", &format!("{alias}.genre"), &m),
+            genre = level_verdict("genre", &effective_genre, &m),
         )
     }
 

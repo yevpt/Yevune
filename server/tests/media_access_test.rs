@@ -176,6 +176,60 @@ async fn download_同样门控且授权者取到字节() {
 }
 
 #[tokio::test]
+async fn 有效流派规则覆盖_stream_与_download() {
+    let ctx = common::ctx().await;
+    let bob = ctx.create_user("bob", &[]).await;
+    let root = ctx.create_user("root", &["admin"]).await;
+    let mut track = common::track("覆盖流派音频", None, None, "genre/audio.flac");
+    track.genre = Some("Rock".into());
+    let track_id = ctx.index.media().upsert_track(&track).await.unwrap();
+    ctx.index
+        .media()
+        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .await
+        .unwrap();
+    ctx.store
+        .put("genre/audio.flac", Bytes::from_static(b"GENRE-AUDIO"))
+        .await
+        .unwrap();
+    ctx.index
+        .access()
+        .set_rule(ScopeType::Genre, "Kids", None, &[])
+        .await
+        .unwrap();
+
+    for endpoint in ["stream", "download"] {
+        let uri = format!("/rest/{endpoint}?id={track_id}");
+        let (_, denied) = ctx.get(&uri, Some(&ctx.bearer(bob))).await;
+        assert!(
+            denied.contains("code=\"70\""),
+            "{endpoint} 必须拒绝未授权普通用户: {denied}"
+        );
+        let (_, admin) = ctx.get(&uri, Some(&ctx.bearer(root))).await;
+        assert_eq!(admin, "GENRE-AUDIO", "管理员可通过 {endpoint}");
+    }
+
+    ctx.index
+        .access()
+        .set_rule(
+            ScopeType::Genre,
+            "Kids",
+            None,
+            &[Principal {
+                principal_type: PrincipalType::User,
+                id: bob.to_string(),
+            }],
+        )
+        .await
+        .unwrap();
+    for endpoint in ["stream", "download"] {
+        let uri = format!("/rest/{endpoint}?id={track_id}");
+        let (_, granted) = ctx.get(&uri, Some(&ctx.bearer(bob))).await;
+        assert_eq!(granted, "GENRE-AUDIO", "用户授权后可通过 {endpoint}");
+    }
+}
+
+#[tokio::test]
 async fn get_cover_art_按封面归属可见性门控() {
     let ctx = common::ctx().await;
     let m = seed(&ctx).await;
