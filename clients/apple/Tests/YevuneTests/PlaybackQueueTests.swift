@@ -53,4 +53,17 @@ final class PlaybackQueueTests: XCTestCase {
         queue.setShuffled(false) { $0 }
         XCTAssertEqual(queue.entries.map(\.track.id), ["1", "2", "3"])
     }
+
+    func testClearUpcomingKeepsHistoryAndCurrentEntry() {
+        var queue = PlaybackQueue()
+        queue.replace(
+            with: [playbackTrack("1"), playbackTrack("2"), playbackTrack("3")],
+            startingAt: 1
+        )
+
+        queue.clearUpcoming()
+
+        XCTAssertEqual(queue.entries.map(\.track.id), ["1", "2"])
+        XCTAssertEqual(queue.current?.track.id, "2")
+    }
 }

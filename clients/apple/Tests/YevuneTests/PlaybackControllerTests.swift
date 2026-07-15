@@ -58,6 +58,45 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1"])
     }
 
+    func testQueueEditIntentsPublishRemovedMovedAndClearedEntries() async {
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: RecordingPlaybackEngine()
+        )
+        await controller.play(
+            tracks: [playbackTrack("1"), playbackTrack("2"), playbackTrack("3"), playbackTrack("4")],
+            startingAt: 1
+        )
+
+        controller.moveQueueEntry(from: 3, to: 2)
+        controller.removeFromQueue(id: controller.queueEntries[0].id)
+        controller.clearUpcoming()
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["2"])
+        XCTAssertEqual(controller.currentTrack?.id, "2")
+    }
+
+    func testShuffleKeepsCurrentTrackAndRepeatCycleIsOffAllOne() async {
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: RecordingPlaybackEngine(),
+            shuffle: { Array($0.reversed()) }
+        )
+        await controller.play(
+            tracks: [playbackTrack("1"), playbackTrack("2"), playbackTrack("3")],
+            startingAt: 0
+        )
+
+        controller.setShuffled(true)
+        XCTAssertEqual(controller.currentTrack?.id, "1")
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["1", "3", "2"])
+        XCTAssertEqual(controller.repeatMode, .off)
+        controller.cycleRepeatMode()
+        XCTAssertEqual(controller.repeatMode, .all)
+        controller.cycleRepeatMode()
+        XCTAssertEqual(controller.repeatMode, .one)
+    }
+
     func testPlayNowReplacesQueueWithSingleTrack() async {
         let engine = RecordingPlaybackEngine()
         let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)
@@ -216,9 +255,149 @@ final class PlaybackControllerTests: XCTestCase {
         await controller.play(tracks: [playbackTrack("1")], startingAt: 0)
 
         engine.send(.failed(message: leakedURL))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: leakedURL))
+        await controller.waitForPendingTransitionForTesting()
 
-        XCTAssertEqual(controller.errorMessage, "无法播放「1」")
+        XCTAssertEqual(controller.errorMessage, "无法播放 1，已跳到下一首")
         XCTAssertFalse(controller.errorMessage?.contains(leakedURL) ?? true)
+    }
+
+    func testFailureRefreshesURLOnceThenSkipsBadEntry() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("bad"), playbackTrack("good")], startingAt: 0)
+
+        engine.send(.failed(message: "expired"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "still bad"))
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["bad", "bad", "good"])
+        XCTAssertEqual(controller.currentTrack?.id, "good")
+        XCTAssertEqual(controller.errorMessage, "无法播放 bad，已跳到下一首")
+    }
+
+    func testFailedEntryIsNotRetriedForeverWhenRepeatAllWraps() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+        controller.cycleRepeatMode()
+
+        for _ in 0..<4 {
+            engine.send(.failed(message: "broken"))
+            await controller.waitForPendingTransitionForTesting()
+        }
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b", "b"])
+        XCTAssertEqual(engine.stopCalls, 1)
+    }
+
+    func testDirectQueueSelectionClearsFailureStateForThatEntry() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("bad")], startingAt: 0)
+
+        engine.send(.failed(message: "first"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "second"))
+        await controller.waitForPendingTransitionForTesting()
+
+        await controller.playQueueEntry(id: controller.queueEntries[0].id)
+        engine.send(.failed(message: "manual retry"))
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["bad", "bad", "bad", "bad"])
+    }
+
+    func testDuplicateTrackInstancesKeepIndependentRetryCounts() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        let duplicate = playbackTrack("same")
+        await controller.play(tracks: [duplicate, duplicate], startingAt: 0)
+
+        for _ in 0..<3 {
+            engine.send(.failed(message: "broken"))
+            await controller.waitForPendingTransitionForTesting()
+        }
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["same", "same", "same", "same"])
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["same", "same"])
+        XCTAssertEqual(controller.currentTrack?.id, "same")
+    }
+
+    func testRemovingFailedEntryDoesNotMakeRemainingQueueLookFullyFailed() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(
+            tracks: [playbackTrack("a"), playbackTrack("b"), playbackTrack("c")],
+            startingAt: 0
+        )
+
+        engine.send(.failed(message: "a1"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "a2"))
+        await controller.waitForPendingTransitionForTesting()
+        controller.removeFromQueue(id: controller.queueEntries[0].id)
+        engine.send(.failed(message: "b1"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "b2"))
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b", "b", "c"])
+        XCTAssertEqual(controller.currentTrack?.id, "c")
+    }
+
+    func testFailureQueuedBeforeManualNextCannotAdvanceNewSession() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        engine.send(.failed(message: "broken"))
+        await controller.next()
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "b"])
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "b"])
+    }
+
+    func testFailureQueuedBeforeNewPlayCannotAdvanceReplacementQueue() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        engine.send(.failed(message: "broken"))
+        await controller.play(tracks: [playbackTrack("c"), playbackTrack("d")], startingAt: 0)
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "c"])
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["c", "d"])
+        XCTAssertEqual(controller.currentTrack?.id, "c")
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "c"])
+    }
+
+    func testFailureQueuedBeforeShutdownCannotRestartPlayback() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a")], startingAt: 0)
+
+        engine.send(.failed(message: "broken"))
+        controller.shutdown()
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a"])
+        XCTAssertTrue(controller.queueEntries.isEmpty)
+        XCTAssertTrue(engine.loadedURLs.map(\.lastPathComponent) == ["a"])
+        XCTAssertEqual(engine.stopCalls, 1)
     }
 
     func testShutdownStopsEngineAndClearsTransientPlaybackState() async {

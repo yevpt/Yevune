@@ -67,9 +67,22 @@ struct PlaybackQueue {
         else if let currentIndex, index < currentIndex { self.currentIndex = currentIndex - 1 }
     }
 
+    mutating func clearUpcoming() {
+        guard let currentIndex, currentIndex + 1 < entries.count else { return }
+        let removedIDs = Set(entries[(currentIndex + 1)...].map(\.id))
+        entries.removeSubrange((currentIndex + 1)...)
+        originalEntries.removeAll { removedIDs.contains($0.id) }
+    }
+
     mutating func previous() -> QueueEntry? {
         guard let currentIndex, currentIndex > 0 else { return nil }
         self.currentIndex = currentIndex - 1
+        return current
+    }
+
+    mutating func select(id: UUID) -> QueueEntry? {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        currentIndex = index
         return current
     }
 

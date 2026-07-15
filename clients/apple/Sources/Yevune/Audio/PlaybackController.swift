@@ -10,6 +10,8 @@ final class PlaybackController: ObservableObject {
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var errorMessage: String?
+    @Published private(set) var isShuffled = false
+    @Published private(set) var repeatMode: PlaybackRepeatMode = .off
     @Published private(set) var isMuted = false
     @Published private(set) var volume: Float = 1
 
@@ -19,6 +21,9 @@ final class PlaybackController: ObservableObject {
     private var queue = PlaybackQueue()
     private var loadGeneration = 0
     private var hasActiveMediaSession = false
+    private var pendingTransition: Task<Void, Never>?
+    private var retryCounts: [UUID: Int] = [:]
+    private var failedInCycle: Set<UUID> = []
 
     init(
         resolver: any PlaybackMediaResolving,
@@ -31,6 +36,8 @@ final class PlaybackController: ObservableObject {
     }
 
     func play(tracks: [Track], startingAt index: Int) async {
+        retryCounts.removeAll()
+        failedInCycle.removeAll()
         queue.replace(with: tracks, startingAt: index)
         synchronizeQueueState()
         if let entry = queue.current {
@@ -54,6 +61,37 @@ final class PlaybackController: ObservableObject {
         synchronizeQueueState()
     }
 
+    func removeFromQueue(id: UUID) {
+        queue.remove(id: id)
+        pruneFailureStateToCurrentQueue()
+        synchronizeQueueState()
+    }
+
+    func moveQueueEntry(from source: Int, to destination: Int) {
+        queue.move(from: source, to: destination)
+        synchronizeQueueState()
+    }
+
+    func clearUpcoming() {
+        queue.clearUpcoming()
+        pruneFailureStateToCurrentQueue()
+        synchronizeQueueState()
+    }
+
+    func setShuffled(_ enabled: Bool) {
+        queue.setShuffled(enabled, using: shuffle)
+        synchronizeQueueState()
+    }
+
+    func cycleRepeatMode() {
+        switch queue.repeatMode {
+        case .off: queue.repeatMode = .all
+        case .all: queue.repeatMode = .one
+        case .one: queue.repeatMode = .off
+        }
+        synchronizeQueueState()
+    }
+
     func togglePlayPause() {
         switch engineState {
         case .playing, .buffering:
@@ -65,12 +103,21 @@ final class PlaybackController: ObservableObject {
 
     func previous() async {
         guard let entry = queue.previous() else { return }
+        clearFailureState(for: entry.id)
         synchronizeQueueState()
         await load(entry)
     }
 
     func next() async {
         guard let entry = queue.nextAfterManualSkip() else { return }
+        clearFailureState(for: entry.id)
+        synchronizeQueueState()
+        await load(entry)
+    }
+
+    func playQueueEntry(id: UUID) async {
+        guard let entry = queue.select(id: id) else { return }
+        clearFailureState(for: entry.id)
         synchronizeQueueState()
         await load(entry)
     }
@@ -93,27 +140,39 @@ final class PlaybackController: ObservableObject {
         beginMediaTransition(stopEngine: false)
         engine.stop()
         queue = PlaybackQueue()
+        retryCounts.removeAll()
+        failedInCycle.removeAll()
         synchronizeQueueState()
     }
 
-    private func load(_ entry: QueueEntry) async {
-        let generation = beginMediaTransition()
+    func waitForPendingTransitionForTesting() async {
+        let transition = pendingTransition
+        await transition?.value
+    }
+
+    @discardableResult
+    private func load(_ entry: QueueEntry, stopEngine: Bool = true) async -> Bool {
+        let generation = beginMediaTransition(stopEngine: stopEngine)
         do {
             let media = try await resolver.resolve(track: entry.track)
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return false }
             coverURL = media.coverURL
             hasActiveMediaSession = true
             installEngineObserver()
             engine.load(url: media.streamURL, autoplay: true)
+            return true
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return false }
             errorMessage = safePlaybackErrorMessage()
+            return false
         }
     }
 
     private func synchronizeQueueState() {
         queueEntries = queue.entries
         currentTrack = queue.current?.track
+        isShuffled = queue.isShuffled
+        repeatMode = queue.repeatMode
     }
 
     @discardableResult
@@ -150,11 +209,17 @@ final class PlaybackController: ObservableObject {
             self.duration = duration
         case .ended:
             let generation = loadGeneration
-            Task { @MainActor [weak self] in
-                await self?.advanceAfterNaturalEnd(expectedGeneration: generation)
+            pendingTransition = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.advanceAfterNaturalEnd(expectedGeneration: generation)
             }
         case .failed:
-            errorMessage = safePlaybackErrorMessage()
+            guard let entry = queue.current else { return }
+            let generation = loadGeneration
+            pendingTransition = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.recoverFromFailure(for: entry, expectedGeneration: generation)
+            }
         }
     }
 
@@ -163,6 +228,59 @@ final class PlaybackController: ObservableObject {
         guard let entry = queue.nextAfterNaturalEnd() else { return }
         synchronizeQueueState()
         await load(entry)
+    }
+
+    private func recoverFromFailure(for entry: QueueEntry, expectedGeneration: Int) async {
+        guard expectedGeneration == loadGeneration, queue.current?.id == entry.id else { return }
+        if retryCounts[entry.id, default: 0] == 0 {
+            retryCounts[entry.id] = 1
+            await load(entry, stopEngine: false)
+            return
+        }
+
+        failedInCycle.insert(entry.id)
+        let message = "无法播放 \(entry.track.title)，已跳到下一首"
+        await advancePastFailedEntries(message: message, expectedGeneration: expectedGeneration)
+    }
+
+    private func advancePastFailedEntries(message: String, expectedGeneration: Int) async {
+        guard expectedGeneration == loadGeneration else { return }
+        if failedInCycle.count >= queue.entries.count {
+            stopAfterFailedCycle(message: message)
+            return
+        }
+
+        for _ in 0..<queue.entries.count {
+            guard let entry = queue.nextAfterManualSkip() else {
+                stopAfterFailedCycle(message: message)
+                return
+            }
+            if failedInCycle.contains(entry.id) { continue }
+            synchronizeQueueState()
+            if await load(entry, stopEngine: false) {
+                errorMessage = message
+            }
+            return
+        }
+
+        stopAfterFailedCycle(message: message)
+    }
+
+    private func stopAfterFailedCycle(message: String) {
+        beginMediaTransition(stopEngine: false)
+        engine.stop()
+        errorMessage = message
+    }
+
+    private func clearFailureState(for id: UUID) {
+        retryCounts[id] = nil
+        failedInCycle.remove(id)
+    }
+
+    private func pruneFailureStateToCurrentQueue() {
+        let existingIDs = Set(queue.entries.map(\.id))
+        retryCounts = retryCounts.filter { existingIDs.contains($0.key) }
+        failedInCycle.formIntersection(existingIDs)
     }
 
     private func safePlaybackErrorMessage() -> String {
