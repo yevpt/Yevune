@@ -12,16 +12,89 @@ protocol QueuePlayerSurface: AnyObject {
     func play()
     func pause()
     func seek(to time: CMTime)
-    func addPeriodicTimeObserver(
+    func observePeriodicTime(
         forInterval interval: CMTime,
-        queue: DispatchQueue?,
-        using block: @escaping @Sendable (CMTime) -> Void
-    ) -> Any
-    func removeTimeObserver(_ observer: Any)
+        using block: @escaping @MainActor @Sendable (CMTime) -> Void
+    ) -> PlayerObservation
+    func observeTimeControlStatus(
+        using block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+    ) -> PlayerObservation
 }
 
 extension AVQueuePlayer: QueuePlayerSurface {
     var currentItemDuration: CMTime { currentItem?.duration ?? .invalid }
+
+    func observePeriodicTime(
+        forInterval interval: CMTime,
+        using block: @escaping @MainActor @Sendable (CMTime) -> Void
+    ) -> PlayerObservation {
+        let token = addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            Task { @MainActor in
+                block(time)
+            }
+        }
+        return PlayerObservation { [self] in
+            removeTimeObserver(token)
+        }
+    }
+
+    func observeTimeControlStatus(
+        using block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+    ) -> PlayerObservation {
+        let observation = observe(\.timeControlStatus, options: [.new]) { player, _ in
+            let status = player.timeControlStatus
+            Task { @MainActor in
+                block(status)
+            }
+        }
+        return PlayerObservation {
+            observation.invalidate()
+        }
+    }
+}
+
+final class PlayerObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancellation: (() -> Void)?
+
+    init(cancellation: @escaping () -> Void) {
+        self.cancellation = cancellation
+    }
+
+    func cancel() {
+        lock.lock()
+        let cancellation = cancellation
+        self.cancellation = nil
+        lock.unlock()
+        cancellation?()
+    }
+
+    deinit {
+        cancel()
+    }
+}
+
+private final class PlayerObservationStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var observations: [PlayerObservation] = []
+
+    func insert(_ observation: PlayerObservation) {
+        lock.lock()
+        observations.append(observation)
+        lock.unlock()
+    }
+
+    func removeAll() {
+        lock.lock()
+        let observations = observations
+        self.observations.removeAll()
+        lock.unlock()
+        observations.forEach { $0.cancel() }
+    }
+
+    deinit {
+        removeAll()
+    }
 }
 
 @MainActor
@@ -30,8 +103,7 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
 
     private let player: any QueuePlayerSurface
     private let notificationCenter: NotificationCenter
-    private var timeObserver: Any?
-    private var itemObservers: [NSObjectProtocol] = []
+    private nonisolated let observations = PlayerObservationStore()
 
     init(
         player: any QueuePlayerSurface = AVQueuePlayer(),
@@ -39,12 +111,6 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
     ) {
         self.player = player
         self.notificationCenter = notificationCenter
-    }
-
-    deinit {
-        MainActor.assumeIsolated {
-            removeObservers()
-        }
     }
 
     func load(url: URL, autoplay: Bool) {
@@ -58,12 +124,10 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
 
     func play() {
         player.play()
-        onEvent?(.state(.playing))
     }
 
     func pause() {
         player.pause()
-        onEvent?(.state(.paused))
     }
 
     func seek(to seconds: TimeInterval) {
@@ -88,23 +152,23 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
     private func installObservers() {
         guard let item = player.currentItem else { return }
 
-        timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-            queue: .main
+        observations.insert(player.observePeriodicTime(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600)
         ) { [weak self] time in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.onEvent?(.state(self.playbackState))
-                self.onEvent?(
-                    .time(
-                        elapsed: self.finiteNonnegative(time.seconds),
-                        duration: self.finiteNonnegative(self.player.currentItemDuration.seconds)
-                    )
+            guard let self else { return }
+            self.onEvent?(
+                .time(
+                    elapsed: self.finiteNonnegative(time.seconds),
+                    duration: self.finiteNonnegative(self.player.currentItemDuration.seconds)
                 )
-            }
-        }
+            )
+        })
 
-        itemObservers = [
+        observations.insert(player.observeTimeControlStatus { [weak self] status in
+            self?.onEvent?(.state(Self.playbackState(for: status)))
+        })
+
+        [
             observe(.AVPlayerItemPlaybackStalled, item: item) { engine, _ in
                 engine.onEvent?(.state(.buffering))
             },
@@ -115,33 +179,31 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
                 let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
                 engine.onEvent?(.failed(message: error?.localizedDescription ?? "Playback failed"))
             },
-        ]
+        ].forEach(observations.insert)
     }
 
     private func observe(
         _ name: Notification.Name,
         item: AVPlayerItem,
         handler: @escaping @MainActor (AVQueuePlaybackEngine, Notification) -> Void
-    ) -> NSObjectProtocol {
-        notificationCenter.addObserver(forName: name, object: item, queue: .main) { [weak self] notification in
+    ) -> PlayerObservation {
+        let token = notificationCenter.addObserver(forName: name, object: item, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 handler(self, notification)
             }
         }
-    }
-
-    private func removeObservers() {
-        itemObservers.forEach(notificationCenter.removeObserver)
-        itemObservers.removeAll()
-        if let timeObserver {
-            player.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
+        return PlayerObservation { [notificationCenter] in
+            notificationCenter.removeObserver(token)
         }
     }
 
-    private var playbackState: PlaybackEngineState {
-        switch player.timeControlStatus {
+    private func removeObservers() {
+        observations.removeAll()
+    }
+
+    private static func playbackState(for status: AVPlayer.TimeControlStatus) -> PlaybackEngineState {
+        switch status {
         case .paused:
             .paused
         case .playing:

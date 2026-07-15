@@ -65,7 +65,7 @@ final class PlaybackEngineTests: XCTestCase {
         engine.onEvent = { events.append($0) }
         engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
 
-        player.timeControlStatus = .waitingToPlayAtSpecifiedRate
+        player.sendTimeControlStatus(.waitingToPlayAtSpecifiedRate)
         player.duration = CMTime(seconds: .infinity, preferredTimescale: 600)
         player.sendPeriodicTime(CMTime(seconds: -.infinity, preferredTimescale: 600))
 
@@ -80,8 +80,10 @@ final class PlaybackEngineTests: XCTestCase {
         engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
 
         engine.play()
+        player.sendTimeControlStatus(.playing)
         engine.pause()
-        player.timeControlStatus = .playing
+        player.sendTimeControlStatus(.paused)
+        player.sendTimeControlStatus(.playing)
         player.duration = CMTime(seconds: 12, preferredTimescale: 600)
         player.sendPeriodicTime(CMTime(seconds: 3, preferredTimescale: 600))
 
@@ -119,6 +121,41 @@ final class PlaybackEngineTests: XCTestCase {
 
         XCTAssertTrue(player.isMuted)
     }
+
+    func testTimeControlStatusChangesPublishWithoutPeriodicTimeCallback() {
+        let player = FakeQueuePlayerSurface()
+        let engine = AVQueuePlaybackEngine(player: player)
+        var events: [PlaybackEngineEvent] = []
+        engine.onEvent = { events.append($0) }
+        engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: true)
+
+        player.sendTimeControlStatus(.waitingToPlayAtSpecifiedRate)
+        player.sendTimeControlStatus(.playing)
+        player.sendTimeControlStatus(.paused)
+
+        XCTAssertEqual(
+            events,
+            [.state(.buffering), .state(.playing), .state(.paused)]
+        )
+    }
+
+    func testDeinitOffMainActorRemovesPeriodicAndStatusObservers() async {
+        let player = FakeQueuePlayerSurface()
+        let box = SendableBox<AVQueuePlaybackEngine>()
+        box.value = AVQueuePlaybackEngine(player: player)
+        box.value?.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
+
+        await Task.detached {
+            box.value = nil
+        }.value
+
+        XCTAssertEqual(player.removeTimeObserverCalls, 1)
+        XCTAssertEqual(player.removeStatusObserverCalls, 1)
+    }
+}
+
+private final class SendableBox<Value>: @unchecked Sendable {
+    var value: Value?
 }
 
 @MainActor
@@ -131,8 +168,11 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     private(set) var playCalls = 0
     private(set) var pauseCalls = 0
     private(set) var lastSeek: TimeInterval?
-    private(set) var removeTimeObserverCalls = 0
-    private var periodicBlock: (@Sendable (CMTime) -> Void)?
+    private let periodicObservation = FakePeriodicObservation()
+    private let statusObservation = FakeStatusObservation()
+
+    var removeTimeObserverCalls: Int { periodicObservation.removeCalls }
+    var removeStatusObserverCalls: Int { statusObservation.removeCalls }
 
     var loadedURL: URL? { (currentItem?.asset as? AVURLAsset)?.url }
     var currentItemDuration: CMTime { duration }
@@ -142,21 +182,85 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     func pause() { pauseCalls += 1 }
     func seek(to time: CMTime) { lastSeek = time.seconds }
 
-    func addPeriodicTimeObserver(
+    func observePeriodicTime(
         forInterval interval: CMTime,
-        queue: DispatchQueue?,
-        using block: @escaping @Sendable (CMTime) -> Void
-    ) -> Any {
-        periodicBlock = block
-        return NSObject()
+        using block: @escaping @MainActor @Sendable (CMTime) -> Void
+    ) -> PlayerObservation {
+        periodicObservation.install(block)
     }
 
-    func removeTimeObserver(_ observer: Any) {
-        removeTimeObserverCalls += 1
-        periodicBlock = nil
+    func observeTimeControlStatus(
+        using block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+    ) -> PlayerObservation {
+        statusObservation.install(block)
     }
 
     func sendPeriodicTime(_ time: CMTime) {
-        periodicBlock?(time)
+        periodicObservation.send(time)
+    }
+
+    func sendTimeControlStatus(_ status: AVPlayer.TimeControlStatus) {
+        timeControlStatus = status
+        statusObservation.send(status)
+    }
+}
+
+private final class FakePeriodicObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var block: (@MainActor @Sendable (CMTime) -> Void)?
+    private var removals = 0
+
+    var removeCalls: Int {
+        lock.withLock { removals }
+    }
+
+    @MainActor
+    func install(_ block: @escaping @MainActor @Sendable (CMTime) -> Void) -> PlayerObservation {
+        lock.withLock { self.block = block }
+        return PlayerObservation { [self] in remove() }
+    }
+
+    @MainActor
+    func send(_ time: CMTime) {
+        let callback: (@MainActor @Sendable (CMTime) -> Void)? = lock.withLock { self.block }
+        callback?(time)
+    }
+
+    private func remove() {
+        lock.withLock {
+            block = nil
+            removals += 1
+        }
+    }
+}
+
+private final class FakeStatusObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var block: (@MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void)?
+    private var removals = 0
+
+    var removeCalls: Int {
+        lock.withLock { removals }
+    }
+
+    @MainActor
+    func install(
+        _ block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+    ) -> PlayerObservation {
+        lock.withLock { self.block = block }
+        return PlayerObservation { [self] in remove() }
+    }
+
+    @MainActor
+    func send(_ status: AVPlayer.TimeControlStatus) {
+        let callback: (@MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void)? = lock.withLock { self.block }
+        callback?(status)
+    }
+
+    private func remove() {
+        lock.withLock {
+            block = nil
+            removals += 1
+        }
     }
 }
