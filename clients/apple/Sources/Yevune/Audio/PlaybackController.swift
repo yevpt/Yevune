@@ -18,6 +18,7 @@ final class PlaybackController: ObservableObject {
     private let shuffle: ([QueueEntry]) -> [QueueEntry]
     private var queue = PlaybackQueue()
     private var loadGeneration = 0
+    private var hasActiveMediaSession = false
 
     init(
         resolver: any PlaybackMediaResolving,
@@ -27,9 +28,6 @@ final class PlaybackController: ObservableObject {
         self.resolver = resolver
         self.engine = engine
         self.shuffle = shuffle
-        engine.onEvent = { [weak self] event in
-            self?.handle(event)
-        }
     }
 
     func play(tracks: [Track], startingAt index: Int) async {
@@ -38,7 +36,7 @@ final class PlaybackController: ObservableObject {
         if let entry = queue.current {
             await load(entry)
         } else {
-            invalidatePendingLoad()
+            beginMediaTransition()
         }
     }
 
@@ -92,25 +90,20 @@ final class PlaybackController: ObservableObject {
     }
 
     func shutdown() {
-        invalidatePendingLoad()
+        beginMediaTransition(stopEngine: false)
         engine.stop()
-        engineState = .idle
-        elapsed = 0
-        duration = 0
-        coverURL = nil
+        queue = PlaybackQueue()
+        synchronizeQueueState()
     }
 
     private func load(_ entry: QueueEntry) async {
-        loadGeneration += 1
-        let generation = loadGeneration
-        errorMessage = nil
-        coverURL = nil
-        elapsed = 0
-        duration = 0
+        let generation = beginMediaTransition()
         do {
             let media = try await resolver.resolve(track: entry.track)
             guard generation == loadGeneration else { return }
             coverURL = media.coverURL
+            hasActiveMediaSession = true
+            installEngineObserver()
             engine.load(url: media.streamURL, autoplay: true)
         } catch {
             guard generation == loadGeneration else { return }
@@ -123,11 +116,32 @@ final class PlaybackController: ObservableObject {
         currentTrack = queue.current?.track
     }
 
-    private func invalidatePendingLoad() {
+    @discardableResult
+    private func beginMediaTransition(stopEngine: Bool = true) -> Int {
         loadGeneration += 1
+        engine.onEvent = nil
+        if hasActiveMediaSession {
+            hasActiveMediaSession = false
+            if stopEngine {
+                engine.stop()
+            }
+        }
+        engineState = .idle
+        elapsed = 0
+        duration = 0
+        coverURL = nil
+        errorMessage = nil
+        return loadGeneration
+    }
+
+    private func installEngineObserver() {
+        engine.onEvent = { [weak self] event in
+            self?.handle(event)
+        }
     }
 
     private func handle(_ event: PlaybackEngineEvent) {
+        guard hasActiveMediaSession else { return }
         switch event {
         case let .state(state):
             engineState = state

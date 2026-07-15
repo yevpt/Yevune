@@ -155,6 +155,45 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["2"])
     }
 
+    func testOldEngineEventsCannotAffectReplacementQueueWhileResolutionIsPending() async {
+        let replacementRequestStarted = expectation(description: "replacement resolution started")
+        let engine = RecordingPlaybackEngine()
+        let resolver = SuspendingMediaResolver(
+            suspendedTrackID: "3",
+            onSuspendedRequest: { replacementRequestStarted.fulfill() }
+        )
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("1"), playbackTrack("2")], startingAt: 0)
+
+        let replacementPlay = Task {
+            await controller.play(
+                tracks: [playbackTrack("3"), playbackTrack("4")],
+                startingAt: 0
+            )
+        }
+        await fulfillment(of: [replacementRequestStarted], timeout: 1)
+
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 12, duration: 180))
+        engine.send(.failed(message: "https://secret.invalid/old"))
+        engine.send(.ended)
+        await Task.yield()
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["3", "4"])
+        XCTAssertEqual(controller.currentTrack?.id, "3")
+        XCTAssertEqual(controller.engineState, .idle)
+        XCTAssertEqual(controller.elapsed, 0)
+        XCTAssertEqual(controller.duration, 0)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["1", "3"])
+
+        resolver.resumeSuspendedRequest()
+        await replacementPlay.value
+
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "3"])
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["1", "3"])
+    }
+
     func testResolutionFailurePublishesSafeMessageWithoutLoadingURL() async {
         let leakedURL = "https://secret.invalid/token?credential=private"
         let engine = RecordingPlaybackEngine()
@@ -196,6 +235,45 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.elapsed, 0)
         XCTAssertEqual(controller.duration, 0)
         XCTAssertNil(controller.coverURL)
+    }
+
+    func testShutdownResetsSessionIgnoresLateEventsAndAllowsExplicitRestart() async {
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)
+        await controller.play(
+            tracks: [playbackTrack("1"), playbackTrack("2")],
+            startingAt: 0
+        )
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 12, duration: 180))
+        engine.send(.failed(message: "old failure"))
+
+        controller.shutdown()
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 99, duration: 999))
+        engine.send(.failed(message: "late failure"))
+        engine.send(.ended)
+        await Task.yield()
+
+        XCTAssertTrue(controller.queueEntries.isEmpty)
+        XCTAssertNil(controller.currentTrack)
+        XCTAssertNil(controller.coverURL)
+        XCTAssertEqual(controller.engineState, .idle)
+        XCTAssertEqual(controller.elapsed, 0)
+        XCTAssertEqual(controller.duration, 0)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1"])
+
+        await controller.playNow(playbackTrack("3"))
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 3, duration: 30))
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["3"])
+        XCTAssertEqual(controller.currentTrack?.id, "3")
+        XCTAssertEqual(controller.engineState, .playing)
+        XCTAssertEqual(controller.elapsed, 3)
+        XCTAssertEqual(controller.duration, 30)
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "3"])
     }
 }
 
@@ -326,6 +404,40 @@ private final class SuspendingFirstMediaResolver: PlaybackMediaResolving {
         ResolvedPlaybackMedia(
             streamURL: URL(string: "https://example.invalid/\(id)")!,
             coverURL: nil
+        )
+    }
+}
+
+@MainActor
+private final class SuspendingMediaResolver: PlaybackMediaResolving {
+    private(set) var resolvedTrackIDs: [String] = []
+    private let suspendedTrackID: String
+    private let onSuspendedRequest: () -> Void
+    private var continuation: CheckedContinuation<ResolvedPlaybackMedia, Error>?
+
+    init(suspendedTrackID: String, onSuspendedRequest: @escaping () -> Void) {
+        self.suspendedTrackID = suspendedTrackID
+        self.onSuspendedRequest = onSuspendedRequest
+    }
+
+    func resolve(track: Track) async throws -> ResolvedPlaybackMedia {
+        resolvedTrackIDs.append(track.id)
+        guard track.id == suspendedTrackID else { return media(for: track.id) }
+        onSuspendedRequest()
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resumeSuspendedRequest() {
+        continuation?.resume(returning: media(for: suspendedTrackID))
+        continuation = nil
+    }
+
+    private func media(for id: String) -> ResolvedPlaybackMedia {
+        ResolvedPlaybackMedia(
+            streamURL: URL(string: "https://example.invalid/\(id)")!,
+            coverURL: URL(string: "https://example.invalid/cover-\(id)")
         )
     }
 }
