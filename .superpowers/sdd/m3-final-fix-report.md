@@ -78,3 +78,21 @@ The compact 920 pt player bar now keeps a visible speaker button labeled `调整
 - `swift test --package-path clients/apple --filter PlaybackViewPolicyTests`: **17 tests, 0 failures**.
 - `swift test --package-path clients/apple --filter PlaybackControllerTests`: **39 tests, 0 failures**.
 - A fresh full Swift test/build and diff check were run before the follow-up commit; see the final handoff for their exact totals.
+
+## Real-smoke follow-up: stable repeat-off queue tail
+
+Real two-track smoke exposed an indefinite buffering presentation after the final track ended with repeat off. The controller now models this boundary as an explicit natural-completion state: it retains the current track and duration, pauses the engine, seeks to zero, publishes paused/elapsed-zero system metadata, and ignores late state/time callbacks from the completed item. Play (including the main toggle and remote play path) leaves completion state, seeks to zero again, and starts playback. Manual-next boundaries, repeat-all/one, and failure recovery keep their existing paths.
+
+### RED
+
+- Real smoke: two 4-second FLAC tracks, repeat off; after track two ended, PlayerBar/focus remained `暂停（正在缓冲）` at `0:04 / 0:04`.
+- `swift test --package-path clients/apple --filter PlaybackControllerTests.testNaturalEndAtQueueTailSettlesPausedAndReplaysCurrentTrackFromZero`
+  - Exit 1 with 8 expected assertion failures before implementation: controller remained playing/buffering at elapsed 4, engine had no pause/seek calls, and the main toggle did not replay.
+
+### GREEN
+
+- Focused queue-tail test: **1 test, 0 failures**, including retained track/system metadata, paused state, elapsed zero, late buffering/time suppression, and replay seek/play.
+- Full `PlaybackControllerTests`: **40 tests, 0 failures**.
+- PlaybackController + PlaybackQueue + PlaybackEngine: **20/20 repeated rounds PASS**.
+- Fresh full Swift suite: **160 tests, 0 failures**; `swift build` and `git diff --check`: **PASS**.
+- The main agent will rebuild and repeat the same real smoke after this commit; no post-fix runtime success is claimed here.

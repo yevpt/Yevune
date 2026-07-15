@@ -32,6 +32,7 @@ final class PlaybackController: ObservableObject {
     private var queue = PlaybackQueue()
     private var loadGeneration = 0
     private var hasActiveMediaSession = false
+    private var isAtNaturalEnd = false
     private var pendingTransition: Task<Void, Never>?
     private var pendingArtwork: Task<Void, Never>?
     private var systemArtwork: NSImage?
@@ -140,12 +141,17 @@ final class PlaybackController: ObservableObject {
         case .playing, .buffering:
             engine.pause()
         case .idle, .paused:
-            engine.play()
+            play()
         }
     }
 
     func play() {
         guard hasActiveMediaSession else { return }
+        if isAtNaturalEnd {
+            isAtNaturalEnd = false
+            elapsed = 0
+            engine.seek(to: 0)
+        }
         engine.play()
     }
 
@@ -254,6 +260,7 @@ final class PlaybackController: ObservableObject {
         pendingArtwork = nil
         systemArtwork = nil
         artwork = nil
+        isAtNaturalEnd = false
         engine.onEvent = nil
         if hasActiveMediaSession {
             hasActiveMediaSession = false
@@ -280,13 +287,16 @@ final class PlaybackController: ObservableObject {
         guard hasActiveMediaSession else { return }
         switch event {
         case let .state(state):
+            guard !isAtNaturalEnd else { return }
             engineState = state
             publishSystemMetadata()
         case let .time(elapsed, duration):
+            guard !isAtNaturalEnd else { return }
             self.elapsed = elapsed
             self.duration = duration
             publishSystemMetadata()
         case .ended:
+            guard !isAtNaturalEnd else { return }
             let generation = loadGeneration
             pendingTransition = Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -316,6 +326,19 @@ final class PlaybackController: ObservableObject {
             expectedGeneration: expectedGeneration,
             stopWhenNoCandidate: false
         )
+        if expectedGeneration == loadGeneration {
+            finishNaturalPlaybackAtQueueEnd(expectedGeneration: expectedGeneration)
+        }
+    }
+
+    private func finishNaturalPlaybackAtQueueEnd(expectedGeneration: Int) {
+        guard expectedGeneration == loadGeneration, hasActiveMediaSession else { return }
+        isAtNaturalEnd = true
+        engine.pause()
+        engine.seek(to: 0)
+        engineState = .paused
+        elapsed = 0
+        publishSystemMetadata()
     }
 
     private func recoverFromFailure(for entry: QueueEntry, expectedGeneration: Int) async {

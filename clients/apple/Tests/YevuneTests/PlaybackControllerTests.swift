@@ -295,6 +295,44 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "2"])
     }
 
+    func testNaturalEndAtQueueTailSettlesPausedAndReplaysCurrentTrackFromZero() async {
+        let engine = RecordingPlaybackEngine()
+        let system = RecordingSystemMediaCoordinator()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(), engine: engine, systemMedia: system
+        )
+        await controller.play(
+            tracks: [playbackTrack("last", title: "Last", duration: 4)],
+            startingAt: 0
+        )
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 4, duration: 4))
+
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(controller.currentTrack?.id, "last")
+        XCTAssertEqual(controller.engineState, .paused)
+        XCTAssertEqual(controller.elapsed, 0)
+        XCTAssertEqual(controller.duration, 4)
+        XCTAssertEqual(engine.pauseCalls, 1)
+        XCTAssertEqual(engine.seekValues, [0])
+        XCTAssertEqual(system.lastTrack?.id, "last")
+        XCTAssertEqual(system.lastState, .paused)
+        XCTAssertEqual(system.lastElapsed, 0)
+        XCTAssertEqual(system.lastDuration, 4)
+
+        engine.send(.state(.buffering))
+        engine.send(.time(elapsed: 4, duration: 4))
+        XCTAssertEqual(controller.engineState, .paused)
+        XCTAssertEqual(controller.elapsed, 0)
+
+        controller.togglePlayPause()
+
+        XCTAssertEqual(engine.seekValues, [0, 0])
+        XCTAssertEqual(engine.playCalls, 1)
+    }
+
     func testNaturalEndQueuedBeforeShutdownCannotRestartPlayback() async {
         let engine = RecordingPlaybackEngine()
         let resolver = RecordingMediaResolver()
@@ -761,7 +799,9 @@ private final class RecordingSystemMediaCoordinator: SystemMediaCoordinating {
     private(set) var registerCalls = 0
     private(set) var handlers: RemotePlaybackHandlers?
     private(set) var lastTrack: Track?
+    private(set) var lastElapsed: TimeInterval = 0
     private(set) var lastDuration: TimeInterval = 0
+    private(set) var lastState: PlaybackEngineState = .idle
     private(set) var lastArtwork: NSImage?
 
     func register(_ handlers: RemotePlaybackHandlers) {
@@ -773,7 +813,9 @@ private final class RecordingSystemMediaCoordinator: SystemMediaCoordinating {
         state: PlaybackEngineState, artwork: NSImage?
     ) {
         lastTrack = track
+        lastElapsed = elapsed
         lastDuration = duration
+        lastState = state
         lastArtwork = artwork
     }
     func clear() {
