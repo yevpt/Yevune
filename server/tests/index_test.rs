@@ -22,6 +22,7 @@ async fn temp_access_pool() -> (SqlitePool, tempfile::TempDir) {
     let pool = SqlitePoolOptions::new()
         .min_connections(2)
         .max_connections(2)
+        .test_before_acquire(false)
         .connect_with(options)
         .await
         .unwrap();
@@ -731,6 +732,16 @@ async fn access_set_在删除先提交时串行校验主体且不泄漏_busy() {
             PrincipalType::User => "users",
             PrincipalType::Role => "roles",
         };
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if pool.size() == 2 && pool.num_idle() == 2 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("两条禁用 acquire ping 的连接都应已预建并归还 idle 队列");
         let mut writer = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
         assert_eq!(pool.num_idle(), 1);
         let spawned_pool = pool.clone();
