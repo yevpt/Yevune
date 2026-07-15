@@ -6,9 +6,7 @@ struct MiniPlayerView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            AsyncImage(url: playback.coverURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            DecodedArtworkView(image: playback.artwork) {
                 ZStack {
                     Color.secondary.opacity(0.12)
                     Image(systemName: "music.note")

@@ -39,13 +39,13 @@ struct PlaybackQueue {
         let target = min((currentIndex ?? -1) + 1, entries.count)
         let entry = QueueEntry(track: track)
         entries.insert(entry, at: target)
-        originalEntries.append(entry)
+        synchronizeCanonicalOrderAfterManualEdit()
     }
 
     mutating func append(_ track: Track) {
         let entry = QueueEntry(track: track)
         entries.append(entry)
-        originalEntries.append(entry)
+        synchronizeCanonicalOrderAfterManualEdit()
         if currentIndex == nil { currentIndex = 0 }
     }
 
@@ -55,23 +55,23 @@ struct PlaybackQueue {
         let entry = entries.remove(at: source)
         entries.insert(entry, at: destination)
         currentIndex = currentID.flatMap { id in entries.firstIndex { $0.id == id } }
+        synchronizeCanonicalOrderAfterManualEdit()
     }
 
     mutating func remove(id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         let wasCurrent = index == currentIndex
         entries.remove(at: index)
-        originalEntries.removeAll { $0.id == id }
         if entries.isEmpty { currentIndex = nil }
         else if wasCurrent { currentIndex = min(index, entries.count - 1) }
         else if let currentIndex, index < currentIndex { self.currentIndex = currentIndex - 1 }
+        synchronizeCanonicalOrderAfterManualEdit()
     }
 
     mutating func clearUpcoming() {
         guard let currentIndex, currentIndex + 1 < entries.count else { return }
-        let removedIDs = Set(entries[(currentIndex + 1)...].map(\.id))
         entries.removeSubrange((currentIndex + 1)...)
-        originalEntries.removeAll { removedIDs.contains($0.id) }
+        synchronizeCanonicalOrderAfterManualEdit()
     }
 
     mutating func previous() -> QueueEntry? {
@@ -111,5 +111,11 @@ struct PlaybackQueue {
         else if wrap { self.currentIndex = 0 }
         else { return nil }
         return current
+    }
+
+    /// A manual structural edit defines the visible instance order as the new
+    /// canonical order. Turning shuffle off must never undo that user action.
+    private mutating func synchronizeCanonicalOrderAfterManualEdit() {
+        originalEntries = entries
     }
 }

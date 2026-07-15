@@ -20,6 +20,7 @@ final class PlaybackControllerTests: XCTestCase {
 
         XCTAssertEqual(loader.loadedURLs.map(\.lastPathComponent), ["cover-1"])
         XCTAssertTrue(system.lastArtwork === artwork)
+        XCTAssertTrue(controller.artwork === artwork)
     }
 
     func testControllerPublishesTrackDurationBeforeEngineTimingArrives() async {
@@ -113,6 +114,7 @@ final class PlaybackControllerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertTrue(system.lastArtwork === currentArtwork)
+        XCTAssertTrue(controller.artwork === currentArtwork)
     }
 
     func testArtworkArrivingAfterShutdownCannotRestoreSystemMetadata() async {
@@ -135,6 +137,7 @@ final class PlaybackControllerTests: XCTestCase {
 
         XCTAssertNil(system.lastTrack)
         XCTAssertNil(system.lastArtwork)
+        XCTAssertNil(controller.artwork)
     }
 
     func testPlayLoadsRequestedTrackAndPublishesQueue() async {

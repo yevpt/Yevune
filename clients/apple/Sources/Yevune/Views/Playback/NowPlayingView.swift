@@ -81,9 +81,7 @@ struct NowPlayingView: View {
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: 18) {
-            AsyncImage(url: playback.coverURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            DecodedArtworkView(image: playback.artwork) {
                 ZStack {
                     Color.secondary.opacity(0.12)
                     Image(systemName: "music.note")
@@ -134,6 +132,8 @@ struct NowPlayingView: View {
 
     private var transport: some View {
         VStack(spacing: 12) {
+            focusedStatus
+
             HStack(spacing: 12) {
                 Button {
                     playback.setShuffled(!playback.isShuffled)
@@ -223,6 +223,28 @@ struct NowPlayingView: View {
         .disabled(!transportEnabled)
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var focusedStatus: some View {
+        switch PlaybackViewPolicy.focusedStatus(
+            engineState: playback.engineState,
+            errorMessage: playback.errorMessage
+        ) {
+        case .hidden:
+            EmptyView()
+        case .buffering(let message):
+            Label { Text(message) } icon: { ProgressView().controlSize(.small) }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(message)
+        case .error(let message):
+            Label(message, systemImage: "exclamationmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+                .accessibilityLabel("播放错误：\(message)")
+        }
     }
 
     private var transportPresentation: PlaybackViewPolicy.TransportPresentation {

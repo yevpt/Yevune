@@ -26,16 +26,6 @@ final class PlaybackViewPolicyTests: XCTestCase {
         XCTAssertFalse(PlaybackViewPolicy.focusedPageShowsQueue)
     }
 
-    func testFocusedModeHidesManagementChromeAndEveryRootQueueEntry() {
-        let chrome = PlaybackViewPolicy.mainWindowChrome(isFocused: true)
-
-        XCTAssertFalse(chrome.showsNavigation)
-        XCTAssertFalse(chrome.showsManagementToolbar)
-        XCTAssertFalse(chrome.showsTaskDrawer)
-        XCTAssertFalse(chrome.showsRootPlayerBar)
-        XCTAssertFalse(chrome.showsQueueEntry)
-    }
-
     func testFocusedPageUsesOnlyIdentityLyricsAndTransportSections() {
         XCTAssertEqual(
             PlaybackViewPolicy.focusedPageSections,
@@ -122,11 +112,26 @@ final class PlaybackViewPolicyTests: XCTestCase {
         }
         for duration in abnormalDuration {
             let value = PlaybackViewPolicy.sliderValue(elapsed: 65, duration: duration)
-            XCTAssertTrue(value.isFinite)
-            XCTAssertGreaterThanOrEqual(value, 0)
-            XCTAssertLessThanOrEqual(value, PlaybackViewPolicy.sliderUpperBound(duration: duration))
+            XCTAssertEqual(value, 0)
         }
         XCTAssertEqual(PlaybackViewPolicy.sliderValue(elapsed: 240, duration: 180), 180)
+    }
+
+    func testPlayerBarUsesCompactProductionLayoutAtMainWindowMinimumWidth() {
+        XCTAssertEqual(PlaybackViewPolicy.playerBarLayout(forWidth: 920), .compact)
+        XCTAssertEqual(PlaybackViewPolicy.playerBarLayout(forWidth: 1100), .regular)
+    }
+
+    func testFocusedStatusPrefersSafeErrorThenBufferingWithoutQueueLanguage() {
+        XCTAssertEqual(
+            PlaybackViewPolicy.focusedStatus(engineState: .buffering, errorMessage: nil),
+            .buffering("正在缓冲")
+        )
+        XCTAssertEqual(
+            PlaybackViewPolicy.focusedStatus(engineState: .buffering, errorMessage: "无法播放这首歌曲"),
+            .error("无法播放这首歌曲")
+        )
+        XCTAssertFalse(String(describing: PlaybackViewPolicy.focusedStatus(engineState: .buffering, errorMessage: nil)).contains("接下来播放"))
     }
 
     func testMiniPlayerUsesExplicitEmptyBufferingAndErrorPresentations() {

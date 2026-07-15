@@ -19,6 +19,10 @@ protocol QueuePlayerSurface: AnyObject {
     func observeTimeControlStatus(
         using block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
     ) -> PlayerObservation
+    func observeStatus(
+        of item: AVPlayerItem,
+        using block: @escaping @MainActor @Sendable (AVPlayerItem.Status) -> Void
+    ) -> PlayerObservation
 }
 
 extension AVQueuePlayer: QueuePlayerSurface {
@@ -54,6 +58,19 @@ extension AVQueuePlayer: QueuePlayerSurface {
             token.invalidate()
         }
         return playerObservation
+    }
+
+    func observeStatus(
+        of item: AVPlayerItem,
+        using block: @escaping @MainActor @Sendable (AVPlayerItem.Status) -> Void
+    ) -> PlayerObservation {
+        let itemObservation = PlayerObservation()
+        let token = item.observe(\.status, options: [.initial, .new]) { item, _ in
+            let status = item.status
+            itemObservation.deliverOnMain { block(status) }
+        }
+        itemObservation.setCancellation { token.invalidate() }
+        return itemObservation
     }
 }
 
@@ -139,6 +156,7 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
     private let player: any QueuePlayerSurface
     private let notificationCenter: NotificationCenter
     private nonisolated let observations = PlayerObservationStore()
+    private var didReportCurrentItemFailure = false
 
     init(
         player: any QueuePlayerSurface = AVQueuePlayer(),
@@ -186,6 +204,7 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
 
     private func installObservers() {
         guard let item = player.currentItem else { return }
+        didReportCurrentItemFailure = false
 
         observations.insert(player.observePeriodicTime(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600)
@@ -203,6 +222,11 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
             self?.onEvent?(.state(Self.playbackState(for: status)))
         })
 
+        observations.insert(player.observeStatus(of: item) { [weak self] status in
+            guard status == .failed else { return }
+            self?.reportCurrentItemFailure(message: item.error?.localizedDescription)
+        })
+
         [
             observe(.AVPlayerItemPlaybackStalled, item: item) { engine, _ in
                 engine.onEvent?(.state(.buffering))
@@ -212,7 +236,7 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
             },
             observe(.AVPlayerItemFailedToPlayToEndTime, item: item) { engine, notification in
                 let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-                engine.onEvent?(.failed(message: error?.localizedDescription ?? "Playback failed"))
+                engine.reportCurrentItemFailure(message: error?.localizedDescription)
             },
         ].forEach(observations.insert)
     }
@@ -239,6 +263,13 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
 
     private func removeObservers() {
         observations.removeAll()
+        didReportCurrentItemFailure = false
+    }
+
+    private func reportCurrentItemFailure(message: String?) {
+        guard !didReportCurrentItemFailure else { return }
+        didReportCurrentItemFailure = true
+        onEvent?(.failed(message: message ?? "Playback failed"))
     }
 
     private static func playbackState(for status: AVPlayer.TimeControlStatus) -> PlaybackEngineState {

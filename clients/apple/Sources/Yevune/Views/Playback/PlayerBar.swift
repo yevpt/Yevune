@@ -7,6 +7,25 @@ struct PlayerBar: View {
     @State private var queuePresented = false
 
     var body: some View {
+        GeometryReader { geometry in
+            Group {
+                switch PlaybackViewPolicy.playerBarLayout(forWidth: geometry.size.width) {
+                case .regular:
+                    regularLayout
+                case .compact:
+                    compactLayout
+                }
+            }
+        }
+        .frame(height: 92)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) { Divider() }
+        .popover(isPresented: $queuePresented, arrowEdge: .top) {
+            QueuePanel(playback: playback)
+        }
+    }
+
+    private var regularLayout: some View {
         HStack(spacing: 18) {
             CurrentTrackSummary(playback: playback, action: openNowPlaying)
                 .frame(width: 240, alignment: .leading)
@@ -21,27 +40,56 @@ struct PlayerBar: View {
             PlaybackOptions(playback: playback, queuePresented: $queuePresented)
                 .frame(width: 260, alignment: .trailing)
 
-            Menu {
-                Button {
-                    openWindow(id: "mini-player")
-                } label: {
-                    Label("打开迷你播放器", systemImage: "pip")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .accessibilityLabel("更多播放选项")
+            moreMenu(compact: false)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
-        .frame(minHeight: 76)
-        .background(.regularMaterial)
-        .overlay(alignment: .top) { Divider() }
-        .popover(isPresented: $queuePresented, arrowEdge: .top) {
-            QueuePanel(playback: playback)
+    }
+
+    private var compactLayout: some View {
+        HStack(spacing: 12) {
+            CurrentTrackSummary(playback: playback, action: openNowPlaying)
+                .frame(width: 190, alignment: .leading)
+
+            TransportControls(playback: playback)
+                .frame(minWidth: 300, maxWidth: .infinity)
+
+            Button { queuePresented.toggle() } label: {
+                Image(systemName: "list.bullet")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("播放队列")
+
+            moreMenu(compact: true)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func moreMenu(compact: Bool) -> some View {
+        Menu {
+            if compact {
+                Button { playback.setShuffled(!playback.isShuffled) } label: {
+                    Label(playback.isShuffled ? "关闭随机播放" : "开启随机播放", systemImage: "shuffle")
+                }
+                Button { playback.cycleRepeatMode() } label: {
+                    Label("切换循环模式", systemImage: playback.repeatMode == .one ? "repeat.1" : "repeat")
+                }
+                Button { playback.toggleMuted() } label: {
+                    Label(playback.isMuted ? "取消静音" : "静音", systemImage: playback.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                }
+                Divider()
+            }
+            Button { openWindow(id: "mini-player") } label: {
+                Label("打开迷你播放器", systemImage: "pip")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("更多播放选项")
     }
 }
 
@@ -77,9 +125,7 @@ private struct CurrentTrackSummary: View {
 
     private var summaryContent: some View {
         HStack(spacing: 10) {
-            AsyncImage(url: playback.coverURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            DecodedArtworkView(image: playback.artwork) {
                 ZStack {
                     Color.secondary.opacity(0.12)
                     Image(systemName: "music.note")

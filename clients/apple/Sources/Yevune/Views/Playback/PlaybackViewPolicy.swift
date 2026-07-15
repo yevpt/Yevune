@@ -31,14 +31,8 @@ enum LyricsState: Equatable {
 }
 
 enum PlaybackViewPolicy {
-    struct MainWindowChrome: Equatable {
-        let showsNavigation: Bool
-        let showsManagementToolbar: Bool
-        let showsTaskDrawer: Bool
-        let showsRootPlayerBar: Bool
-        let showsQueueEntry: Bool
-    }
-
+    enum PlayerBarLayout: Equatable { case compact, regular }
+    enum FocusedStatus: Equatable { case hidden, buffering(String), error(String) }
     enum FocusedLayout: Equatable {
         case stacked
         case split
@@ -78,14 +72,17 @@ enum PlaybackViewPolicy {
     static let focusedPageShowsQueue = false
     static let focusedPageSections: [FocusedPlaybackSection] = [.identity, .lyrics, .transport]
 
-    static func mainWindowChrome(isFocused: Bool) -> MainWindowChrome {
-        MainWindowChrome(
-            showsNavigation: !isFocused,
-            showsManagementToolbar: !isFocused,
-            showsTaskDrawer: !isFocused,
-            showsRootPlayerBar: !isFocused,
-            showsQueueEntry: !isFocused
-        )
+    static func playerBarLayout(forWidth width: CGFloat) -> PlayerBarLayout {
+        width < 1040 ? .compact : .regular
+    }
+
+    static func focusedStatus(
+        engineState: PlaybackEngineState,
+        errorMessage: String?
+    ) -> FocusedStatus {
+        if let errorMessage, !errorMessage.isEmpty { return .error(errorMessage) }
+        if engineState == .buffering { return .buffering("正在缓冲") }
+        return .hidden
     }
 
     static func shouldDismissFocus(queueCount: Int) -> Bool {
@@ -147,6 +144,7 @@ enum PlaybackViewPolicy {
     }
 
     static func sliderValue(elapsed: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        guard canSeek(duration: duration) else { return 0 }
         guard elapsed.isFinite, elapsed >= 0 else { return 0 }
         return min(elapsed, sliderUpperBound(duration: duration))
     }

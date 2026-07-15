@@ -14,6 +14,7 @@ final class PlaybackController: ObservableObject {
     @Published private(set) var currentQueueEntryID: UUID?
     @Published private(set) var currentTrack: Track?
     @Published private(set) var coverURL: URL?
+    @Published private(set) var artwork: NSImage?
     @Published private(set) var engineState: PlaybackEngineState = .idle
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
@@ -252,6 +253,7 @@ final class PlaybackController: ObservableObject {
         pendingArtwork?.cancel()
         pendingArtwork = nil
         systemArtwork = nil
+        artwork = nil
         engine.onEvent = nil
         if hasActiveMediaSession {
             hasActiveMediaSession = false
@@ -448,6 +450,7 @@ final class PlaybackController: ObservableObject {
                   self.coverURL == url
             else { return }
             self.systemArtwork = image
+            self.artwork = image
             self.publishSystemMetadata()
         }
     }

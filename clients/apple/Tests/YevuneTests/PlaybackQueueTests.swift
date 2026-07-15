@@ -66,4 +66,35 @@ final class PlaybackQueueTests: XCTestCase {
         XCTAssertEqual(queue.entries.map(\.track.id), ["1", "2"])
         XCTAssertEqual(queue.current?.track.id, "2")
     }
+
+    func testMoveWhileShuffledBecomesCanonicalOrderWithoutLosingCurrentDuplicateInstance() {
+        let duplicate = playbackTrack("duplicate")
+        var queue = PlaybackQueue()
+        queue.replace(with: [duplicate, playbackTrack("middle"), duplicate, playbackTrack("tail")], startingAt: 2)
+        let currentID = queue.current?.id
+        queue.setShuffled(true) { Array($0.reversed()) }
+
+        queue.move(from: 3, to: 1)
+        let manuallyOrderedIDs = queue.entries.map(\.id)
+        queue.setShuffled(false) { $0 }
+
+        XCTAssertEqual(queue.entries.map(\.id), manuallyOrderedIDs)
+        XCTAssertEqual(queue.current?.id, currentID)
+    }
+
+    func testInsertNextWhileShuffledBecomesCanonicalOrderAndKeepsCurrentInstance() {
+        let duplicate = playbackTrack("duplicate")
+        var queue = PlaybackQueue()
+        queue.replace(with: [duplicate, playbackTrack("middle"), duplicate], startingAt: 0)
+        let currentID = queue.current?.id
+        queue.setShuffled(true) { Array($0.reversed()) }
+
+        queue.insertNext(playbackTrack("inserted"))
+        let manuallyOrderedIDs = queue.entries.map(\.id)
+        queue.setShuffled(false) { $0 }
+
+        XCTAssertEqual(queue.entries.map(\.id), manuallyOrderedIDs)
+        XCTAssertEqual(queue.current?.id, currentID)
+        XCTAssertEqual(queue.entries[1].track.id, "inserted")
+    }
 }

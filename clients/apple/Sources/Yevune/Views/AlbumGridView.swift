@@ -66,9 +66,7 @@ private struct AlbumGridCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            AsyncImage(url: coverURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            AuthenticatedArtworkView(url: coverURL) {
                 Color.secondary.opacity(0.15)
             }
             .frame(width: 150, height: 150)

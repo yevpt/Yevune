@@ -30,7 +30,7 @@ struct MediaDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                AsyncImage(url: model.coverURL) { image in image.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
+                AuthenticatedArtworkView(url: model.coverURL) { Color.secondary.opacity(0.15) }
                     .frame(width: 180, height: 180).clipped().cornerRadius(8)
                 VStack(alignment: .leading) {
                     HStack {

@@ -151,6 +151,7 @@ final class PlaybackEngineTests: XCTestCase {
 
         XCTAssertEqual(player.removeTimeObserverCalls, 1)
         XCTAssertEqual(player.removeStatusObserverCalls, 1)
+        XCTAssertEqual(player.removeItemStatusObserverCalls, 1)
     }
 
     func testQueuedStatusAndTimeCallbacksDoNotPublishAfterStop() {
@@ -168,6 +169,49 @@ final class PlaybackEngineTests: XCTestCase {
 
         XCTAssertEqual(events, [.state(.idle)])
     }
+
+    func testFailedItemStatusPublishesFailureWithoutFailureNotification() {
+        let player = FakeQueuePlayerSurface()
+        player.itemStatus = .failed
+        let engine = AVQueuePlaybackEngine(player: player)
+        var events: [PlaybackEngineEvent] = []
+        engine.onEvent = { events.append($0) }
+        engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
+
+        guard case .failed = events.first else { return XCTFail("expected failed event") }
+    }
+
+    func testItemStatusAndNotificationReportSameFailureOnlyOnce() {
+        let center = NotificationCenter()
+        let player = FakeQueuePlayerSurface()
+        let engine = AVQueuePlaybackEngine(player: player, notificationCenter: center)
+        var events: [PlaybackEngineEvent] = []
+        engine.onEvent = { events.append($0) }
+        engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
+        let item = try! XCTUnwrap(player.currentItem)
+
+        player.sendItemStatus(.failed)
+        center.post(name: .AVPlayerItemFailedToPlayToEndTime, object: item)
+
+        XCTAssertEqual(events.count, 1)
+        guard case .failed = events[0] else { return XCTFail("expected failed event") }
+    }
+
+    func testOldItemStatusCannotPolluteReplacementAndStatusObserverIsCleanedUp() {
+        let player = FakeQueuePlayerSurface()
+        let engine = AVQueuePlaybackEngine(player: player)
+        var events: [PlaybackEngineEvent] = []
+        engine.onEvent = { events.append($0) }
+        engine.load(url: URL(string: "https://example.invalid/first")!, autoplay: false)
+        let staleCallback = player.itemStatusCallback
+
+        engine.load(url: URL(string: "https://example.invalid/second")!, autoplay: false)
+        staleCallback?(.failed)
+        engine.stop()
+
+        XCTAssertEqual(events, [.state(.idle)])
+        XCTAssertEqual(player.removeItemStatusObserverCalls, 2)
+    }
 }
 
 private final class SendableBox<Value>: @unchecked Sendable {
@@ -180,6 +224,7 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     var isMuted = false
     var timeControlStatus: AVPlayer.TimeControlStatus = .paused
     var duration: CMTime = .invalid
+    var itemStatus: AVPlayerItem.Status = .unknown
     private(set) var currentItem: AVPlayerItem?
     private(set) var playCalls = 0
     private(set) var pauseCalls = 0
@@ -187,10 +232,15 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     var queuesObservationCallbacks = false
     private let periodicObservation = FakePeriodicObservation()
     private let statusObservation = FakeStatusObservation()
+    private let itemStatusObservation = FakeItemStatusObservation()
     private var queuedObservationCallbacks: [@MainActor () -> Void] = []
 
     var removeTimeObserverCalls: Int { periodicObservation.removeCalls }
     var removeStatusObserverCalls: Int { statusObservation.removeCalls }
+    var removeItemStatusObserverCalls: Int { itemStatusObservation.removeCalls }
+    var itemStatusCallback: ((AVPlayerItem.Status) -> Void)? {
+        itemStatusObservation.unsafeCallback
+    }
 
     var loadedURL: URL? { (currentItem?.asset as? AVURLAsset)?.url }
     var currentItemDuration: CMTime { duration }
@@ -213,6 +263,15 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
         statusObservation.install(block)
     }
 
+    func observeStatus(
+        of item: AVPlayerItem,
+        using block: @escaping @MainActor @Sendable (AVPlayerItem.Status) -> Void
+    ) -> PlayerObservation {
+        let observation = itemStatusObservation.install(block)
+        block(itemStatus)
+        return observation
+    }
+
     func sendPeriodicTime(_ time: CMTime) {
         deliverOrQueue(periodicObservation.callback(for: time))
     }
@@ -220,6 +279,11 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     func sendTimeControlStatus(_ status: AVPlayer.TimeControlStatus) {
         timeControlStatus = status
         deliverOrQueue(statusObservation.callback(for: status))
+    }
+
+    func sendItemStatus(_ status: AVPlayerItem.Status) {
+        itemStatus = status
+        deliverOrQueue(itemStatusObservation.callback(for: status))
     }
 
     func deliverQueuedObservationCallbacks() {
@@ -234,6 +298,50 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
             queuedObservationCallbacks.append(callback)
         } else {
             callback()
+        }
+    }
+}
+
+private final class FakeItemStatusObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var block: (@MainActor @Sendable (AVPlayerItem.Status) -> Void)?
+    private var observation: PlayerObservation?
+    private var removals = 0
+
+    var removeCalls: Int { lock.withLock { removals } }
+    var unsafeCallback: ((AVPlayerItem.Status) -> Void)? {
+        let delivery = lock.withLock { (block, observation) }
+        guard let callback = delivery.0, let observation = delivery.1 else { return nil }
+        return { status in
+            MainActor.assumeIsolated {
+                observation.performIfActive { callback(status) }
+            }
+        }
+    }
+
+    @MainActor
+    func install(
+        _ block: @escaping @MainActor @Sendable (AVPlayerItem.Status) -> Void
+    ) -> PlayerObservation {
+        let observation = PlayerObservation()
+        lock.withLock {
+            self.block = block
+            self.observation = observation
+        }
+        observation.setCancellation { [weak self] in self?.remove() }
+        return observation
+    }
+
+    func callback(for status: AVPlayerItem.Status) -> (@MainActor () -> Void)? {
+        guard let callback = unsafeCallback else { return nil }
+        return { callback(status) }
+    }
+
+    private func remove() {
+        lock.withLock {
+            block = nil
+            observation = nil
+            removals += 1
         }
     }
 }
