@@ -295,6 +295,92 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.stopCalls, 1)
     }
 
+    func testNaturalEndSkipsFailedEntryWhenRepeatAllWraps() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+        controller.cycleRepeatMode()
+
+        engine.send(.failed(message: "a1"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "a2"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b", "b"])
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+    }
+
+    func testRefreshResolutionFailureSkipsBadEntry() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = FailingRefreshMediaResolver(failingTrackID: "a")
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        engine.send(.failed(message: "expired"))
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b"])
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        XCTAssertEqual(controller.errorMessage, "无法播放 a，已跳到下一首")
+    }
+
+    func testRemovingCurrentLoadsSuccessorAfterStoppingOldMedia() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        controller.removeFromQueue(id: controller.queueEntries[0].id)
+
+        XCTAssertEqual(engine.stopCalls, 1)
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        await controller.waitForPendingTransitionForTesting()
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "b"])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "b"])
+    }
+
+    func testRemovingOnlyCurrentStopsAndEmptiesQueue() async {
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)
+        await controller.play(tracks: [playbackTrack("a")], startingAt: 0)
+
+        controller.removeFromQueue(id: controller.queueEntries[0].id)
+
+        XCTAssertEqual(engine.stopCalls, 1)
+        XCTAssertTrue(controller.queueEntries.isEmpty)
+        XCTAssertNil(controller.currentTrack)
+    }
+
+    func testRemovingCurrentRejectsSuspendedResolverResult() async {
+        let requestStarted = expectation(description: "current resolution started")
+        let engine = RecordingPlaybackEngine()
+        let resolver = SuspendingMediaResolver(
+            suspendedTrackID: "a",
+            onSuspendedRequest: { requestStarted.fulfill() }
+        )
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        let initialPlay = Task {
+            await controller.play(
+                tracks: [playbackTrack("a"), playbackTrack("b")],
+                startingAt: 0
+            )
+        }
+        await fulfillment(of: [requestStarted], timeout: 1)
+
+        controller.removeFromQueue(id: controller.queueEntries[0].id)
+        await controller.waitForPendingTransitionForTesting()
+        resolver.resumeSuspendedRequest()
+        await initialPlay.value
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["b"])
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "b"])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["b"])
+    }
+
     func testDirectQueueSelectionClearsFailureStateForThatEntry() async {
         let engine = RecordingPlaybackEngine()
         let resolver = RecordingMediaResolver()
@@ -550,6 +636,29 @@ private final class RecordingMediaResolver: PlaybackMediaResolving {
         return ResolvedPlaybackMedia(
             streamURL: URL(string: "https://example.invalid/\(track.id)")!,
             coverURL: URL(string: "https://example.invalid/cover-\(track.id)")
+        )
+    }
+}
+
+@MainActor
+private final class FailingRefreshMediaResolver: PlaybackMediaResolving {
+    private(set) var resolvedTrackIDs: [String] = []
+    private let failingTrackID: String
+    private var attempts: [String: Int] = [:]
+
+    init(failingTrackID: String) {
+        self.failingTrackID = failingTrackID
+    }
+
+    func resolve(track: Track) async throws -> ResolvedPlaybackMedia {
+        resolvedTrackIDs.append(track.id)
+        attempts[track.id, default: 0] += 1
+        if track.id == failingTrackID, attempts[track.id] == 2 {
+            throw ResolverFailure(message: "refresh failed")
+        }
+        return ResolvedPlaybackMedia(
+            streamURL: URL(string: "https://example.invalid/\(track.id)")!,
+            coverURL: nil
         )
     }
 }

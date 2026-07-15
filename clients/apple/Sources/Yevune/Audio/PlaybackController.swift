@@ -3,6 +3,12 @@ import YevuneCoreFFI
 
 @MainActor
 final class PlaybackController: ObservableObject {
+    private enum LoadOutcome {
+        case loaded
+        case resolutionFailed
+        case superseded
+    }
+
     @Published private(set) var queueEntries: [QueueEntry] = []
     @Published private(set) var currentTrack: Track?
     @Published private(set) var coverURL: URL?
@@ -62,9 +68,23 @@ final class PlaybackController: ObservableObject {
     }
 
     func removeFromQueue(id: UUID) {
+        guard queue.entries.contains(where: { $0.id == id }) else { return }
+        let removesCurrent = queue.current?.id == id
+        let generation = removesCurrent ? beginMediaTransition(stopEngine: false) : loadGeneration
+        if removesCurrent {
+            engine.stop()
+        }
         queue.remove(id: id)
         pruneFailureStateToCurrentQueue()
         synchronizeQueueState()
+        guard removesCurrent, let entry = queue.current else { return }
+        pendingTransition = Task { @MainActor [weak self] in
+            guard let self,
+                  generation == self.loadGeneration,
+                  self.queue.current?.id == entry.id
+            else { return }
+            await self.load(entry, stopEngine: false)
+        }
     }
 
     func moveQueueEntry(from source: Int, to destination: Int) {
@@ -151,20 +171,20 @@ final class PlaybackController: ObservableObject {
     }
 
     @discardableResult
-    private func load(_ entry: QueueEntry, stopEngine: Bool = true) async -> Bool {
+    private func load(_ entry: QueueEntry, stopEngine: Bool = true) async -> LoadOutcome {
         let generation = beginMediaTransition(stopEngine: stopEngine)
         do {
             let media = try await resolver.resolve(track: entry.track)
-            guard generation == loadGeneration else { return false }
+            guard generation == loadGeneration else { return .superseded }
             coverURL = media.coverURL
             hasActiveMediaSession = true
             installEngineObserver()
             engine.load(url: media.streamURL, autoplay: true)
-            return true
+            return .loaded
         } catch {
-            guard generation == loadGeneration else { return false }
+            guard generation == loadGeneration else { return .superseded }
             errorMessage = safePlaybackErrorMessage()
-            return false
+            return .resolutionFailed
         }
     }
 
@@ -225,45 +245,68 @@ final class PlaybackController: ObservableObject {
 
     private func advanceAfterNaturalEnd(expectedGeneration: Int) async {
         guard expectedGeneration == loadGeneration else { return }
-        guard let entry = queue.nextAfterNaturalEnd() else { return }
-        synchronizeQueueState()
-        await load(entry)
+        if queue.repeatMode == .one,
+           let entry = queue.nextAfterNaturalEnd(),
+           !failedInCycle.contains(entry.id) {
+            synchronizeQueueState()
+            await load(entry)
+            return
+        }
+        await advancePastFailedEntries(
+            message: nil,
+            expectedGeneration: expectedGeneration,
+            stopWhenNoCandidate: false
+        )
     }
 
     private func recoverFromFailure(for entry: QueueEntry, expectedGeneration: Int) async {
         guard expectedGeneration == loadGeneration, queue.current?.id == entry.id else { return }
         if retryCounts[entry.id, default: 0] == 0 {
             retryCounts[entry.id] = 1
-            await load(entry, stopEngine: false)
-            return
+            switch await load(entry, stopEngine: false) {
+            case .loaded, .superseded:
+                return
+            case .resolutionFailed:
+                break
+            }
         }
 
         failedInCycle.insert(entry.id)
         let message = "无法播放 \(entry.track.title)，已跳到下一首"
-        await advancePastFailedEntries(message: message, expectedGeneration: expectedGeneration)
+        await advancePastFailedEntries(
+            message: message,
+            expectedGeneration: loadGeneration,
+            stopWhenNoCandidate: true
+        )
     }
 
-    private func advancePastFailedEntries(message: String, expectedGeneration: Int) async {
+    private func advancePastFailedEntries(
+        message: String?,
+        expectedGeneration: Int,
+        stopWhenNoCandidate: Bool
+    ) async {
         guard expectedGeneration == loadGeneration else { return }
         if failedInCycle.count >= queue.entries.count {
-            stopAfterFailedCycle(message: message)
+            stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
             return
         }
 
         for _ in 0..<queue.entries.count {
             guard let entry = queue.nextAfterManualSkip() else {
-                stopAfterFailedCycle(message: message)
+                if stopWhenNoCandidate {
+                    stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
+                }
                 return
             }
             if failedInCycle.contains(entry.id) { continue }
             synchronizeQueueState()
-            if await load(entry, stopEngine: false) {
+            if case .loaded = await load(entry, stopEngine: false), let message {
                 errorMessage = message
             }
             return
         }
 
-        stopAfterFailedCycle(message: message)
+        stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
     }
 
     private func stopAfterFailedCycle(message: String) {
