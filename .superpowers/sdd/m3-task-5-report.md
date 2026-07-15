@@ -57,3 +57,20 @@
 ### Commit
 
 - `fix(mac): 完善播放栏状态反馈`
+
+## Slider range 复审修复（2026-07-16）
+
+### RED
+
+- Policy 测试新增 `.nan`、`.infinity`、`-.infinity` 与 `0` duration，要求统一返回有限 Slider 上界 `1` 且 `canSeek == false`；正有限 duration 原值返回。
+- focused test 按预期因 `PlaybackViewPolicy.sliderUpperBound` 不存在而编译失败。
+
+### GREEN
+
+- `PlaybackViewPolicy.sliderUpperBound` 统一通过 `canSeek` 选择真实 duration 或安全上界 `1`。
+- `PlayerBar` 的 Slider range 只使用 Policy 安全上界，不再先构造包含 NaN/∞ 的 range；`finishSeeking` 的提交 guard 保留。
+- focused policy tests：8/8 通过；Swift 全量测试：128/128 通过；`swift build` 与 `git diff --check` 通过。
+
+### Commit
+
+- `fix(mac): 保证播放进度范围有限`

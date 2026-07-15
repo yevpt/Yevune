@@ -173,7 +173,7 @@ private struct TransportControls: View {
     }
 
     private var sliderUpperBound: Double {
-        max(playback.duration, 1)
+        PlaybackViewPolicy.sliderUpperBound(duration: playback.duration)
     }
 
     private func finishSeeking(_ isEditing: Bool) {

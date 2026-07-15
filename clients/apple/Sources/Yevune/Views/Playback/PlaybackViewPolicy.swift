@@ -70,6 +70,10 @@ enum PlaybackViewPolicy {
         duration.isFinite && duration > 0
     }
 
+    static func sliderUpperBound(duration: TimeInterval) -> TimeInterval {
+        canSeek(duration: duration) ? duration : 1
+    }
+
     static func progressAccessibilityValue(elapsed: TimeInterval, duration: TimeInterval) -> String? {
         guard canSeek(duration: duration) else { return nil }
         let elapsed = elapsed.isFinite ? min(max(elapsed, 0), duration) : 0

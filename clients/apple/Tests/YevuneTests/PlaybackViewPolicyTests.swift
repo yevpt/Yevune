@@ -68,11 +68,16 @@ final class PlaybackViewPolicyTests: XCTestCase {
         XCTAssertEqual(presentation?.accessibilityLabel, "播放错误：无法播放这首歌曲")
     }
 
-    func testSeekingIsDisabledUntilDurationIsKnown() {
-        XCTAssertFalse(PlaybackViewPolicy.canSeek(duration: -1))
-        XCTAssertFalse(PlaybackViewPolicy.canSeek(duration: 0))
-        XCTAssertFalse(PlaybackViewPolicy.canSeek(duration: .infinity))
+    func testSliderUpperBoundIsFiniteAndSeekingDisabledForInvalidDurations() {
+        let invalidDurations: [TimeInterval] = [.nan, .infinity, -.infinity, 0]
+
+        for duration in invalidDurations {
+            XCTAssertFalse(PlaybackViewPolicy.canSeek(duration: duration))
+            XCTAssertEqual(PlaybackViewPolicy.sliderUpperBound(duration: duration), 1)
+        }
+
         XCTAssertTrue(PlaybackViewPolicy.canSeek(duration: 180))
+        XCTAssertEqual(PlaybackViewPolicy.sliderUpperBound(duration: 180), 180)
     }
 
     func testKnownDurationProducesFormattedProgressAccessibilityValue() {
