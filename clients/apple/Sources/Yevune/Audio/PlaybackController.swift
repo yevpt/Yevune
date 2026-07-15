@@ -291,14 +291,16 @@ final class PlaybackController: ObservableObject {
             return
         }
 
-        for _ in 0..<queue.entries.count {
-            guard let entry = queue.nextAfterManualSkip() else {
+        var candidateQueue = queue
+        for _ in 0..<candidateQueue.entries.count {
+            guard let entry = candidateQueue.nextAfterManualSkip() else {
                 if stopWhenNoCandidate {
                     stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
                 }
                 return
             }
             if failedInCycle.contains(entry.id) { continue }
+            queue = candidateQueue
             synchronizeQueueState()
             if case .loaded = await load(entry, stopEngine: false), let message {
                 errorMessage = message

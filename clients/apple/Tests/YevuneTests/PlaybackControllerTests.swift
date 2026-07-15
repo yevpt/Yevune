@@ -313,6 +313,31 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.currentTrack?.id, "b")
     }
 
+    func testNaturalEndWithoutHealthyCandidatePreservesCurrentAfterMovingFailedHistory() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        engine.send(.failed(message: "a1"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "a2"))
+        await controller.waitForPendingTransitionForTesting()
+        controller.moveQueueEntry(from: 0, to: 1)
+
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["b", "a"])
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        await controller.previous()
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b"])
+
+        await controller.playQueueEntry(id: controller.queueEntries[0].id)
+        XCTAssertEqual(controller.currentTrack?.id, "b")
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b", "b"])
+    }
+
     func testRefreshResolutionFailureSkipsBadEntry() async {
         let engine = RecordingPlaybackEngine()
         let resolver = FailingRefreshMediaResolver(failingTrackID: "a")
