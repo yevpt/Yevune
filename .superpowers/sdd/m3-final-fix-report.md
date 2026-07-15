@@ -96,3 +96,26 @@ Real two-track smoke exposed an indefinite buffering presentation after the fina
 - PlaybackController + PlaybackQueue + PlaybackEngine: **20/20 repeated rounds PASS**.
 - Fresh full Swift suite: **160 tests, 0 failures**; `swift build` and `git diff --check`: **PASS**.
 - The main agent will rebuild and repeat the same real smoke after this commit; no post-fix runtime success is claimed here.
+
+## Final epoch hardening after queue-tail re-review
+
+The first queue-tail fix still reused the completed media item and guarded only selected event cases. The final implementation establishes an actual media epoch boundary:
+
+- Every installed engine callback captures its `loadGeneration` and rejects all event variants when that generation is no longer current.
+- Queue-tail completion increments the generation, detaches `engine.onEvent`, cancels pending artwork, and calls `engine.stop()` so the old item and its observers are removed. Current queue identity and already-published display/system metadata remain visible in the paused zero-elapsed presentation.
+- Play from completion schedules exactly one new resolve/load of the same current QueueEntry UUID with autoplay. Main and remote play share this path; duplicate clicks cannot duplicate the load.
+- Shutdown or explicit new playback cancels/supersedes a pending replay through task cancellation, generation, queue UUID, and completion-state gates.
+
+### RED
+
+- `swift test --package-path clients/apple --filter PlaybackControllerTests.testNaturalEndAtQueueTailDetachesOldMediaAndReloadsCurrentEntryForReplay`
+  - After correcting the test fixture compile setup, exit 1 with 5 expected behavior failures: no stop/detach, late failure triggered a second resolve, captured events changed state/error, and replay did not reload the current media.
+
+### GREEN
+
+- Focused epoch/replay test: **1 test, 0 failures**. It captures the old callback, delivers late state/time/failed/ended before and after replay, verifies no recovery or state pollution, verifies stop/detach, and verifies exactly one authenticated resolve/load/autoplay for main + remote duplicate play.
+- Pending replay shutdown and explicit-new-play supersession tests: **PASS**.
+- Full `PlaybackControllerTests`: **42 tests, 0 failures**.
+- PlaybackController + PlaybackEngine + PlaybackQueue: **20/20 repeated rounds PASS**.
+- Fresh full Swift suite: **162 tests, 0 failures**; `swift build` and `git diff --check`: **PASS**.
+- Post-fix real runtime verification remains assigned to the main agent; this report makes no new smoke-success claim.

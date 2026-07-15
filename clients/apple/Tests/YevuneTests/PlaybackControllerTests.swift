@@ -295,11 +295,12 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "2"])
     }
 
-    func testNaturalEndAtQueueTailSettlesPausedAndReplaysCurrentTrackFromZero() async {
+    func testNaturalEndAtQueueTailDetachesOldMediaAndReloadsCurrentEntryForReplay() async {
         let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
         let system = RecordingSystemMediaCoordinator()
         let controller = PlaybackController(
-            resolver: RecordingMediaResolver(), engine: engine, systemMedia: system
+            resolver: resolver, engine: engine, systemMedia: system
         )
         await controller.play(
             tracks: [playbackTrack("last", title: "Last", duration: 4)],
@@ -307,6 +308,7 @@ final class PlaybackControllerTests: XCTestCase {
         )
         engine.send(.state(.playing))
         engine.send(.time(elapsed: 4, duration: 4))
+        let oldMediaCallback = try! XCTUnwrap(engine.onEvent)
 
         engine.send(.ended)
         await controller.waitForPendingTransitionForTesting()
@@ -315,22 +317,74 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.engineState, .paused)
         XCTAssertEqual(controller.elapsed, 0)
         XCTAssertEqual(controller.duration, 4)
-        XCTAssertEqual(engine.pauseCalls, 1)
-        XCTAssertEqual(engine.seekValues, [0])
+        XCTAssertEqual(engine.stopCalls, 1)
+        XCTAssertNil(engine.onEvent)
         XCTAssertEqual(system.lastTrack?.id, "last")
         XCTAssertEqual(system.lastState, .paused)
         XCTAssertEqual(system.lastElapsed, 0)
         XCTAssertEqual(system.lastDuration, 4)
 
-        engine.send(.state(.buffering))
-        engine.send(.time(elapsed: 4, duration: 4))
+        oldMediaCallback(.state(.buffering))
+        oldMediaCallback(.time(elapsed: 4, duration: 4))
+        oldMediaCallback(.failed(message: "late failure"))
+        oldMediaCallback(.ended)
+        await Task.yield()
         XCTAssertEqual(controller.engineState, .paused)
         XCTAssertEqual(controller.elapsed, 0)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["last"])
 
         controller.togglePlayPause()
+        system.handlers?.play()
+        await controller.waitForPendingTransitionForTesting()
 
-        XCTAssertEqual(engine.seekValues, [0, 0])
-        XCTAssertEqual(engine.playCalls, 1)
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["last", "last"])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["last", "last"])
+        XCTAssertEqual(engine.autoplayValues, [true, true])
+
+        oldMediaCallback(.state(.buffering))
+        oldMediaCallback(.time(elapsed: 99, duration: 999))
+        oldMediaCallback(.failed(message: "captured late failure"))
+        oldMediaCallback(.ended)
+        await Task.yield()
+
+        XCTAssertEqual(controller.currentTrack?.id, "last")
+        XCTAssertEqual(controller.elapsed, 0)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["last", "last"])
+    }
+
+    func testPendingQueueTailReplayIsSupersededByShutdown() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.playNow(playbackTrack("last"))
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+
+        controller.play()
+        controller.shutdown()
+        await Task.yield()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["last"])
+        XCTAssertTrue(controller.queueEntries.isEmpty)
+    }
+
+    func testPendingQueueTailReplayCannotReplaceExplicitNewPlayback() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.playNow(playbackTrack("last"))
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+
+        controller.play()
+        await controller.playNow(playbackTrack("new"))
+        await Task.yield()
+
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["last", "new"])
+        XCTAssertEqual(controller.currentTrack?.id, "new")
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["last", "new"])
     }
 
     func testNaturalEndQueuedBeforeShutdownCannotRestartPlayback() async {
@@ -903,6 +957,7 @@ final class PlaybackMediaResolverTests: XCTestCase {
 private final class RecordingPlaybackEngine: PlaybackEngine {
     var onEvent: ((PlaybackEngineEvent) -> Void)?
     private(set) var loadedURLs: [URL] = []
+    private(set) var autoplayValues: [Bool] = []
     private(set) var playCalls = 0
     private(set) var pauseCalls = 0
     private(set) var seekValues: [TimeInterval] = []
@@ -910,7 +965,10 @@ private final class RecordingPlaybackEngine: PlaybackEngine {
     private(set) var mutedValues: [Bool] = []
     private(set) var stopCalls = 0
 
-    func load(url: URL, autoplay: Bool) { loadedURLs.append(url) }
+    func load(url: URL, autoplay: Bool) {
+        loadedURLs.append(url)
+        autoplayValues.append(autoplay)
+    }
     func play() { playCalls += 1 }
     func pause() { pauseCalls += 1 }
     func seek(to seconds: TimeInterval) { seekValues.append(seconds) }

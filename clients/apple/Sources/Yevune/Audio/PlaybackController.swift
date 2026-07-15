@@ -33,6 +33,7 @@ final class PlaybackController: ObservableObject {
     private var loadGeneration = 0
     private var hasActiveMediaSession = false
     private var isAtNaturalEnd = false
+    private var isReplayPending = false
     private var pendingTransition: Task<Void, Never>?
     private var pendingArtwork: Task<Void, Never>?
     private var systemArtwork: NSImage?
@@ -146,12 +147,11 @@ final class PlaybackController: ObservableObject {
     }
 
     func play() {
-        guard hasActiveMediaSession else { return }
         if isAtNaturalEnd {
-            isAtNaturalEnd = false
-            elapsed = 0
-            engine.seek(to: 0)
+            scheduleReplayFromNaturalEnd()
+            return
         }
+        guard hasActiveMediaSession else { return }
         engine.play()
     }
 
@@ -232,7 +232,7 @@ final class PlaybackController: ObservableObject {
             duration = TimeInterval(entry.track.duration)
             systemArtwork = nil
             hasActiveMediaSession = true
-            installEngineObserver()
+            installEngineObserver(expectedGeneration: generation)
             engine.load(url: media.streamURL, autoplay: true)
             publishSystemMetadata()
             loadArtwork(from: media.coverURL, for: entry.id, generation: generation)
@@ -261,6 +261,7 @@ final class PlaybackController: ObservableObject {
         systemArtwork = nil
         artwork = nil
         isAtNaturalEnd = false
+        isReplayPending = false
         engine.onEvent = nil
         if hasActiveMediaSession {
             hasActiveMediaSession = false
@@ -277,9 +278,10 @@ final class PlaybackController: ObservableObject {
         return loadGeneration
     }
 
-    private func installEngineObserver() {
+    private func installEngineObserver(expectedGeneration: Int) {
         engine.onEvent = { [weak self] event in
-            self?.handle(event)
+            guard let self, expectedGeneration == self.loadGeneration else { return }
+            self.handle(event)
         }
     }
 
@@ -333,12 +335,34 @@ final class PlaybackController: ObservableObject {
 
     private func finishNaturalPlaybackAtQueueEnd(expectedGeneration: Int) {
         guard expectedGeneration == loadGeneration, hasActiveMediaSession else { return }
+        loadGeneration += 1
         isAtNaturalEnd = true
-        engine.pause()
-        engine.seek(to: 0)
+        isReplayPending = false
+        hasActiveMediaSession = false
+        pendingArtwork?.cancel()
+        pendingArtwork = nil
+        engine.onEvent = nil
+        engine.stop()
         engineState = .paused
         elapsed = 0
         publishSystemMetadata()
+    }
+
+    private func scheduleReplayFromNaturalEnd() {
+        guard !isReplayPending, let entry = queue.current else { return }
+        isReplayPending = true
+        let expectedGeneration = loadGeneration
+        pendingTransition = Task { @MainActor [weak self] in
+            guard let self,
+                  !Task.isCancelled,
+                  self.isReplayPending,
+                  self.isAtNaturalEnd,
+                  expectedGeneration == self.loadGeneration,
+                  self.queue.current?.id == entry.id
+            else { return }
+            self.isReplayPending = false
+            await self.load(entry)
+        }
     }
 
     private func recoverFromFailure(for entry: QueueEntry, expectedGeneration: Int) async {
