@@ -152,6 +152,22 @@ final class PlaybackEngineTests: XCTestCase {
         XCTAssertEqual(player.removeTimeObserverCalls, 1)
         XCTAssertEqual(player.removeStatusObserverCalls, 1)
     }
+
+    func testQueuedStatusAndTimeCallbacksDoNotPublishAfterStop() {
+        let player = FakeQueuePlayerSurface()
+        player.queuesObservationCallbacks = true
+        let engine = AVQueuePlaybackEngine(player: player)
+        var events: [PlaybackEngineEvent] = []
+        engine.onEvent = { events.append($0) }
+        engine.load(url: URL(string: "https://example.invalid/song")!, autoplay: false)
+
+        player.sendTimeControlStatus(.playing)
+        player.sendPeriodicTime(CMTime(seconds: 4, preferredTimescale: 600))
+        engine.stop()
+        player.deliverQueuedObservationCallbacks()
+
+        XCTAssertEqual(events, [.state(.idle)])
+    }
 }
 
 private final class SendableBox<Value>: @unchecked Sendable {
@@ -168,8 +184,10 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     private(set) var playCalls = 0
     private(set) var pauseCalls = 0
     private(set) var lastSeek: TimeInterval?
+    var queuesObservationCallbacks = false
     private let periodicObservation = FakePeriodicObservation()
     private let statusObservation = FakeStatusObservation()
+    private var queuedObservationCallbacks: [@MainActor () -> Void] = []
 
     var removeTimeObserverCalls: Int { periodicObservation.removeCalls }
     var removeStatusObserverCalls: Int { statusObservation.removeCalls }
@@ -196,18 +214,34 @@ private final class FakeQueuePlayerSurface: QueuePlayerSurface {
     }
 
     func sendPeriodicTime(_ time: CMTime) {
-        periodicObservation.send(time)
+        deliverOrQueue(periodicObservation.callback(for: time))
     }
 
     func sendTimeControlStatus(_ status: AVPlayer.TimeControlStatus) {
         timeControlStatus = status
-        statusObservation.send(status)
+        deliverOrQueue(statusObservation.callback(for: status))
+    }
+
+    func deliverQueuedObservationCallbacks() {
+        let callbacks = queuedObservationCallbacks
+        queuedObservationCallbacks.removeAll()
+        callbacks.forEach { $0() }
+    }
+
+    private func deliverOrQueue(_ callback: (@MainActor () -> Void)?) {
+        guard let callback else { return }
+        if queuesObservationCallbacks {
+            queuedObservationCallbacks.append(callback)
+        } else {
+            callback()
+        }
     }
 }
 
 private final class FakePeriodicObservation: @unchecked Sendable {
     private let lock = NSLock()
     private var block: (@MainActor @Sendable (CMTime) -> Void)?
+    private var observation: PlayerObservation?
     private var removals = 0
 
     var removeCalls: Int {
@@ -216,19 +250,29 @@ private final class FakePeriodicObservation: @unchecked Sendable {
 
     @MainActor
     func install(_ block: @escaping @MainActor @Sendable (CMTime) -> Void) -> PlayerObservation {
-        lock.withLock { self.block = block }
-        return PlayerObservation { [self] in remove() }
+        let observation = PlayerObservation()
+        lock.withLock {
+            self.block = block
+            self.observation = observation
+        }
+        observation.setCancellation { [weak self] in self?.remove() }
+        return observation
     }
 
-    @MainActor
-    func send(_ time: CMTime) {
-        let callback: (@MainActor @Sendable (CMTime) -> Void)? = lock.withLock { self.block }
-        callback?(time)
+    func callback(for time: CMTime) -> (@MainActor () -> Void)? {
+        let delivery = lock.withLock { (block, observation) }
+        guard let callback = delivery.0, let observation = delivery.1 else { return nil }
+        return {
+            observation.performIfActive {
+                callback(time)
+            }
+        }
     }
 
     private func remove() {
         lock.withLock {
             block = nil
+            observation = nil
             removals += 1
         }
     }
@@ -237,6 +281,7 @@ private final class FakePeriodicObservation: @unchecked Sendable {
 private final class FakeStatusObservation: @unchecked Sendable {
     private let lock = NSLock()
     private var block: (@MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void)?
+    private var observation: PlayerObservation?
     private var removals = 0
 
     var removeCalls: Int {
@@ -247,19 +292,29 @@ private final class FakeStatusObservation: @unchecked Sendable {
     func install(
         _ block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
     ) -> PlayerObservation {
-        lock.withLock { self.block = block }
-        return PlayerObservation { [self] in remove() }
+        let observation = PlayerObservation()
+        lock.withLock {
+            self.block = block
+            self.observation = observation
+        }
+        observation.setCancellation { [weak self] in self?.remove() }
+        return observation
     }
 
-    @MainActor
-    func send(_ status: AVPlayer.TimeControlStatus) {
-        let callback: (@MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void)? = lock.withLock { self.block }
-        callback?(status)
+    func callback(for status: AVPlayer.TimeControlStatus) -> (@MainActor () -> Void)? {
+        let delivery = lock.withLock { (block, observation) }
+        guard let callback = delivery.0, let observation = delivery.1 else { return nil }
+        return {
+            observation.performIfActive {
+                callback(status)
+            }
+        }
     }
 
     private func remove() {
         lock.withLock {
             block = nil
+            observation = nil
             removals += 1
         }
     }

@@ -28,45 +28,80 @@ extension AVQueuePlayer: QueuePlayerSurface {
         forInterval interval: CMTime,
         using block: @escaping @MainActor @Sendable (CMTime) -> Void
     ) -> PlayerObservation {
+        let observation = PlayerObservation()
         let token = addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-            Task { @MainActor in
+            observation.deliverOnMain {
                 block(time)
             }
         }
-        return PlayerObservation { [self] in
+        observation.setCancellation { [self] in
             removeTimeObserver(token)
         }
+        return observation
     }
 
     func observeTimeControlStatus(
         using block: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
     ) -> PlayerObservation {
-        let observation = observe(\.timeControlStatus, options: [.new]) { player, _ in
+        let playerObservation = PlayerObservation()
+        let token = observe(\.timeControlStatus, options: [.new]) { player, _ in
             let status = player.timeControlStatus
-            Task { @MainActor in
+            playerObservation.deliverOnMain {
                 block(status)
             }
         }
-        return PlayerObservation {
-            observation.invalidate()
+        playerObservation.setCancellation {
+            token.invalidate()
         }
+        return playerObservation
     }
 }
 
 final class PlayerObservation: @unchecked Sendable {
     private let lock = NSLock()
+    private var isActive = true
     private var cancellation: (() -> Void)?
 
-    init(cancellation: @escaping () -> Void) {
+    init(cancellation: (() -> Void)? = nil) {
         self.cancellation = cancellation
+    }
+
+    func setCancellation(_ cancellation: @escaping () -> Void) {
+        lock.lock()
+        let cancelImmediately = !isActive
+        if isActive {
+            precondition(self.cancellation == nil)
+            self.cancellation = cancellation
+        }
+        lock.unlock()
+        if cancelImmediately {
+            cancellation()
+        }
     }
 
     func cancel() {
         lock.lock()
+        isActive = false
         let cancellation = cancellation
         self.cancellation = nil
         lock.unlock()
         cancellation?()
+    }
+
+    func deliverOnMain(_ block: @escaping @MainActor @Sendable () -> Void) {
+        Task { @MainActor [self] in
+            performIfActive(block)
+        }
+    }
+
+    @MainActor
+    func performIfActive(_ block: @MainActor () -> Void) {
+        lock.lock()
+        let isActive = isActive
+        lock.unlock()
+        if isActive {
+            block()
+        }
     }
 
     deinit {
@@ -187,15 +222,19 @@ final class AVQueuePlaybackEngine: PlaybackEngine {
         item: AVPlayerItem,
         handler: @escaping @MainActor (AVQueuePlaybackEngine, Notification) -> Void
     ) -> PlayerObservation {
+        let observation = PlayerObservation()
         let token = notificationCenter.addObserver(forName: name, object: item, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                handler(self, notification)
+                observation.performIfActive {
+                    guard let self else { return }
+                    handler(self, notification)
+                }
             }
         }
-        return PlayerObservation { [notificationCenter] in
+        observation.setCancellation { [notificationCenter] in
             notificationCenter.removeObserver(token)
         }
+        return observation
     }
 
     private func removeObservers() {
