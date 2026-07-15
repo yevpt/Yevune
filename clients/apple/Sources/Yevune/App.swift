@@ -28,7 +28,7 @@ struct YevuneApp: App {
                     playback: playback,
                     onLogout: {
                         playback.shutdown()
-                        login.logout()
+                        Task { await login.logout() }
                     }
                 )
                     .frame(minWidth: 920, minHeight: 620)

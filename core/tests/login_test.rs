@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use yevune_core::{CoreError, MusicClient};
 
 #[tokio::test]
@@ -109,4 +109,114 @@ async fn login_does_not_save_session_when_current_user_lookup_fails() {
         client.ping().await,
         Err(CoreError::NotAuthenticated)
     ));
+}
+
+#[tokio::test]
+async fn logout_clears_authenticated_session() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let count = socket.read(&mut request).await.unwrap();
+            let first_line = std::str::from_utf8(&request[..count])
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap();
+            let body = if first_line.contains("/rest/getUser?") {
+                r#"{"subsonic-response":{"status":"ok","version":"1.16.1","user":{"username":"admin","adminRole":true}}}"#
+            } else {
+                r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#
+            };
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(head.as_bytes()).await.unwrap();
+            socket.write_all(body.as_bytes()).await.unwrap();
+        }
+    });
+
+    let client = MusicClient::new();
+    client
+        .login(
+            format!("http://{address}"),
+            "admin".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap();
+    server.await.unwrap();
+
+    client.logout().await;
+
+    assert!(matches!(
+        client.ping().await,
+        Err(CoreError::NotAuthenticated)
+    ));
+}
+
+#[tokio::test]
+async fn logout_invalidates_an_earlier_in_flight_login() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let request_started = Arc::new(Notify::new());
+    let release_response = Arc::new(Notify::new());
+    let server_started = request_started.clone();
+    let server_release = release_response.clone();
+    let server = tokio::spawn(async move {
+        for index in 0..2 {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let count = socket.read(&mut request).await.unwrap();
+            let first_line = std::str::from_utf8(&request[..count])
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap();
+            if index == 0 {
+                server_started.notify_one();
+                server_release.notified().await;
+            }
+            let body = if first_line.contains("/rest/getUser?") {
+                r#"{"subsonic-response":{"status":"ok","version":"1.16.1","user":{"username":"admin","adminRole":true}}}"#
+            } else {
+                r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#
+            };
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(head.as_bytes()).await.unwrap();
+            socket.write_all(body.as_bytes()).await.unwrap();
+        }
+    });
+
+    let client = MusicClient::new();
+    let login_client = client.clone();
+    let login = tokio::spawn(async move {
+        login_client
+            .login(
+                format!("http://{address}"),
+                "admin".to_owned(),
+                "secret".to_owned(),
+            )
+            .await
+    });
+    request_started.notified().await;
+
+    client.logout().await;
+    release_response.notify_one();
+
+    assert!(matches!(
+        login.await.unwrap(),
+        Err(CoreError::NotAuthenticated)
+    ));
+    assert!(matches!(
+        client.cover_art_url("cover:1".to_owned(), None).await,
+        Err(CoreError::NotAuthenticated)
+    ));
+    server.await.unwrap();
 }

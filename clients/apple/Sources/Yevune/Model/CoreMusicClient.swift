@@ -8,6 +8,10 @@ actor CoreMusicClient: MusicClientProviding {
         return SessionValue(server: session.server, user: session.user, admin: session.admin)
     }
 
+    func logout() async {
+        await client.logout()
+    }
+
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {
         try await client.listAlbums(filter: .sort(.newest), offset: offset, size: size)
     }

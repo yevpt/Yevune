@@ -1,6 +1,9 @@
 //! UniFFI 暴露的跨平台客户端门面。
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use tokio::sync::RwLock;
 
@@ -32,6 +35,7 @@ pub struct Session {
 pub struct MusicClient {
     http: HttpClient,
     session: RwLock<Option<AuthenticatedSession>>,
+    session_generation: AtomicU64,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -42,11 +46,13 @@ impl MusicClient {
         Arc::new(Self {
             http: HttpClient::new(),
             session: RwLock::new(None),
+            session_generation: AtomicU64::new(0),
         })
     }
 
     /// 验证凭证并仅在 ping 成功后保存会话。
     pub async fn login(&self, server: String, user: String, password: String) -> Result<Session> {
+        let generation = self.session_generation.load(Ordering::Acquire);
         let candidate = AuthenticatedSession {
             config: ServerConfig::parse(&server)?,
             user,
@@ -59,8 +65,18 @@ impl MusicClient {
             user: candidate.user.clone(),
             admin,
         };
-        *self.session.write().await = Some(candidate);
+        let mut current = self.session.write().await;
+        if generation != self.session_generation.load(Ordering::Acquire) {
+            return Err(CoreError::NotAuthenticated);
+        }
+        *current = Some(candidate);
         Ok(session)
+    }
+
+    /// 清除当前认证会话及其内存中的明文密码。
+    pub async fn logout(&self) {
+        self.session_generation.fetch_add(1, Ordering::AcqRel);
+        *self.session.write().await = None;
     }
 
     /// 验证当前会话仍可访问服务端。

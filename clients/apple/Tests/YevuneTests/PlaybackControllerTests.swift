@@ -1022,6 +1022,7 @@ private final class RecordingResolverClient: MusicClientProviding, @unchecked Se
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         throw CocoaError(.featureUnsupported)
     }
+    func logout() async {}
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] { [] }
     func search(query: String) async throws -> SearchResult { .init(artists: [], albums: [], tracks: []) }

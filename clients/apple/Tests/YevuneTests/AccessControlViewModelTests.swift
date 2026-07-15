@@ -737,6 +737,7 @@ private actor FakeAccessControlClient: MusicClientProviding {
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         SessionValue(server: server, user: user)
     }
+    func logout() async {}
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] { [] }
 

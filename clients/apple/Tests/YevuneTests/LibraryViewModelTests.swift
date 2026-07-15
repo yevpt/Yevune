@@ -80,6 +80,7 @@ private final class FakeBrowseClient: MusicClientProviding, @unchecked Sendable 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
         SessionValue(server: server, user: user)
     }
+    func logout() async {}
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] { albums }
     func search(query: String) async throws -> SearchResult {
         SearchResult(artists: [], albums: albums, tracks: [])

@@ -52,16 +52,66 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertFalse(model.isSubmitting)
     }
 
-    func testLogoutClearsSessionAndPassword() async {
-        let model = LoginViewModel(client: FakeMusicClient())
+    func testLogoutClearsCoreSessionAndPresentationState() async {
+        let client = FakeMusicClient(failLoginAfter: 1)
+        let model = LoginViewModel(client: client)
         model.server = "http://localhost"
         model.user = "u"
         model.password = "secret"
         await model.submit()
         XCTAssertNotNil(model.session)
+        await model.submit()
+        XCTAssertNotNil(model.errorMessage)
 
-        model.logout()
+        await model.logout()
 
+        let logoutCalls = await client.recordedLogoutCalls()
+        XCTAssertEqual(logoutCalls, 1)
+        XCTAssertNil(model.session)
+        XCTAssertEqual(model.password, "")
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testLogoutRejectsEarlierLoginResultThatArrivesLate() async {
+        let loginStarted = expectation(description: "login started")
+        let client = FakeMusicClient(
+            suspendFirstLogin: true,
+            onLoginStarted: { loginStarted.fulfill() }
+        )
+        let model = LoginViewModel(client: client)
+        model.password = "secret"
+        let submit = Task { await model.submit() }
+        await fulfillment(of: [loginStarted], timeout: 1)
+
+        await model.logout()
+        await client.resumeLogin()
+        await submit.value
+
+        let logoutCalls = await client.recordedLogoutCalls()
+        XCTAssertEqual(logoutCalls, 1)
+        XCTAssertNil(model.session)
+        XCTAssertEqual(model.password, "")
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testLogoutPublishesSignedOutStateOnlyAfterCoreSessionIsCleared() async {
+        let logoutStarted = expectation(description: "core logout started")
+        let client = FakeMusicClient(
+            suspendLogout: true,
+            onLogoutStarted: { logoutStarted.fulfill() }
+        )
+        let model = LoginViewModel(client: client)
+        model.password = "secret"
+        await model.submit()
+
+        let logout = Task { await model.logout() }
+        await fulfillment(of: [logoutStarted], timeout: 1)
+
+        XCTAssertNotNil(model.session)
+        XCTAssertEqual(model.password, "secret")
+
+        await client.resumeLogout()
+        await logout.value
         XCTAssertNil(model.session)
         XCTAssertEqual(model.password, "")
     }
@@ -156,6 +206,15 @@ private actor FakeMusicClient: MusicClientProviding {
     private let accessRules: [AccessRule]
     private let scanFails: Bool
     private let loginIsAdmin: Bool
+    private let failLoginAfter: Int?
+    private let suspendFirstLogin: Bool
+    private let onLoginStarted: (@Sendable () -> Void)?
+    private let suspendLogout: Bool
+    private let onLogoutStarted: (@Sendable () -> Void)?
+    private var loginCalls = 0
+    private var logoutCalls = 0
+    private var loginContinuation: CheckedContinuation<Void, Never>?
+    private var logoutContinuation: CheckedContinuation<Void, Never>?
 
     init(album: Album = Album(
         id: "al-0",
@@ -168,15 +227,55 @@ private actor FakeMusicClient: MusicClientProviding {
         year: nil,
         genre: nil,
         created: nil
-    ), accessRules: [AccessRule] = [], scanFails: Bool = false, loginIsAdmin: Bool = true) {
+    ), accessRules: [AccessRule] = [], scanFails: Bool = false, loginIsAdmin: Bool = true,
+       failLoginAfter: Int? = nil, suspendFirstLogin: Bool = false,
+       onLoginStarted: (@Sendable () -> Void)? = nil, suspendLogout: Bool = false,
+       onLogoutStarted: (@Sendable () -> Void)? = nil) {
         self.album = album
         self.accessRules = accessRules
         self.scanFails = scanFails
         self.loginIsAdmin = loginIsAdmin
+        self.failLoginAfter = failLoginAfter
+        self.suspendFirstLogin = suspendFirstLogin
+        self.onLoginStarted = onLoginStarted
+        self.suspendLogout = suspendLogout
+        self.onLogoutStarted = onLogoutStarted
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
-        SessionValue(server: server, user: user, admin: loginIsAdmin)
+        loginCalls += 1
+        if suspendFirstLogin, loginCalls == 1 {
+            onLoginStarted?()
+            await withCheckedContinuation { continuation in
+                loginContinuation = continuation
+            }
+        }
+        if let failLoginAfter, loginCalls > failLoginAfter {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return SessionValue(server: server, user: user, admin: loginIsAdmin)
+    }
+
+    func logout() async {
+        logoutCalls += 1
+        if suspendLogout {
+            onLogoutStarted?()
+            await withCheckedContinuation { continuation in
+                logoutContinuation = continuation
+            }
+        }
+    }
+
+    func recordedLogoutCalls() -> Int { logoutCalls }
+
+    func resumeLogin() {
+        loginContinuation?.resume()
+        loginContinuation = nil
+    }
+
+    func resumeLogout() {
+        logoutContinuation?.resume()
+        logoutContinuation = nil
     }
 
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] {

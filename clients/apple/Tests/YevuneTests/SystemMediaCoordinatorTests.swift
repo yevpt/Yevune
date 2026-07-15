@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import MediaPlayer
 import XCTest
 @testable import Yevune
@@ -90,6 +91,24 @@ final class SystemMediaCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(commands.targetCount, 0)
         XCTAssertNil(nowPlaying.info)
+    }
+}
+
+@MainActor
+final class PlaybackArtworkLoaderTests: XCTestCase {
+    func testAuthenticatedArtworkUsesEphemeralNoCachePolicy() {
+        let configuration = URLSessionPlaybackArtworkLoader.makeConfiguration()
+        let url = URL(string: "https://music.invalid/cover?id=1&p=secret")!
+        let request = URLSessionPlaybackArtworkLoader.makeRequest(url: url)
+
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertFalse(request.httpShouldHandleCookies)
     }
 }
 

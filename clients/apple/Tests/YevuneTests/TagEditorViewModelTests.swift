@@ -95,6 +95,7 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue { .init(server: server, user: user) }
+    func logout() async {}
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album] { [] }
     func search(query: String) async throws -> SearchResult { .init(artists: [], albums: [], tracks: []) }
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track { throw CocoaError(.featureUnsupported) }

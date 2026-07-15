@@ -15,6 +15,7 @@ struct SessionValue: Equatable {
 
 protocol MusicClientProviding: Sendable {
     func login(server: String, user: String, password: String) async throws -> SessionValue
+    func logout() async
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album]
     func listGenres() async throws -> [Genre]
@@ -110,23 +111,34 @@ final class LoginViewModel: ObservableObject {
     @Published private(set) var isSubmitting = false
 
     private let client: any MusicClientProviding
+    private var sessionGeneration = 0
 
     init(client: any MusicClientProviding) {
         self.client = client
     }
 
     func submit() async {
+        let generation = sessionGeneration
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
         do {
-            session = try await client.login(server: server, user: user, password: password)
+            let authenticated = try await client.login(
+                server: server,
+                user: user,
+                password: password
+            )
+            guard generation == sessionGeneration else { return }
+            session = authenticated
         } catch {
+            guard generation == sessionGeneration else { return }
             errorMessage = error.localizedDescription
         }
     }
 
-    func logout() {
+    func logout() async {
+        sessionGeneration += 1
+        await client.logout()
         password = ""
         session = nil
         errorMessage = nil

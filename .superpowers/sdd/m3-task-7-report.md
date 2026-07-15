@@ -88,3 +88,51 @@ unable to get image 'dxflrs/garage:v2.3.0': failed to connect to the docker API 
 
 - 唯一未闭环项为真实服务端/真实音频 smoke；需要启动 Docker daemon、提供 Compose 必需密钥和可登录数据后按 brief 的八项清单人工验证。
 - 自动化已覆盖重复注册、旧 engine 事件、旧/晚到 artwork、shutdown 后 remote command、重新播放后的旧 handler、重新注册与显式恢复播放。
+
+## 独立复审修复（2026-07-16）
+
+### Important 1：登出清除 Rust core 会话
+
+#### RED
+
+- 新增 `logout_clears_authenticated_session`，运行 `cargo test --manifest-path core/Cargo.toml --test login_test logout_clears_authenticated_session`，按预期因 `MusicClient.logout` 不存在而编译失败。
+- 加入初始 clear API 后新增并发测试 `logout_invalidates_an_earlier_in_flight_login`；focused test 按预期失败，证明旧实现会让 logout 前开始、logout 后完成的 login 重新写回认证会话。
+- Swift `LoginViewModelTests` 新增 core 调用与晚到 login 测试；首次运行 13 tests 出现 3 个预期行为失败：未调用 client logout，且旧 login 会恢复 session。
+
+#### GREEN
+
+- Rust `MusicClient` 新增 UniFFI async `logout()`，清空 `RwLock<Option<AuthenticatedSession>>`，从 core 持有状态中释放明文密码。
+- `AtomicU64` session generation 在 logout 时失效旧登录尝试；登录写回在持有 session write lock 时再次核对 generation，关闭检查与写入之间的竞态。
+- `MusicClientProviding` 将 logout 设为强制 async 协议要求，`CoreMusicClient` 转发至 UniFFI，测试 fake 显式实现。
+- `LoginViewModel` 使用 generation 拒绝旧 submit 的晚到结果；先等待 core clear 完成，再发布 password/session/error 清空。顺序测试在 core logout suspended 时确认 Swift session/password 尚未提前清除。
+- App 的登出 closure 在创建 async logout Task 前同步执行 `playback.shutdown()`。
+
+### Important 2：认证封面不进入共享缓存
+
+#### RED
+
+- 新增 `PlaybackArtworkLoaderTests.testAuthenticatedArtworkUsesEphemeralNoCachePolicy`；focused test 按预期因配置与请求 policy API 不存在而编译失败。
+
+#### GREEN
+
+- Loader 不再使用 `URLSession.shared`，改用独立 `URLSessionConfiguration.ephemeral` session。
+- 显式设置 `urlCache=nil`、`httpCookieStorage=nil`、`urlCredentialStorage=nil`、禁止 cookie 接受/写入，并将 configuration 与每个 `URLRequest` 的 cache policy 设为 `reloadIgnoringLocalCacheData`。
+- 测试直接核对 configuration 与 request policy，认证 URL 仍不进入日志。
+
+### 复审后验证
+
+- `cargo test --manifest-path core/Cargo.toml --test login_test`：4 tests，0 failures。
+- `cargo test --manifest-path core/Cargo.toml`：exit 0。
+- `cargo clippy --manifest-path core/Cargo.toml -- -D warnings`：exit 0，无 warning。
+- `cargo fmt --manifest-path core/Cargo.toml --check`：exit 0。
+- `swift test --package-path clients/apple --filter LoginViewModelTests`：14 tests，0 failures。
+- `swift test --package-path clients/apple --filter PlaybackArtworkLoaderTests`：1 test，0 failures。
+- `swift test --package-path clients/apple`：150 tests，0 failures。
+- `swift build --package-path clients/apple`：exit 0。
+- contract/server 的 test、clippy `-D warnings`、fmt check：全部 exit 0。
+- `./scripts/tests/run-mac-client-test.sh`：输出 `run-mac-client tests: PASS`。
+- `git diff --check`：exit 0。
+
+### 复审修复提交
+
+- `fix(mac): 清理登出凭证与封面缓存`
