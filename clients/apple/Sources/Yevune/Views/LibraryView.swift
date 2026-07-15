@@ -59,6 +59,32 @@ struct LibraryView: View {
     }
 
     var body: some View {
+        Group {
+            if isNowPlayingPresented {
+                NowPlayingView(playback: playback) {
+                    isNowPlayingPresented = false
+                }
+                .onAppear { dismissFocusForEmptyQueue(playback.queueEntries.count) }
+                .onChange(of: playback.queueEntries.count) { _, queueCount in
+                    dismissFocusForEmptyQueue(queueCount)
+                }
+            } else {
+                libraryWorkspace
+            }
+        }
+        .task {
+            async let libraryLoad: Void = model.load()
+            async let playlistLoad: Void = playlists.loadTree()
+            if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
+                async let accessLoad: Void = access.load()
+                _ = await (libraryLoad, playlistLoad, accessLoad)
+            } else {
+                _ = await (libraryLoad, playlistLoad)
+            }
+        }
+    }
+
+    private var libraryWorkspace: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("资料库") {
@@ -96,23 +122,7 @@ struct LibraryView: View {
                 } label: { Label("新建", systemImage: "plus") }
             }
         } detail: {
-            if isNowPlayingPresented {
-                NowPlayingView(playback: playback) {
-                    isNowPlayingPresented = false
-                }
-            } else {
-                detailContent
-            }
-        }
-        .task {
-            async let libraryLoad: Void = model.load()
-            async let playlistLoad: Void = playlists.loadTree()
-            if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
-                async let accessLoad: Void = access.load()
-                _ = await (libraryLoad, playlistLoad, accessLoad)
-            } else {
-                _ = await (libraryLoad, playlistLoad)
-            }
+            detailContent
         }
         .toolbar {
             Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
@@ -215,6 +225,12 @@ struct LibraryView: View {
                     .padding(32)
                 }
             }
+        }
+    }
+
+    private func dismissFocusForEmptyQueue(_ queueCount: Int) {
+        if PlaybackViewPolicy.shouldDismissFocus(queueCount: queueCount) {
+            isNowPlayingPresented = false
         }
     }
 

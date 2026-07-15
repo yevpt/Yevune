@@ -26,6 +26,16 @@ final class PlaybackViewPolicyTests: XCTestCase {
         XCTAssertFalse(PlaybackViewPolicy.focusedPageShowsQueue)
     }
 
+    func testFocusedModeHidesManagementChromeAndEveryRootQueueEntry() {
+        let chrome = PlaybackViewPolicy.mainWindowChrome(isFocused: true)
+
+        XCTAssertFalse(chrome.showsNavigation)
+        XCTAssertFalse(chrome.showsManagementToolbar)
+        XCTAssertFalse(chrome.showsTaskDrawer)
+        XCTAssertFalse(chrome.showsRootPlayerBar)
+        XCTAssertFalse(chrome.showsQueueEntry)
+    }
+
     func testFocusedPageUsesOnlyIdentityLyricsAndTransportSections() {
         XCTAssertEqual(
             PlaybackViewPolicy.focusedPageSections,
@@ -35,6 +45,18 @@ final class PlaybackViewPolicyTests: XCTestCase {
 
     func testUnavailableLyricsUsesExplicitChineseMessage() {
         XCTAssertEqual(LyricsState.unavailable.displayText, "暂无歌词")
+    }
+
+    func testEmptyQueueDismissesFocusAndDisablesTransport() {
+        XCTAssertTrue(PlaybackViewPolicy.shouldDismissFocus(queueCount: 0))
+        XCTAssertFalse(PlaybackViewPolicy.isTransportEnabled(queueCount: 0))
+        XCTAssertFalse(PlaybackViewPolicy.shouldDismissFocus(queueCount: 1))
+        XCTAssertTrue(PlaybackViewPolicy.isTransportEnabled(queueCount: 1))
+    }
+
+    func testFocusedLayoutSwitchesFromStackedToSplitAtWidthThreshold() {
+        XCTAssertEqual(PlaybackViewPolicy.focusedLayout(forWidth: 899), .stacked)
+        XCTAssertEqual(PlaybackViewPolicy.focusedLayout(forWidth: 900), .split)
     }
 
     func testQueueClearIsEnabledOnlyWhenAnEntryFollowsCurrentInstance() {
@@ -80,7 +102,7 @@ final class PlaybackViewPolicyTests: XCTestCase {
     }
 
     func testSliderUpperBoundIsFiniteAndSeekingDisabledForInvalidDurations() {
-        let invalidDurations: [TimeInterval] = [.nan, .infinity, -.infinity, 0]
+        let invalidDurations: [TimeInterval] = [.nan, .infinity, -.infinity, -1, 0]
 
         for duration in invalidDurations {
             XCTAssertFalse(PlaybackViewPolicy.canSeek(duration: duration))
@@ -89,6 +111,41 @@ final class PlaybackViewPolicyTests: XCTestCase {
 
         XCTAssertTrue(PlaybackViewPolicy.canSeek(duration: 180))
         XCTAssertEqual(PlaybackViewPolicy.sliderUpperBound(duration: 180), 180)
+    }
+
+    func testSliderValueAlwaysClampsToFiniteSliderRange() {
+        let abnormalElapsed: [TimeInterval] = [.nan, .infinity, -.infinity, -1]
+        let abnormalDuration: [TimeInterval] = [.nan, .infinity, -.infinity, -1, 0]
+
+        for elapsed in abnormalElapsed {
+            XCTAssertEqual(PlaybackViewPolicy.sliderValue(elapsed: elapsed, duration: 180), 0)
+        }
+        for duration in abnormalDuration {
+            let value = PlaybackViewPolicy.sliderValue(elapsed: 65, duration: duration)
+            XCTAssertTrue(value.isFinite)
+            XCTAssertGreaterThanOrEqual(value, 0)
+            XCTAssertLessThanOrEqual(value, PlaybackViewPolicy.sliderUpperBound(duration: duration))
+        }
+        XCTAssertEqual(PlaybackViewPolicy.sliderValue(elapsed: 240, duration: 180), 180)
+    }
+
+    func testMiniPlayerUsesExplicitEmptyBufferingAndErrorPresentations() {
+        XCTAssertEqual(
+            PlaybackViewPolicy.miniPlayerStatus(queueCount: 0, engineState: .idle, errorMessage: nil),
+            .empty("播放队列为空")
+        )
+        XCTAssertEqual(
+            PlaybackViewPolicy.miniPlayerStatus(queueCount: 1, engineState: .buffering, errorMessage: nil),
+            .buffering("正在缓冲")
+        )
+        XCTAssertEqual(
+            PlaybackViewPolicy.miniPlayerStatus(
+                queueCount: 1,
+                engineState: .buffering,
+                errorMessage: "无法播放这首歌曲"
+            ),
+            .error("无法播放这首歌曲")
+        )
     }
 
     func testKnownDurationProducesFormattedProgressAccessibilityValue() {

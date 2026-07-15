@@ -21,13 +21,20 @@ struct MiniPlayerView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(playback.currentTrack?.title ?? "未在播放")
+                    Text(title)
                         .font(.headline)
                         .lineLimit(1)
-                    Text(playback.currentTrack?.artist ?? "未知艺人")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        if case .buffering = status {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .accessibilityHidden(true)
+                        }
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(statusColor)
+                            .lineLimit(1)
+                    }
                 }
                 .accessibilityElement(children: .combine)
 
@@ -54,10 +61,16 @@ struct MiniPlayerView: View {
                     .accessibilityLabel("下一首")
                 }
                 .buttonStyle(.plain)
+                .disabled(!transportEnabled)
 
                 Slider(
                     value: Binding(
-                        get: { draggedTime ?? min(playback.elapsed, sliderUpperBound) },
+                        get: {
+                            PlaybackViewPolicy.sliderValue(
+                                elapsed: draggedTime ?? playback.elapsed,
+                                duration: playback.duration
+                            )
+                        },
                         set: { draggedTime = $0 }
                     ),
                     in: 0...sliderUpperBound,
@@ -76,7 +89,11 @@ struct MiniPlayerView: View {
     }
 
     private var canSeek: Bool {
-        PlaybackViewPolicy.canSeek(duration: playback.duration)
+        transportEnabled && PlaybackViewPolicy.canSeek(duration: playback.duration)
+    }
+
+    private var transportEnabled: Bool {
+        PlaybackViewPolicy.isTransportEnabled(queueCount: playback.queueEntries.count)
     }
 
     private var sliderUpperBound: Double {
@@ -88,6 +105,35 @@ struct MiniPlayerView: View {
             elapsed: draggedTime ?? playback.elapsed,
             duration: playback.duration
         ) ?? "总时长未知"
+    }
+
+    private var status: PlaybackViewPolicy.MiniPlayerStatus {
+        PlaybackViewPolicy.miniPlayerStatus(
+            queueCount: playback.queueEntries.count,
+            engineState: playback.engineState,
+            errorMessage: playback.errorMessage
+        )
+    }
+
+    private var title: String {
+        if case .empty(let message) = status { return message }
+        return playback.currentTrack?.title ?? "未在播放"
+    }
+
+    private var detail: String {
+        switch status {
+        case .ready:
+            playback.currentTrack?.artist ?? "未知艺人"
+        case .empty:
+            "从曲库选择歌曲后即可播放"
+        case .buffering(let message), .error(let message):
+            message
+        }
+    }
+
+    private var statusColor: Color {
+        if case .error = status { return .red }
+        return .secondary
     }
 
     private func finishSeeking(_ isEditing: Bool) {

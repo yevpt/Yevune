@@ -31,6 +31,26 @@ enum LyricsState: Equatable {
 }
 
 enum PlaybackViewPolicy {
+    struct MainWindowChrome: Equatable {
+        let showsNavigation: Bool
+        let showsManagementToolbar: Bool
+        let showsTaskDrawer: Bool
+        let showsRootPlayerBar: Bool
+        let showsQueueEntry: Bool
+    }
+
+    enum FocusedLayout: Equatable {
+        case stacked
+        case split
+    }
+
+    enum MiniPlayerStatus: Equatable {
+        case ready
+        case empty(String)
+        case buffering(String)
+        case error(String)
+    }
+
     enum PrimaryTransportAction: Equatable {
         case play
         case pause
@@ -57,6 +77,28 @@ enum PlaybackViewPolicy {
 
     static let focusedPageShowsQueue = false
     static let focusedPageSections: [FocusedPlaybackSection] = [.identity, .lyrics, .transport]
+
+    static func mainWindowChrome(isFocused: Bool) -> MainWindowChrome {
+        MainWindowChrome(
+            showsNavigation: !isFocused,
+            showsManagementToolbar: !isFocused,
+            showsTaskDrawer: !isFocused,
+            showsRootPlayerBar: !isFocused,
+            showsQueueEntry: !isFocused
+        )
+    }
+
+    static func shouldDismissFocus(queueCount: Int) -> Bool {
+        queueCount == 0
+    }
+
+    static func isTransportEnabled(queueCount: Int) -> Bool {
+        queueCount > 0
+    }
+
+    static func focusedLayout(forWidth width: CGFloat) -> FocusedLayout {
+        width >= 900 ? .split : .stacked
+    }
 
     static func hasUpcomingQueueEntries(queueEntryIDs: [UUID], currentID: UUID?) -> Bool {
         guard let currentID,
@@ -102,6 +144,22 @@ enum PlaybackViewPolicy {
 
     static func sliderUpperBound(duration: TimeInterval) -> TimeInterval {
         canSeek(duration: duration) ? duration : 1
+    }
+
+    static func sliderValue(elapsed: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        guard elapsed.isFinite, elapsed >= 0 else { return 0 }
+        return min(elapsed, sliderUpperBound(duration: duration))
+    }
+
+    static func miniPlayerStatus(
+        queueCount: Int,
+        engineState: PlaybackEngineState,
+        errorMessage: String?
+    ) -> MiniPlayerStatus {
+        guard queueCount > 0 else { return .empty("播放队列为空") }
+        if let errorMessage, !errorMessage.isEmpty { return .error(errorMessage) }
+        if engineState == .buffering { return .buffering("正在缓冲") }
+        return .ready
     }
 
     static func progressAccessibilityValue(elapsed: TimeInterval, duration: TimeInterval) -> String? {

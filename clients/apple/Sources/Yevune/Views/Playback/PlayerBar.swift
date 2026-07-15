@@ -154,7 +154,12 @@ private struct TransportControls: View {
                     .frame(width: 38, alignment: .trailing)
                 Slider(
                     value: Binding(
-                        get: { draggedTime ?? min(playback.elapsed, sliderUpperBound) },
+                        get: {
+                            PlaybackViewPolicy.sliderValue(
+                                elapsed: draggedTime ?? playback.elapsed,
+                                duration: playback.duration
+                            )
+                        },
                         set: { draggedTime = $0 }
                     ),
                     in: 0...sliderUpperBound,

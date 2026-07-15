@@ -2,24 +2,51 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var playback: PlaybackController
+    let lyricsState: LyricsState
     let close: () -> Void
     @State private var draggedTime: Double?
     @FocusState private var backButtonFocused: Bool
+
+    init(
+        playback: PlaybackController,
+        lyricsState: LyricsState = .unavailable,
+        close: @escaping () -> Void
+    ) {
+        self.playback = playback
+        self.lyricsState = lyricsState
+        self.close = close
+    }
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 header
 
-                HStack(alignment: .center, spacing: 52) {
-                    identity
-                        .frame(width: coverColumnWidth(for: geometry.size))
+                Group {
+                    switch PlaybackViewPolicy.focusedLayout(forWidth: geometry.size.width) {
+                    case .split:
+                        HStack(alignment: .center, spacing: 44) {
+                            identity
+                                .frame(width: coverColumnWidth(for: geometry.size))
 
-                    lyrics
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            lyrics
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    case .stacked:
+                        ScrollView {
+                            VStack(spacing: 28) {
+                                identity
+                                    .frame(maxWidth: min(360, geometry.size.width - 48))
+                                lyrics
+                                    .frame(maxWidth: .infinity, minHeight: 220)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .scrollIndicators(.never)
+                    }
                 }
-                .padding(.horizontal, 48)
-                .padding(.vertical, 26)
+                .padding(.horizontal, geometry.size.width < 900 ? 24 : 48)
+                .padding(.vertical, 22)
 
                 transport
                     .padding(.horizontal, 48)
@@ -73,15 +100,19 @@ struct NowPlayingView: View {
                 Text(playback.currentTrack?.title ?? "未在播放")
                     .font(.title.bold())
                     .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(playback.currentTrack?.artist ?? "未知艺人")
                     .font(.title3)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let album = playback.currentTrack?.album, !album.isEmpty {
                     Text(album)
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -90,7 +121,7 @@ struct NowPlayingView: View {
 
     private var lyrics: some View {
         ScrollView {
-            Text(LyricsState.unavailable.displayText)
+            Text(lyricsState.displayText)
                 .font(.system(size: 30, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 280, alignment: .center)
@@ -98,7 +129,7 @@ struct NowPlayingView: View {
         }
         .scrollIndicators(.never)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .accessibilityLabel(LyricsState.unavailable.displayText)
+        .accessibilityLabel(lyricsState.displayText)
     }
 
     private var transport: some View {
@@ -156,7 +187,7 @@ struct NowPlayingView: View {
                     .frame(width: 42, alignment: .trailing)
                 Slider(
                     value: Binding(
-                        get: { draggedTime ?? min(playback.elapsed, sliderUpperBound) },
+                        get: { sliderValue },
                         set: { draggedTime = $0 }
                     ),
                     in: 0...sliderUpperBound,
@@ -189,6 +220,7 @@ struct NowPlayingView: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
         }
+        .disabled(!transportEnabled)
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
     }
@@ -198,11 +230,22 @@ struct NowPlayingView: View {
     }
 
     private var canSeek: Bool {
-        PlaybackViewPolicy.canSeek(duration: playback.duration)
+        transportEnabled && PlaybackViewPolicy.canSeek(duration: playback.duration)
+    }
+
+    private var transportEnabled: Bool {
+        PlaybackViewPolicy.isTransportEnabled(queueCount: playback.queueEntries.count)
     }
 
     private var sliderUpperBound: Double {
         PlaybackViewPolicy.sliderUpperBound(duration: playback.duration)
+    }
+
+    private var sliderValue: Double {
+        PlaybackViewPolicy.sliderValue(
+            elapsed: draggedTime ?? playback.elapsed,
+            duration: playback.duration
+        )
     }
 
     private var progressAccessibilityValue: String {
