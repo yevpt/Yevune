@@ -1,6 +1,35 @@
 import Foundation
 import YevuneCoreFFI
 
+enum FocusedPlaybackSection: Equatable {
+    case identity
+    case lyrics
+    case transport
+}
+
+enum LyricsState: Equatable {
+    case unavailable
+    case loading
+    case unsynced(String)
+    case synced(lines: [String], currentLine: Int)
+    case failed(String)
+
+    var displayText: String {
+        switch self {
+        case .unavailable:
+            "暂无歌词"
+        case .loading:
+            "正在加载歌词…"
+        case .unsynced(let text):
+            text
+        case .synced(let lines, let currentLine):
+            lines.indices.contains(currentLine) ? lines[currentLine] : ""
+        case .failed(let message):
+            message
+        }
+    }
+}
+
 enum PlaybackViewPolicy {
     enum PrimaryTransportAction: Equatable {
         case play
@@ -27,6 +56,7 @@ enum PlaybackViewPolicy {
     }
 
     static let focusedPageShowsQueue = false
+    static let focusedPageSections: [FocusedPlaybackSection] = [.identity, .lyrics, .transport]
 
     static func hasUpcomingQueueEntries(queueEntryIDs: [UUID], currentID: UUID?) -> Bool {
         guard let currentID,

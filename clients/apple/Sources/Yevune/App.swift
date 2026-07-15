@@ -27,5 +27,11 @@ struct YevuneApp: App {
                     .frame(minWidth: 480, minHeight: 380)
             }
         }
+
+        Window("迷你播放器", id: "mini-player") {
+            MiniPlayerView(playback: playback)
+                .frame(width: 360, height: 132)
+        }
+        .windowResizability(.contentSize)
     }
 }

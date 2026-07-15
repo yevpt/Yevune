@@ -3,6 +3,7 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var playback: PlaybackController
     let openNowPlaying: (() -> Void)?
+    @Environment(\.openWindow) private var openWindow
     @State private var queuePresented = false
 
     var body: some View {
@@ -19,6 +20,19 @@ struct PlayerBar: View {
 
             PlaybackOptions(playback: playback, queuePresented: $queuePresented)
                 .frame(width: 260, alignment: .trailing)
+
+            Menu {
+                Button {
+                    openWindow(id: "mini-player")
+                } label: {
+                    Label("打开迷你播放器", systemImage: "pip")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("更多播放选项")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)

@@ -26,6 +26,17 @@ final class PlaybackViewPolicyTests: XCTestCase {
         XCTAssertFalse(PlaybackViewPolicy.focusedPageShowsQueue)
     }
 
+    func testFocusedPageUsesOnlyIdentityLyricsAndTransportSections() {
+        XCTAssertEqual(
+            PlaybackViewPolicy.focusedPageSections,
+            [.identity, .lyrics, .transport]
+        )
+    }
+
+    func testUnavailableLyricsUsesExplicitChineseMessage() {
+        XCTAssertEqual(LyricsState.unavailable.displayText, "暂无歌词")
+    }
+
     func testQueueClearIsEnabledOnlyWhenAnEntryFollowsCurrentInstance() {
         let first = UUID()
         let current = UUID()

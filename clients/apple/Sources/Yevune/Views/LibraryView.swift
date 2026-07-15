@@ -37,6 +37,7 @@ struct LibraryView: View {
     @State private var accessTarget: AccessScopeTarget?
     @State private var importing = false
     @State private var isDropTargeted = false
+    @State private var isNowPlayingPresented = false
 
     // 新建 / 重命名 / 删除 弹窗状态（集中在顶层驱动，节点内菜单只设置这些 @State）。
     @State private var newPlaylistPrompt = false
@@ -95,7 +96,13 @@ struct LibraryView: View {
                 } label: { Label("新建", systemImage: "plus") }
             }
         } detail: {
-            detailContent
+            if isNowPlayingPresented {
+                NowPlayingView(playback: playback) {
+                    isNowPlayingPresented = false
+                }
+            } else {
+                detailContent
+            }
         }
         .task {
             async let libraryLoad: Void = model.load()
@@ -126,7 +133,9 @@ struct LibraryView: View {
                         .frame(maxHeight: 300)
                 }
                 if PlaybackViewPolicy.showsPlayerBar(queueCount: playback.queueEntries.count) {
-                    PlayerBar(playback: playback, openNowPlaying: nil)
+                    PlayerBar(playback: playback) {
+                        isNowPlayingPresented = true
+                    }
                 }
             }
         }
