@@ -32,6 +32,7 @@ enum LyricsState: Equatable {
 
 enum PlaybackViewPolicy {
     enum PlayerBarLayout: Equatable { case compact, regular }
+    enum CompactPlayerBarAccessory: Equatable { case volume, queue, overflow }
     enum FocusedStatus: Equatable { case hidden, buffering(String), error(String) }
     enum FocusedLayout: Equatable {
         case stacked
@@ -71,6 +72,7 @@ enum PlaybackViewPolicy {
 
     static let focusedPageShowsQueue = false
     static let focusedPageSections: [FocusedPlaybackSection] = [.identity, .lyrics, .transport]
+    static let compactPlayerBarAccessories: [CompactPlayerBarAccessory] = [.volume, .queue, .overflow]
 
     static func playerBarLayout(forWidth width: CGFloat) -> PlayerBarLayout {
         width < 1040 ? .compact : .regular

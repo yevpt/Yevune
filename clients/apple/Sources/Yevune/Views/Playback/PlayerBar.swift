@@ -5,6 +5,7 @@ struct PlayerBar: View {
     let openNowPlaying: (() -> Void)?
     @Environment(\.openWindow) private var openWindow
     @State private var queuePresented = false
+    @State private var compactVolumePresented = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,16 +55,67 @@ struct PlayerBar: View {
             TransportControls(playback: playback)
                 .frame(minWidth: 300, maxWidth: .infinity)
 
-            Button { queuePresented.toggle() } label: {
-                Image(systemName: "list.bullet")
+            if PlaybackViewPolicy.compactPlayerBarAccessories.contains(.volume) {
+                Button { compactVolumePresented.toggle() } label: {
+                    Image(systemName: playback.isMuted || playback.volume == 0
+                        ? "speaker.slash.fill"
+                        : "speaker.wave.2.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("调整音量")
+                .help("调整音量")
+                .popover(isPresented: $compactVolumePresented, arrowEdge: .top) {
+                    compactVolumeControl
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("播放队列")
 
-            moreMenu(compact: true)
+            if PlaybackViewPolicy.compactPlayerBarAccessories.contains(.queue) {
+                Button { queuePresented.toggle() } label: {
+                    Image(systemName: "list.bullet")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("播放队列")
+            }
+
+            if PlaybackViewPolicy.compactPlayerBarAccessories.contains(.overflow) {
+                moreMenu(compact: true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private var compactVolumeControl: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("音量", systemImage: "speaker.wave.2.fill")
+                Spacer()
+                Text("\(Int((playback.volume * 100).rounded()))%")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            Slider(
+                value: Binding(
+                    get: { Double(playback.volume) },
+                    set: { playback.setVolume(Float($0)) }
+                ),
+                in: 0...1
+            )
+            .accessibilityLabel("音量")
+            .accessibilityValue("\(Int((playback.volume * 100).rounded()))%")
+
+            Button {
+                playback.toggleMuted()
+            } label: {
+                Label(playback.isMuted ? "取消静音" : "静音", systemImage: playback.isMuted
+                    ? "speaker.wave.2.fill"
+                    : "speaker.slash.fill")
+            }
+            .accessibilityLabel(playback.isMuted ? "取消静音" : "静音")
+        }
+        .padding(16)
+        .frame(width: 240)
     }
 
     @ViewBuilder

@@ -122,6 +122,13 @@ final class PlaybackViewPolicyTests: XCTestCase {
         XCTAssertEqual(PlaybackViewPolicy.playerBarLayout(forWidth: 1100), .regular)
     }
 
+    func testCompactPlayerBarKeepsDiscoverableVolumeQueueAndOverflowAccessories() {
+        XCTAssertEqual(
+            PlaybackViewPolicy.compactPlayerBarAccessories,
+            [.volume, .queue, .overflow]
+        )
+    }
+
     func testFocusedStatusPrefersSafeErrorThenBufferingWithoutQueueLanguage() {
         XCTAssertEqual(
             PlaybackViewPolicy.focusedStatus(engineState: .buffering, errorMessage: nil),

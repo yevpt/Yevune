@@ -62,3 +62,19 @@ Base: `297c456`
 ## Real smoke
 
 The implementer did not execute real UI/audio smoke during the code-fix phase. No runtime claim is made here. The main agent has separately prepared a local Garage + Rust server and two short FLAC fixtures and will record final UI/audio evidence after this commit.
+
+## Final re-review follow-up: compact volume control
+
+The compact 920 pt player bar now keeps a visible speaker button labeled `调整音量`. It opens a 240 pt popover containing a 0...1 volume slider, live percentage, and an explicit mute/unmute button. This preserves width safety without reducing volume control to mute-only behavior. `compactPlayerBarAccessories` is tested and consumed directly by the production compact path for volume, queue, and overflow discovery.
+
+### RED
+
+- `swift test --package-path clients/apple --filter PlaybackViewPolicyTests.testCompactPlayerBarKeepsDiscoverableVolumeQueueAndOverflowAccessories`
+  - Exit 1 before production changes.
+  - Exact compile failure: `PlaybackViewPolicy` had no member `compactPlayerBarAccessories`, and `.volume`, `.queue`, `.overflow` had no contextual type.
+
+### GREEN
+
+- `swift test --package-path clients/apple --filter PlaybackViewPolicyTests`: **17 tests, 0 failures**.
+- `swift test --package-path clients/apple --filter PlaybackControllerTests`: **39 tests, 0 failures**.
+- A fresh full Swift test/build and diff check were run before the follow-up commit; see the final handoff for their exact totals.
