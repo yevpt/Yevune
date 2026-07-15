@@ -24,6 +24,7 @@ enum DeleteTarget: Hashable {
 
 struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
+    @ObservedObject var playback: PlaybackController
     let session: SessionValue
     @State private var query = ""
     @State private var selection: SidebarSelection? = .library
@@ -45,9 +46,10 @@ struct LibraryView: View {
     @State private var renameText = ""
     @State private var deleteTarget: DeleteTarget?
 
-    init(model: LibraryViewModel, session: SessionValue) {
+    init(model: LibraryViewModel, session: SessionValue, playback: PlaybackController) {
         self.model = model
         self.session = session
+        self.playback = playback
         _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
         _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
@@ -117,7 +119,17 @@ struct LibraryView: View {
             Task { await workflow.importFiles(urls) }; return true
         } isTargeted: { isDropTargeted = $0 }
         .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 18).fill(.indigo.opacity(0.2)).overlay { Label("松开以导入音乐", systemImage: "square.and.arrow.down").font(.title2.bold()) } } }
-        .safeAreaInset(edge: .bottom, spacing: 0) { if workflow.isDrawerPresented { TaskDrawerView(model: workflow).frame(maxHeight: 300) } }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                if workflow.isDrawerPresented {
+                    TaskDrawerView(model: workflow)
+                        .frame(maxHeight: 300)
+                }
+                if PlaybackViewPolicy.showsPlayerBar(queueCount: playback.queueEntries.count) {
+                    PlayerBar(playback: playback, openNowPlaying: nil)
+                }
+            }
+        }
         .alert("新建歌单", isPresented: $newPlaylistPrompt) {
             TextField("歌单名称", text: $createText)
             Button("取消", role: .cancel) {}
@@ -207,7 +219,12 @@ struct LibraryView: View {
             AdminAccessRulesView(model: access)
         case .playlist(let id):
             if let detail = playlists.detail, detail.playlist.id == id {
-                PlaylistDetailView(detail: detail, playlists: playlists, media: media)
+                PlaylistDetailView(
+                    detail: detail,
+                    playlists: playlists,
+                    media: media,
+                    playback: playback
+                )
             } else {
                 ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
             }
@@ -264,6 +281,7 @@ struct LibraryView: View {
                         album: selection,
                         model: media,
                         playlists: playlists,
+                        playback: playback,
                         onManageAccess: manageAccess
                     )
                 } else {
@@ -272,9 +290,11 @@ struct LibraryView: View {
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { Task { await model.search(query: query) } }
                         if let result = model.searchResult {
-                            List(result.albums, id: \.id) { album in
-                                Text(album.name)
-                            }
+                            SearchPlaybackResults(
+                                result: result,
+                                playback: playback,
+                                selectAlbum: { selectedAlbumID = $0.id }
+                            )
                         } else if model.isLoading {
                             ProgressView("正在加载曲库…")
                         } else if let errorMessage = model.errorMessage {

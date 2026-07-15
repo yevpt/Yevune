@@ -5,6 +5,7 @@ struct MediaDetailView: View {
     let album: Album
     @ObservedObject var model: MediaViewModel
     @ObservedObject var playlists: PlaylistViewModel
+    @ObservedObject var playback: PlaybackController
     let onManageAccess: ((AccessScopeTarget) -> Void)?
     @State private var importing = false
     @State private var selectedTrackIDs: Set<String> = []
@@ -16,11 +17,13 @@ struct MediaDetailView: View {
         album: Album,
         model: MediaViewModel,
         playlists: PlaylistViewModel,
+        playback: PlaybackController,
         onManageAccess: ((AccessScopeTarget) -> Void)? = nil
     ) {
         self.album = album
         self.model = model
         self.playlists = playlists
+        self.playback = playback
         self.onManageAccess = onManageAccess
     }
 
@@ -53,26 +56,56 @@ struct MediaDetailView: View {
             }
             if let detail = model.detail {
                 List(detail.tracks, id: \.id, selection: $selectedTrackIDs) { track in
-                    Text(track.title)
-                        .contextMenu {
-                            Button("编辑标签…") { tagEditor = model.makeTagEditor(for: track) }
-                            Button("移动…") { tagEditor = model.makeTagEditor(for: track) }
-                            Menu("加入歌单") {
-                                ForEach(playlists.tree?.playlists ?? [], id: \.id) { pl in
-                                    Button(pl.name) { Task { await playlists.addTracks(playlistID: pl.id, songIDs: [track.id]) } }
-                                }
-                            }
-                            if let onManageAccess {
-                                Divider()
-                                Button("设置曲目可见范围") {
-                                    onManageAccess(
-                                        .fromTrack(track)
-                                    )
-                                }
-                            }
-                            Divider()
-                            Button("删除", role: .destructive) { pendingDeletion = [track.id] }
+                    HStack(spacing: 10) {
+                        Button {
+                            playAlbum(detail.tracks, from: track)
+                        } label: {
+                            Image(systemName: playback.currentTrack?.id == track.id && playback.engineState == .playing
+                                ? "speaker.wave.2.fill"
+                                : "play.fill")
+                                .frame(width: 18)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("播放 \(track.title)")
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(track.title)
+                            Text(track.artist ?? album.artist ?? "未知艺人")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if track.duration > 0 {
+                            Text(playbackTime(track.duration))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        playAlbum(detail.tracks, from: track)
+                    }
+                    .contextMenu {
+                        PlaybackTrackActions(track: track, playback: playback)
+                        Divider()
+                        Button("编辑标签…") { tagEditor = model.makeTagEditor(for: track) }
+                        Button("移动…") { tagEditor = model.makeTagEditor(for: track) }
+                        Menu("加入歌单") {
+                            ForEach(playlists.tree?.playlists ?? [], id: \.id) { pl in
+                                Button(pl.name) { Task { await playlists.addTracks(playlistID: pl.id, songIDs: [track.id]) } }
+                            }
+                        }
+                        if let onManageAccess {
+                            Divider()
+                            Button("设置曲目可见范围") {
+                                onManageAccess(
+                                    .fromTrack(track)
+                                )
+                            }
+                        }
+                        Divider()
+                        Button("删除", role: .destructive) { pendingDeletion = [track.id] }
+                    }
                 }
             }
             if !selectedTrackIDs.isEmpty {
@@ -129,5 +162,11 @@ struct MediaDetailView: View {
             Text("将删除 \(pendingDeletion?.count ?? 0) 首曲目，此操作无法撤销。")
         }
         .onChange(of: album.id) { _, _ in selectedTrackIDs.removeAll() }
+    }
+
+    private func playAlbum(_ tracks: [Track], from track: Track) {
+        let ordered = PlaybackViewPolicy.albumPlaybackOrder(tracks)
+        let index = ordered.firstIndex { $0.id == track.id } ?? 0
+        Task { await playback.play(tracks: ordered, startingAt: index) }
     }
 }

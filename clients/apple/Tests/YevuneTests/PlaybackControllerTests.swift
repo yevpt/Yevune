@@ -22,6 +22,19 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.coverURL?.lastPathComponent, "cover-2")
     }
 
+    func testCurrentQueueEntryIdentityDistinguishesDuplicateTracks() async {
+        let duplicate = playbackTrack("duplicate")
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: RecordingPlaybackEngine()
+        )
+
+        await controller.play(tracks: [duplicate, duplicate], startingAt: 1)
+
+        XCTAssertEqual(controller.currentQueueEntryID, controller.queueEntries[1].id)
+        XCTAssertNotEqual(controller.currentQueueEntryID, controller.queueEntries[0].id)
+    }
+
     func testPreviousAndNextLoadAdjacentEntriesDirectly() async {
         let engine = RecordingPlaybackEngine()
         let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)

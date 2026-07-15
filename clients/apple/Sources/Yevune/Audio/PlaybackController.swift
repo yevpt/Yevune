@@ -10,6 +10,7 @@ final class PlaybackController: ObservableObject {
     }
 
     @Published private(set) var queueEntries: [QueueEntry] = []
+    @Published private(set) var currentQueueEntryID: UUID?
     @Published private(set) var currentTrack: Track?
     @Published private(set) var coverURL: URL?
     @Published private(set) var engineState: PlaybackEngineState = .idle
@@ -198,6 +199,7 @@ final class PlaybackController: ObservableObject {
 
     private func synchronizeQueueState() {
         queueEntries = queue.entries
+        currentQueueEntryID = queue.current?.id
         currentTrack = queue.current?.track
         isShuffled = queue.isShuffled
         repeatMode = queue.repeatMode

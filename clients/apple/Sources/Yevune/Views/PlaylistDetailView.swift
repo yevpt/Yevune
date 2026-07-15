@@ -5,6 +5,7 @@ struct PlaylistDetailView: View {
     let detail: PlaylistDetail
     @ObservedObject var playlists: PlaylistViewModel
     @ObservedObject var media: MediaViewModel
+    @ObservedObject var playback: PlaybackController
 
     @State private var nameText = ""
     @State private var commentText = ""
@@ -35,11 +36,33 @@ struct PlaylistDetailView: View {
                     Text("歌单还没有曲目").foregroundStyle(.secondary)
                 }
                 ForEach(Array(detail.tracks.enumerated()), id: \.offset) { index, track in
-                    VStack(alignment: .leading) {
-                        Text(track.title)
-                        Text(track.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Button {
+                            playPlaylist(startingAt: index)
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .frame(width: 18)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("播放 \(track.title)")
+                        VStack(alignment: .leading) {
+                            Text(track.title)
+                            Text(track.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if track.duration > 0 {
+                            Text(playbackTime(track.duration))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        playPlaylist(startingAt: index)
                     }
                     .contextMenu {
+                        PlaybackTrackActions(track: track, playback: playback)
+                        Divider()
                         Button("移出歌单", role: .destructive) {
                             Task { await playlists.removeTrack(playlistID: detail.playlist.id, index: Int64(index)) }
                         }
@@ -52,5 +75,10 @@ struct PlaylistDetailView: View {
             nameText = detail.playlist.name
             commentText = detail.playlist.comment ?? ""
         }
+    }
+
+    private func playPlaylist(startingAt index: Int) {
+        let start = detail.tracks.indices.contains(index) ? index : 0
+        Task { await playback.play(tracks: detail.tracks, startingAt: start) }
     }
 }
