@@ -83,6 +83,14 @@ final class PlaybackController: ObservableObject {
                   generation == self.loadGeneration,
                   self.queue.current?.id == entry.id
             else { return }
+            if self.failedInCycle.contains(entry.id) {
+                await self.advancePastFailedEntries(
+                    message: nil,
+                    expectedGeneration: generation,
+                    stopWhenNoCandidate: false
+                )
+                return
+            }
             await self.load(entry, stopEngine: false)
         }
     }
@@ -287,7 +295,9 @@ final class PlaybackController: ObservableObject {
     ) async {
         guard expectedGeneration == loadGeneration else { return }
         if failedInCycle.count >= queue.entries.count {
-            stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
+            if stopWhenNoCandidate {
+                stopAfterFailedCycle(message: message ?? safePlaybackErrorMessage())
+            }
             return
         }
 

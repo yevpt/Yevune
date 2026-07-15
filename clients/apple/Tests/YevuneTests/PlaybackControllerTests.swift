@@ -367,6 +367,34 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "b"])
     }
 
+    func testRemovingCurrentDoesNotAutomaticallyRetryFailedReplacement() async {
+        let engine = RecordingPlaybackEngine()
+        let resolver = RecordingMediaResolver()
+        let controller = PlaybackController(resolver: resolver, engine: engine)
+        await controller.play(tracks: [playbackTrack("a"), playbackTrack("b")], startingAt: 0)
+
+        engine.send(.failed(message: "a1"))
+        await controller.waitForPendingTransitionForTesting()
+        engine.send(.failed(message: "a2"))
+        await controller.waitForPendingTransitionForTesting()
+        controller.removeFromQueue(id: controller.queueEntries[1].id)
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(controller.queueEntries.map(\.track.id), ["a"])
+        XCTAssertEqual(controller.currentTrack?.id, "a")
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b"])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "a", "b"])
+        XCTAssertEqual(engine.stopCalls, 1)
+
+        await controller.playQueueEntry(id: controller.queueEntries[0].id)
+        engine.send(.failed(message: "manual retry refresh"))
+        await controller.waitForPendingTransitionForTesting()
+
+        XCTAssertEqual(controller.currentTrack?.id, "a")
+        XCTAssertEqual(resolver.resolvedTrackIDs, ["a", "a", "b", "a", "a"])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["a", "a", "b", "a", "a"])
+    }
+
     func testRemovingOnlyCurrentStopsAndEmptiesQueue() async {
         let engine = RecordingPlaybackEngine()
         let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)
