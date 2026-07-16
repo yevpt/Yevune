@@ -259,6 +259,33 @@ async fn media_list_albums() {
 }
 
 #[tokio::test]
+async fn newest_album_pagination_is_stable_when_timestamps_tie() {
+    let (index, _dir) = temp_index().await;
+    let media = index.media();
+    let mut ids = Vec::new();
+    for name in ["Album 1", "Album 2", "Album 3", "Album 4", "Album 5"] {
+        ids.push(media.upsert_album(name, None, None, None).await.unwrap());
+    }
+    sqlx::query("UPDATE albums SET added_at = '2026-07-16 12:00:00'")
+        .execute(index.pool())
+        .await
+        .unwrap();
+
+    let mut paged = Vec::new();
+    for offset in [0, 2, 4] {
+        paged.extend(
+            media
+                .album_ids_for_list(1, "newest", offset, 2, None, None, None)
+                .await
+                .unwrap(),
+        );
+    }
+    ids.reverse();
+
+    assert_eq!(paged, ids, "同一入库时间必须用主键稳定打破并列");
+}
+
+#[tokio::test]
 async fn media_search_命中曲目与专辑() {
     let (index, _dir) = temp_index().await;
     let media = index.media();

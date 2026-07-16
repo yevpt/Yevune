@@ -452,7 +452,7 @@ impl<'a> MediaRepo<'a> {
                     .await
             }
             "newest" => sqlx::query_scalar(
-                "SELECT id FROM albums ORDER BY added_at DESC LIMIT ? OFFSET ?",
+                "SELECT id FROM albums ORDER BY added_at DESC, id DESC LIMIT ? OFFSET ?",
             )
             .bind(limit)
             .bind(offset)
