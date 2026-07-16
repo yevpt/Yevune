@@ -50,7 +50,7 @@ struct BatchTagEditorView: View {
     private var tagUpdate: TagUpdate {
         TagUpdate(
             title: value(title), album: value(albumName), artist: value(artist), genre: value(genre),
-            year: UInt32(year), track: UInt32(track), discNumber: UInt32(discNumber)
+            year: UInt32(year), track: UInt32(track), discNumber: UInt32(discNumber), clearFields: []
         )
     }
 

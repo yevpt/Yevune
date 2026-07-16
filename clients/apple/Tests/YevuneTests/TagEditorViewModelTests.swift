@@ -26,7 +26,7 @@ final class TagEditorViewModelTests: XCTestCase {
         await model.save()
 
         XCTAssertEqual(client.tagUpdates, [
-            .init(id: "track:1", update: TagUpdate(title: "Retitled", album: nil, artist: nil, genre: nil, year: 2025, track: nil, discNumber: nil)),
+            .init(id: "track:1", update: TagUpdate(title: "Retitled", album: nil, artist: nil, genre: nil, year: 2025, track: nil, discNumber: nil, clearFields: [])),
         ])
         XCTAssertTrue(model.didSave)
         XCTAssertNil(model.errorMessage)
@@ -48,7 +48,7 @@ final class TagEditorViewModelTests: XCTestCase {
     func testBatchTagUpdateContinuesAfterFailuresAndRefreshes() async {
         let client = RecordingTrackClient(failingTrackIDs: ["track:2"])
         let model = MediaViewModel(client: client)
-        let update = TagUpdate(title: "Shared", album: nil, artist: nil, genre: nil, year: nil, track: nil, discNumber: nil)
+        let update = TagUpdate(title: "Shared", album: nil, artist: nil, genre: nil, year: nil, track: nil, discNumber: nil, clearFields: [])
 
         await model.updateTags(ids: ["track:1", "track:2"], update: update, album: albumFixture())
 
