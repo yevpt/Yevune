@@ -8,6 +8,33 @@ final class TagEditorViewModelTests: XCTestCase {
         XCTAssertNil(TagDraft(track: trackFixture()).makeUpdate())
     }
 
+    func testUneditedTitleWithOriginalOuterWhitespaceStaysUnchanged() {
+        var track = trackFixture()
+        track.title = "  Song  "
+        let draft = TagDraft(track: track)
+
+        XCTAssertFalse(draft.isDirty)
+        XCTAssertNil(draft.makeUpdate())
+    }
+
+    func testUneditedOptionalTextWithOriginalOuterWhitespaceStaysUnchanged() {
+        var track = trackFixture()
+        track.album = "  Album  "
+        track.artist = "  Artist  "
+        track.genre = "  Rock  "
+        let draft = TagDraft(track: track)
+
+        XCTAssertFalse(draft.isDirty)
+        XCTAssertNil(draft.makeUpdate())
+    }
+
+    func testUneditedWhitespaceOnlyOptionalRetainsNonNilIdentityWithoutClearing() {
+        var track = trackFixture()
+        track.album = "   "
+
+        XCTAssertNil(TagDraft(track: track).makeUpdate())
+    }
+
     func testChangedSingleDraftTrimsAndProducesOnlyChangedValues() throws {
         var draft = TagDraft(track: trackFixture())
         draft.title = "  Retitled  "

@@ -169,10 +169,10 @@ private struct OriginalTags {
     let discNumber: UInt32?
 
     init(track: Track) {
-        title = track.title
-        album = track.album
-        artist = track.artist
-        genre = track.genre
+        title = trimmed(track.title)
+        album = track.album.map(trimmed)
+        artist = track.artist.map(trimmed)
+        genre = track.genre.map(trimmed)
         year = track.year
         self.track = track.track
         discNumber = track.discNumber
@@ -232,7 +232,10 @@ private func numericError(
 
 private func textIntent(_ text: String, original: String?) -> FieldIntent {
     let value = trimmed(text)
-    if value.isEmpty { return original == nil ? .keep : .clear }
+    if value.isEmpty {
+        guard let original else { return .keep }
+        return original.isEmpty ? .keep : .clear
+    }
     return value == original ? .keep : .setText(value)
 }
 
