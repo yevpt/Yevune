@@ -148,28 +148,26 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.password, "")
     }
 
-    func testLibraryLoadAndSearchPublishCoreResults() async {
-        let album = Album(
-            id: "al-1",
-            name: "Blue",
-            artist: "Band",
-            artistId: "ar-1",
-            coverArt: nil,
-            songCount: 1,
-            duration: 120,
-            year: nil,
-            genre: nil,
-            created: nil
+    func testLibraryAppGraphSharesClientAndBrowseModels() {
+        let client = FakeMusicClient()
+        let graph = LibraryAppGraph(client: client)
+
+        assertSameClient(client, in: graph.browse)
+        assertSameClient(client, in: graph.search)
+        assertSameClient(client, in: graph.artistDetail)
+        assertSameClient(client, in: graph.workflow)
+        XCTAssertTrue(workflowLibrary(in: graph.workflow) === graph.browse)
+    }
+
+    func testLibraryAppGraphConstructsManagementActionsOnlyForAdministrators() {
+        XCTAssertEqual(
+            LibraryPresentation(width: 1_280, isAdmin: false).managementActions.count,
+            0
         )
-        let model = LibraryViewModel(client: FakeMusicClient(album: album))
-
-        await model.load()
-        await model.search(query: "Blue")
-
-        XCTAssertEqual(model.albums, [album])
-        XCTAssertEqual(model.searchResult?.albums, [album])
-        XCTAssertNil(model.errorMessage)
-        XCTAssertEqual(model.album(id: "al-1"), album)
+        XCTAssertEqual(
+            LibraryPresentation(width: 1_280, isAdmin: true).managementActions.count,
+            3
+        )
     }
 
     func testUploadPublishesCallbackProgress() async {
@@ -226,6 +224,20 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.imports.first?.state, .succeeded)
         XCTAssertNotNil(model.scanError)
     }
+}
+
+private func assertSameClient(
+    _ expected: any MusicClientProviding,
+    in model: Any,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    let client = Mirror(reflecting: model).descendant("client") as? any MusicClientProviding
+    XCTAssertTrue(client as AnyObject === expected as AnyObject, file: file, line: line)
+}
+
+private func workflowLibrary(in model: LibraryWorkflowViewModel) -> LibraryBrowseViewModel? {
+    Mirror(reflecting: model).descendant("library") as? LibraryBrowseViewModel
 }
 
 @MainActor

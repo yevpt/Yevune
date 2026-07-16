@@ -2,6 +2,28 @@ import SwiftUI
 import YevuneCoreFFI
 import UniformTypeIdentifiers
 
+func coverArtID(for album: Album) -> String? {
+    album.coverArt
+}
+
+func loadCoverURL(for album: Album, client: any MusicClientProviding) async -> URL? {
+    guard let coverArtID = coverArtID(for: album),
+          let urlString = try? await client.coverArtURL(id: coverArtID, size: 300) else {
+        return nil
+    }
+    return URL(string: urlString)
+}
+
+func playbackTime(_ seconds: UInt32) -> String {
+    playbackTime(TimeInterval(seconds))
+}
+
+func playbackTime(_ seconds: TimeInterval) -> String {
+    guard seconds.isFinite, seconds > 0 else { return "0:00" }
+    let total = Int(seconds.rounded(.down))
+    return String(format: "%d:%02d", total / 60, total % 60)
+}
+
 enum SidebarSelection: Hashable {
     case library
     case playlist(String)
@@ -23,15 +45,16 @@ enum DeleteTarget: Hashable {
 }
 
 struct LibraryView: View {
-    @ObservedObject var model: LibraryViewModel
+    let client: any MusicClientProviding
+    @ObservedObject var browse: LibraryBrowseViewModel
+    @ObservedObject var search: LibrarySearchViewModel
+    @ObservedObject var artistDetail: ArtistDetailViewModel
+    @ObservedObject var workflow: LibraryWorkflowViewModel
     @ObservedObject var playback: PlaybackController
     let session: SessionValue
     let onLogout: () -> Void
-    @State private var query = ""
     @State private var selection: SidebarSelection? = .library
-    @State private var selectedAlbumID: String?
     @StateObject private var media: MediaViewModel
-    @StateObject private var workflow: LibraryWorkflowViewModel
     @StateObject private var playlists: PlaylistViewModel
     @StateObject private var admin: AdminViewModel
     @StateObject private var access: AccessControlViewModel
@@ -49,20 +72,27 @@ struct LibraryView: View {
     @State private var deleteTarget: DeleteTarget?
 
     init(
-        model: LibraryViewModel,
+        client: any MusicClientProviding,
+        browse: LibraryBrowseViewModel,
+        search: LibrarySearchViewModel,
+        artistDetail: ArtistDetailViewModel,
+        workflow: LibraryWorkflowViewModel,
         session: SessionValue,
         playback: PlaybackController,
         onLogout: @escaping () -> Void
     ) {
-        self.model = model
+        self.client = client
+        self.browse = browse
+        self.search = search
+        self.artistDetail = artistDetail
+        self.workflow = workflow
         self.session = session
         self.playback = playback
         self.onLogout = onLogout
-        _media = StateObject(wrappedValue: MediaViewModel(client: model.clientForViews))
-        _workflow = StateObject(wrappedValue: LibraryWorkflowViewModel(client: model.clientForViews, library: model))
-        _playlists = StateObject(wrappedValue: PlaylistViewModel(client: model.clientForViews))
-        _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: model.clientForViews))
-        _access = StateObject(wrappedValue: AccessControlViewModel(client: model.clientForViews))
+        _media = StateObject(wrappedValue: MediaViewModel(client: client))
+        _playlists = StateObject(wrappedValue: PlaylistViewModel(client: client))
+        _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: client))
+        _access = StateObject(wrappedValue: AccessControlViewModel(client: client))
     }
 
     var body: some View {
@@ -80,13 +110,12 @@ struct LibraryView: View {
             }
         }
         .task {
-            async let libraryLoad: Void = model.load()
             async let playlistLoad: Void = playlists.loadTree()
             if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
                 async let accessLoad: Void = access.load()
-                _ = await (libraryLoad, playlistLoad, accessLoad)
+                _ = await (playlistLoad, accessLoad)
             } else {
-                _ = await (libraryLoad, playlistLoad)
+                _ = await playlistLoad
             }
         }
     }
@@ -132,9 +161,12 @@ struct LibraryView: View {
             detailContent
         }
         .toolbar {
-            Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
-            Button { Task { await workflow.scanLibrary() } } label: { Label("扫描曲库", systemImage: "arrow.clockwise") }
-            Button { workflow.isDrawerPresented.toggle() } label: { Label("任务", systemImage: "tray.full") }
+            ForEach(
+                Array(LibraryViewPolicy.managementActions(isAdmin: session.admin).enumerated()),
+                id: \.offset
+            ) { _, action in
+                managementButton(action)
+            }
             Menu {
                 Button("退出登录", role: .destructive, action: onLogout)
             } label: {
@@ -150,7 +182,8 @@ struct LibraryView: View {
         .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 18).fill(.indigo.opacity(0.2)).overlay { Label("松开以导入音乐", systemImage: "square.and.arrow.down").font(.title2.bold()) } } }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                if workflow.isDrawerPresented {
+                if LibraryViewPolicy.managementActions(isAdmin: session.admin).contains(.showTasks),
+                   workflow.isDrawerPresented {
                     TaskDrawerView(model: workflow)
                         .frame(maxHeight: 300)
                 }
@@ -266,147 +299,33 @@ struct LibraryView: View {
                 ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
             }
         case .library, .none:
-            libraryDetail
+            LibraryBrowserView(
+                browse: browse,
+                search: search,
+                artistDetail: artistDetail,
+                client: client,
+                playback: playback,
+                session: session,
+                onImportMusic: { importing = true },
+                onScanLibrary: { Task { await workflow.scanLibrary() } },
+                onShowTasks: { workflow.isDrawerPresented.toggle() }
+            )
         }
     }
 
-    /// 资料库详情：浏览工具条 + 专辑网格/列表（含「新增」标记）+ 搜索 + 专辑详情，保留原有全部行为。
-    @ViewBuilder private var libraryDetail: some View {
-        VStack(spacing: 0) {
-            browseToolbar
-            Divider()
-            HStack(spacing: 0) {
-                Group {
-                    if model.viewMode == .grid {
-                        AlbumGridView(
-                            albums: model.albums,
-                            client: model.clientForViews,
-                            newAlbumIDs: workflow.newAlbumIDs,
-                            onSelect: { selectedAlbumID = $0.id },
-                            onManageAccess: manageAccess
-                        )
-                    } else {
-                        List(model.albums, id: \.id, selection: $selectedAlbumID) { album in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text(album.name).font(.headline)
-                                    if workflow.newAlbumIDs.contains(album.id) {
-                                        Text("新增").font(.caption2).padding(.horizontal, 5).background(.green.opacity(0.2), in: Capsule())
-                                    }
-                                }
-                                Text(album.artist ?? "未知艺人")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(album.id)
-                            .contextMenu {
-                                if let manageAccess {
-                                    Button("设置专辑可见范围") {
-                                        manageAccess(.fromAlbum(album))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .frame(minWidth: 260, idealWidth: 340, maxWidth: model.viewMode == .grid ? .infinity : 320)
-
-                Divider()
-
-                if let selection = model.album(id: selectedAlbumID) {
-                    MediaDetailView(
-                        album: selection,
-                        model: media,
-                        playlists: playlists,
-                        playback: playback,
-                        onManageAccess: manageAccess
-                    )
-                } else {
-                    VStack(spacing: 18) {
-                        TextField("搜索艺人、专辑或曲目", text: $query)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { Task { await model.search(query: query) } }
-                        if let result = model.searchResult {
-                            SearchPlaybackResults(
-                                result: result,
-                                playback: playback,
-                                selectAlbum: { selectedAlbumID = $0.id }
-                            )
-                        } else if model.isLoading {
-                            ProgressView("正在加载曲库…")
-                        } else if let errorMessage = model.errorMessage {
-                            Text(errorMessage).foregroundStyle(.red)
-                        } else {
-                            Text("选择专辑以查看曲目")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
-                }
+    @ViewBuilder private func managementButton(_ action: LibraryManagementAction) -> some View {
+        switch action {
+        case .importMusic:
+            Button { importing = true } label: { Label("导入音乐", systemImage: "plus") }
+        case .scanLibrary:
+            Button { Task { await workflow.scanLibrary() } } label: {
+                Label("扫描曲库", systemImage: "arrow.clockwise")
+            }
+        case .showTasks:
+            Button { workflow.isDrawerPresented.toggle() } label: {
+                Label("任务", systemImage: "tray.full")
             }
         }
-        .task { await model.loadGenres() }
-    }
-
-    @ViewBuilder private var browseToolbar: some View {
-        HStack(spacing: 16) {
-            Picker("排序", selection: $model.sort) {
-                Text("最近入库").tag(AlbumSort.newest)
-                Text("按专辑名").tag(AlbumSort.alphabeticalByName)
-                Text("按艺人名").tag(AlbumSort.alphabeticalByArtist)
-                Text("最常播放").tag(AlbumSort.frequent)
-                Text("最近播放").tag(AlbumSort.recent)
-            }
-            .frame(maxWidth: 160)
-            .disabled(model.genreFilter != nil || model.yearFilterEnabled)
-
-            Picker("流派", selection: genreBinding) {
-                Text("全部").tag(String?.none)
-                ForEach(model.genres, id: \.value) { genre in
-                    Text(genre.value).tag(String?.some(genre.value))
-                }
-            }
-            .frame(maxWidth: 160)
-
-            Toggle("按年份", isOn: $model.yearFilterEnabled)
-            if model.yearFilterEnabled {
-                Stepper("从 \(model.fromYear)", value: yearBinding(\.fromYear), in: 1900...2100)
-                Stepper("到 \(model.toYear)", value: yearBinding(\.toYear), in: 1900...2100)
-            }
-
-            Spacer()
-
-            if AccessManagementPolicy.allowsEntry(isAdmin: session.admin), let genre = model.genreFilter {
-                Button {
-                    accessTarget = .fromGenre(genre)
-                } label: {
-                    Label("可见范围", systemImage: "eye")
-                }
-            }
-
-            Picker("视图", selection: $model.viewMode) {
-                ForEach(LibraryViewMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 160)
-        }
-        .padding()
-        .onChange(of: model.sort) { _, _ in Task { await model.load() } }
-        .onChange(of: model.genreFilter) { _, _ in Task { await model.load() } }
-        .onChange(of: model.yearFilterEnabled) { _, _ in Task { await model.load() } }
-        .onChange(of: model.fromYear) { _, _ in if model.yearFilterEnabled { Task { await model.load() } } }
-        .onChange(of: model.toYear) { _, _ in if model.yearFilterEnabled { Task { await model.load() } } }
-    }
-
-    private var genreBinding: Binding<String?> {
-        Binding(get: { model.genreFilter }, set: { model.genreFilter = $0 })
-    }
-
-    private func yearBinding(_ keyPath: ReferenceWritableKeyPath<LibraryViewModel, UInt32>) -> Binding<UInt32> {
-        Binding(get: { model[keyPath: keyPath] }, set: { model[keyPath: keyPath] = $0 })
     }
 
     private var renameIsPresented: Binding<Bool> {
@@ -419,84 +338,5 @@ struct LibraryView: View {
 
     private var accessTargetIsPresented: Binding<Bool> {
         Binding(get: { accessTarget != nil }, set: { if !$0 { accessTarget = nil } })
-    }
-
-    private var manageAccess: ((AccessScopeTarget) -> Void)? {
-        AccessManagementPolicy.allowsEntry(isAdmin: session.admin) ? { accessTarget = $0 } : nil
-    }
-}
-
-// MARK: - 歌单树递归视图
-
-struct PlaylistTreeOutline: View {
-    @ObservedObject var playlists: PlaylistViewModel
-    let onRename: (RenameTarget, String) -> Void
-    let onDelete: (DeleteTarget) -> Void
-
-    var body: some View {
-        if let tree = playlists.tree {
-            let roots = tree.folders.filter { $0.parentId == nil }
-            ForEach(roots, id: \.id) { folder in
-                FolderNode(folder: folder, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
-            }
-            ForEach(tree.playlists.filter { $0.folderId == nil }, id: \.id) { playlist in
-                PlaylistLeaf(playlist: playlist, playlists: playlists, onRename: onRename, onDelete: onDelete)
-            }
-        } else {
-            Text("加载中…").foregroundStyle(.secondary)
-        }
-    }
-}
-
-struct FolderNode: View {
-    let folder: PlaylistFolder
-    let tree: PlaylistTree
-    @ObservedObject var playlists: PlaylistViewModel
-    let onRename: (RenameTarget, String) -> Void
-    let onDelete: (DeleteTarget) -> Void
-
-    var body: some View {
-        DisclosureGroup {
-            ForEach(tree.folders.filter { $0.parentId == folder.id }, id: \.id) { child in
-                FolderNode(folder: child, tree: tree, playlists: playlists, onRename: onRename, onDelete: onDelete)
-            }
-            ForEach(tree.playlists.filter { $0.folderId == folder.id }, id: \.id) { playlist in
-                PlaylistLeaf(playlist: playlist, playlists: playlists, onRename: onRename, onDelete: onDelete)
-            }
-        } label: {
-            Label(folder.name, systemImage: "folder")
-                .contextMenu {
-                    Button("重命名") { onRename(.folder(folder.id), folder.name) }
-                    Menu("移动到…") {
-                        Button("根目录") { Task { await playlists.moveFolder(id: folder.id, parentID: nil) } }
-                        ForEach(playlists.tree?.folders ?? [], id: \.id) { target in
-                            Button(target.name) { Task { await playlists.moveFolder(id: folder.id, parentID: target.id) } }
-                        }
-                    }
-                    Button("删除", role: .destructive) { onDelete(.folder(folder.id)) }
-                }
-        }
-    }
-}
-
-struct PlaylistLeaf: View {
-    let playlist: Playlist
-    @ObservedObject var playlists: PlaylistViewModel
-    let onRename: (RenameTarget, String) -> Void
-    let onDelete: (DeleteTarget) -> Void
-
-    var body: some View {
-        Label(playlist.name, systemImage: "music.note.list")
-            .tag(SidebarSelection.playlist(playlist.id))
-            .contextMenu {
-                Button("重命名") { onRename(.playlist(playlist.id), playlist.name) }
-                Menu("移动到…") {
-                    Button("根目录") { Task { await playlists.move(playlistID: playlist.id, folderID: nil) } }
-                    ForEach(playlists.tree?.folders ?? [], id: \.id) { target in
-                        Button(target.name) { Task { await playlists.move(playlistID: playlist.id, folderID: target.id) } }
-                    }
-                }
-                Button("删除", role: .destructive) { onDelete(.playlist(playlist.id)) }
-            }
     }
 }

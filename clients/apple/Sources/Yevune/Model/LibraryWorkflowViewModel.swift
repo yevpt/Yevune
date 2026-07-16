@@ -22,18 +22,11 @@ final class LibraryWorkflowViewModel: ObservableObject {
     @Published private(set) var newAlbumIDs: Set<String> = []
 
     private let client: any MusicClientProviding
-    private let reloadLibrary: @MainActor () async -> Void
+    private let library: LibraryBrowseViewModel
 
     init(client: any MusicClientProviding, library: LibraryBrowseViewModel) {
         self.client = client
-        reloadLibrary = { await library.reload() }
-    }
-
-    // Transitional initializer for the existing library view. Task 7 replaces that
-    // app graph with LibraryBrowseViewModel, after which this can be removed.
-    init(client: any MusicClientProviding, library: LibraryViewModel) {
-        self.client = client
-        reloadLibrary = { await library.load() }
+        self.library = library
     }
 
     func importFiles(_ urls: [URL]) async {
@@ -72,7 +65,7 @@ final class LibraryWorkflowViewModel: ObservableObject {
             let uploadedAlbums = imports.compactMap { $0.state == .succeeded ? $0.track?.albumId : nil }
             let scannedAlbums = result.changes.compactMap { $0.action == .added ? $0.track.albumId : nil }
             newAlbumIDs = Set(uploadedAlbums + scannedAlbums)
-            await reloadLibrary()
+            await library.reload()
         } catch { scanError = error.localizedDescription }
     }
 

@@ -1,16 +1,34 @@
 import SwiftUI
 
+@MainActor
+final class LibraryAppGraph: ObservableObject {
+    let client: any MusicClientProviding
+    let browse: LibraryBrowseViewModel
+    let search: LibrarySearchViewModel
+    let artistDetail: ArtistDetailViewModel
+    let workflow: LibraryWorkflowViewModel
+
+    init(client: any MusicClientProviding) {
+        self.client = client
+        let browse = LibraryBrowseViewModel(client: client)
+        self.browse = browse
+        search = LibrarySearchViewModel(client: client)
+        artistDetail = ArtistDetailViewModel(client: client)
+        workflow = LibraryWorkflowViewModel(client: client, library: browse)
+    }
+}
+
 @main
 struct YevuneApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @StateObject private var login: LoginViewModel
-    @StateObject private var library: LibraryViewModel
+    @StateObject private var library: LibraryAppGraph
     @StateObject private var playback: PlaybackController
 
     init() {
         let client = CoreMusicClient()
         _login = StateObject(wrappedValue: LoginViewModel(client: client))
-        _library = StateObject(wrappedValue: LibraryViewModel(client: client))
+        _library = StateObject(wrappedValue: LibraryAppGraph(client: client))
         _playback = StateObject(wrappedValue: PlaybackController(
             resolver: MusicClientMediaResolver(client: client),
             engine: AVQueuePlaybackEngine(),
@@ -23,7 +41,11 @@ struct YevuneApp: App {
         WindowGroup {
             if let session = login.session {
                 LibraryView(
-                    model: library,
+                    client: library.client,
+                    browse: library.browse,
+                    search: library.search,
+                    artistDetail: library.artistDetail,
+                    workflow: library.workflow,
                     session: session,
                     playback: playback,
                     onLogout: {
