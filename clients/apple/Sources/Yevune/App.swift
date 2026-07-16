@@ -18,17 +18,61 @@ final class LibraryAppGraph: ObservableObject {
     }
 }
 
+@MainActor
+final class AuthenticatedLibraryGraphOwner: ObservableObject {
+    let graph: LibraryAppGraph
+
+    init(client: any MusicClientProviding, session _: SessionValue) {
+        graph = LibraryAppGraph(client: client)
+    }
+}
+
+private struct AuthenticatedLibraryRoot: View {
+    @StateObject private var owner: AuthenticatedLibraryGraphOwner
+    @ObservedObject var playback: PlaybackController
+    let session: SessionValue
+    let onLogout: () -> Void
+
+    init(
+        client: any MusicClientProviding,
+        session: SessionValue,
+        playback: PlaybackController,
+        onLogout: @escaping () -> Void
+    ) {
+        _owner = StateObject(
+            wrappedValue: AuthenticatedLibraryGraphOwner(client: client, session: session)
+        )
+        self.session = session
+        self.playback = playback
+        self.onLogout = onLogout
+    }
+
+    var body: some View {
+        LibraryView(
+            client: owner.graph.client,
+            browse: owner.graph.browse,
+            search: owner.graph.search,
+            artistDetail: owner.graph.artistDetail,
+            workflow: owner.graph.workflow,
+            session: session,
+            playback: playback,
+            onLogout: onLogout
+        )
+        .frame(minWidth: 920, minHeight: 620)
+    }
+}
+
 @main
 struct YevuneApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @StateObject private var login: LoginViewModel
-    @StateObject private var library: LibraryAppGraph
     @StateObject private var playback: PlaybackController
+    private let client: CoreMusicClient
 
     init() {
         let client = CoreMusicClient()
+        self.client = client
         _login = StateObject(wrappedValue: LoginViewModel(client: client))
-        _library = StateObject(wrappedValue: LibraryAppGraph(client: client))
         _playback = StateObject(wrappedValue: PlaybackController(
             resolver: MusicClientMediaResolver(client: client),
             engine: AVQueuePlaybackEngine(),
@@ -40,12 +84,8 @@ struct YevuneApp: App {
     var body: some Scene {
         WindowGroup {
             if let session = login.session {
-                LibraryView(
-                    client: library.client,
-                    browse: library.browse,
-                    search: library.search,
-                    artistDetail: library.artistDetail,
-                    workflow: library.workflow,
+                AuthenticatedLibraryRoot(
+                    client: client,
                     session: session,
                     playback: playback,
                     onLogout: {
@@ -53,7 +93,6 @@ struct YevuneApp: App {
                         Task { await login.logout() }
                     }
                 )
-                    .frame(minWidth: 920, minHeight: 620)
             } else {
                 LoginView(model: login)
                     .frame(minWidth: 480, minHeight: 380)

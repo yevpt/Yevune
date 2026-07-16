@@ -159,6 +159,36 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertTrue(workflowLibrary(in: graph.workflow) === graph.browse)
     }
 
+    func testAuthenticatedLibraryGraphOwnersIsolateConsecutiveSessions() async {
+        let client = FakeMusicClient()
+        let session = SessionValue(server: "http://localhost:4533", user: "same-user", admin: true)
+        let first = AuthenticatedLibraryGraphOwner(client: client, session: session)
+
+        await first.graph.browse.reload()
+        first.graph.search.setInput("previous search")
+        first.graph.artistDetail.load(artistID: "artist-previous")
+        await waitUntil { first.graph.artistDetail.detail != nil }
+        await first.graph.workflow.importFiles([URL(fileURLWithPath: "/tmp/Previous.flac")])
+
+        let second = AuthenticatedLibraryGraphOwner(client: client, session: session)
+
+        XCTAssertFalse(first.graph === second.graph)
+        XCTAssertFalse(first.graph.browse.albums.isEmpty)
+        XCTAssertFalse(first.graph.search.input.isEmpty)
+        XCTAssertNotNil(first.graph.artistDetail.detail)
+        XCTAssertFalse(first.graph.workflow.imports.isEmpty)
+        XCTAssertTrue(second.graph.browse.albums.isEmpty)
+        XCTAssertEqual(second.graph.search.phase, .idle)
+        XCTAssertTrue(second.graph.search.input.isEmpty)
+        XCTAssertNil(second.graph.artistDetail.detail)
+        XCTAssertTrue(second.graph.workflow.imports.isEmpty)
+        assertSameClient(client, in: second.graph.browse)
+        assertSameClient(client, in: second.graph.search)
+        assertSameClient(client, in: second.graph.artistDetail)
+        assertSameClient(client, in: second.graph.workflow)
+        XCTAssertTrue(workflowLibrary(in: second.graph.workflow) === second.graph.browse)
+    }
+
     func testLibraryAppGraphConstructsManagementActionsOnlyForAdministrators() {
         XCTAssertEqual(
             LibraryPresentation(width: 1_280, isAdmin: false).managementActions.count,
@@ -223,6 +253,17 @@ final class LoginViewModelTests: XCTestCase {
         await model.importFiles([URL(fileURLWithPath: "/tmp/Song.flac")])
         XCTAssertEqual(model.imports.first?.state, .succeeded)
         XCTAssertNotNil(model.scanError)
+    }
+
+    private func waitUntil(
+        _ condition: @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0 ..< 1_000 where !condition() {
+            await Task.yield()
+        }
+        XCTAssertTrue(condition(), "Condition did not become true", file: file, line: line)
     }
 }
 
@@ -353,6 +394,20 @@ private actor FakeMusicClient: MusicClientProviding {
         lastSearchPageRequest = request
         guard let searchPageResponse else { throw CocoaError(.featureUnsupported) }
         return searchPageResponse
+    }
+
+    func getArtist(id: String) async throws -> ArtistDetail {
+        ArtistDetail(
+            artist: Artist(
+                id: id,
+                name: id,
+                sortName: nil,
+                coverArt: nil,
+                musicBrainzId: nil,
+                albumCount: 0
+            ),
+            albums: []
+        )
     }
 
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
