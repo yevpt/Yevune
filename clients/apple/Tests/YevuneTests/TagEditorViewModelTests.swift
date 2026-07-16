@@ -4,35 +4,212 @@ import XCTest
 
 @MainActor
 final class TagEditorViewModelTests: XCTestCase {
-    func testInitWithTrackPrefillsEditableFieldsAndMoveKey() {
-        let model = TagEditorViewModel(client: RecordingTrackClient(), track: trackFixture())
-
-        XCTAssertEqual(model.title, "Song")
-        XCTAssertEqual(model.album, "Album")
-        XCTAssertEqual(model.artist, "Artist")
-        XCTAssertEqual(model.genre, "Rock")
-        XCTAssertEqual(model.year, "2024")
-        XCTAssertEqual(model.track, "3")
-        XCTAssertEqual(model.discNumber, "2")
-        XCTAssertEqual(model.moveKey, "library/Artist/Album/03 Song.flac")
+    func testUnchangedSingleDraftProducesNoUpdate() {
+        XCTAssertNil(TagDraft(track: trackFixture()).makeUpdate())
     }
 
-    func testSaveOnlySubmitsNonEmptyFields() async {
+    func testChangedSingleDraftTrimsAndProducesOnlyChangedValues() throws {
+        var draft = TagDraft(track: trackFixture())
+        draft.title = "  Retitled  "
+        draft.track = "4"
+
+        let update = try XCTUnwrap(draft.makeUpdate())
+
+        XCTAssertEqual(update.title, "Retitled")
+        XCTAssertEqual(update.track, 4)
+        XCTAssertNil(update.album)
+        XCTAssertNil(update.discNumber)
+        XCTAssertEqual(update.clearFields, [])
+    }
+
+    func testClearingOptionalFieldsProducesStableClearFields() throws {
+        var draft = TagDraft(track: trackFixture())
+        draft.album = ""
+        draft.artist = ""
+        draft.genre = ""
+        draft.year = ""
+        draft.track = ""
+        draft.discNumber = ""
+
+        let update = try XCTUnwrap(draft.makeUpdate())
+
+        XCTAssertEqual(update.clearFields, [.album, .artist, .genre, .year, .track, .discNumber])
+        XCTAssertNil(update.album)
+        XCTAssertNil(update.artist)
+        XCTAssertNil(update.genre)
+        XCTAssertNil(update.year)
+        XCTAssertNil(update.track)
+        XCTAssertNil(update.discNumber)
+    }
+
+    func testOriginallyNilOptionalFieldsLeftBlankStayUnchanged() {
+        var track = trackFixture()
+        track.album = nil
+        track.artist = nil
+        track.genre = nil
+        track.year = nil
+        track.track = nil
+        track.discNumber = nil
+
+        XCTAssertNil(TagDraft(track: track).makeUpdate())
+    }
+
+    func testBlankTitleAndMalformedNumbersBlockSubmission() {
+        var draft = TagDraft(track: trackFixture())
+        draft.title = "  "
+        draft.year = "10000"
+        draft.track = "abc"
+        draft.discNumber = "0"
+
+        XCTAssertNotNil(draft.validation.title)
+        XCTAssertNotNil(draft.validation.year)
+        XCTAssertNotNil(draft.validation.track)
+        XCTAssertNotNil(draft.validation.discNumber)
+        XCTAssertNil(draft.makeUpdate())
+    }
+
+    func testMalformedNumericEditIsDirtyButCannotSave() {
+        var draft = TagDraft(track: trackFixture())
+        draft.track = "abc"
+
+        XCTAssertTrue(draft.isDirty)
+        XCTAssertFalse(draft.validation.isValid)
+    }
+
+    func testNumericBoundsAreAccepted() throws {
+        var draft = TagDraft(track: trackFixture())
+        draft.year = "1"
+        draft.track = "999"
+        draft.discNumber = "1"
+
+        let update = try XCTUnwrap(draft.makeUpdate())
+
+        XCTAssertEqual(update.year, 1)
+        XCTAssertEqual(update.track, 999)
+        XCTAssertEqual(update.discNumber, 1)
+    }
+
+    func testBatchDraftOnlyBuildsSafeCommonFields() throws {
+        var draft = BatchTagDraft()
+        draft.album = .set("  Collection  ")
+        draft.artist = .keep
+        draft.genre = .clear
+        draft.year = .set("2025")
+
+        let update = try XCTUnwrap(draft.makeUpdate())
+
+        XCTAssertEqual(update.album, "Collection")
+        XCTAssertNil(update.artist)
+        XCTAssertEqual(update.year, 2025)
+        XCTAssertEqual(update.clearFields, [.genre])
+        XCTAssertNil(update.title)
+        XCTAssertNil(update.track)
+        XCTAssertNil(update.discNumber)
+    }
+
+    func testAllKeepBatchDraftProducesNoUpdate() {
+        XCTAssertNil(BatchTagDraft().makeUpdate())
+    }
+
+    func testInvalidBatchSetValueBlocksUpdate() {
+        var draft = BatchTagDraft()
+        draft.album = .set("  ")
+        draft.year = .set("0")
+
+        XCTAssertNotNil(draft.validation.year)
+        XCTAssertNil(draft.makeUpdate())
+    }
+
+    func testEditorInitializesDraftAndDerivedState() {
+        let model = TagEditorViewModel(client: RecordingTrackClient(), track: trackFixture())
+
+        XCTAssertEqual(model.draft.title, "Song")
+        XCTAssertEqual(model.draft.album, "Album")
+        XCTAssertEqual(model.draft.artist, "Artist")
+        XCTAssertEqual(model.draft.genre, "Rock")
+        XCTAssertEqual(model.draft.year, "2024")
+        XCTAssertEqual(model.draft.track, "3")
+        XCTAssertEqual(model.draft.discNumber, "2")
+        XCTAssertEqual(model.moveKey, "library/Artist/Album/03 Song.flac")
+        XCTAssertFalse(model.isDirty)
+        XCTAssertTrue(model.validation.isValid)
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testSaveSubmitsBuiltUpdateAndSetsDidSave() async {
         let client = RecordingTrackClient()
-        let model = TagEditorViewModel(client: client, trackID: "track:1")
-        model.title = "Retitled"
-        model.year = "2025"
+        let model = TagEditorViewModel(client: client, track: trackFixture())
+        model.draft.title = "Retitled"
 
         await model.save()
 
         XCTAssertEqual(client.tagUpdates, [
-            .init(id: "track:1", update: TagUpdate(title: "Retitled", album: nil, artist: nil, genre: nil, year: 2025, track: nil, discNumber: nil, clearFields: [])),
+            .init(id: "track:1", update: TagUpdate(title: "Retitled", album: nil, artist: nil, genre: nil, year: nil, track: nil, discNumber: nil, clearFields: [])),
         ])
         XCTAssertTrue(model.didSave)
+        XCTAssertFalse(model.isSubmitting)
         XCTAssertNil(model.errorMessage)
     }
 
-    func testDeleteAndMoveUseTrackIDAndPrefilledKey() async {
+    func testNoOpAndInvalidSaveMakeNoClientCall() async {
+        let client = RecordingTrackClient()
+        let model = TagEditorViewModel(client: client, track: trackFixture())
+
+        await model.save()
+        model.draft.title = " "
+        await model.save()
+
+        XCTAssertEqual(client.tagUpdates, [])
+        XCTAssertFalse(model.didSave)
+    }
+
+    func testSaveIsSingleFlight() async {
+        let client = RecordingTrackClient(suspendUpdates: true)
+        let model = TagEditorViewModel(client: client, track: trackFixture())
+        model.draft.title = "Retitled"
+
+        let firstSave = Task { await model.save() }
+        while !client.isUpdateSuspended { await Task.yield() }
+
+        await model.save()
+        XCTAssertEqual(client.tagUpdates.count, 1)
+        XCTAssertTrue(model.isSubmitting)
+
+        client.resumeUpdate()
+        await firstSave.value
+        XCTAssertTrue(model.didSave)
+        XCTAssertFalse(model.isSubmitting)
+    }
+
+    func testFailurePreservesDraftAndUsesSharedPermissionPresenter() async {
+        let client = RecordingTrackClient(operationError: CoreError.Server(code: 50, message: "forbidden"))
+        let model = TagEditorViewModel(client: client, track: trackFixture())
+        model.draft.title = "Retitled"
+
+        await model.save()
+
+        XCTAssertEqual(model.draft.title, "Retitled")
+        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
+        XCTAssertFalse(model.didSave)
+        XCTAssertFalse(model.isSubmitting)
+    }
+
+    func testSaveFailureDoesNotPublishAuthenticatedURL() async {
+        let client = RecordingTrackClient(operationError: CoreError.Network(
+            message: "PUT HTTPS://music.test/rest/ext/tags?u=me&t=secret failed"
+        ))
+        let model = TagEditorViewModel(client: client, track: trackFixture())
+        model.draft.title = "Retitled"
+
+        await model.save()
+
+        XCTAssertFalse(model.errorMessage?.contains("HTTPS://music.test") ?? true)
+        XCTAssertFalse(model.errorMessage?.contains("secret") ?? true)
+        XCTAssertFalse(model.didSave)
+    }
+
+    // Compatibility coverage until Task 8 moves these actions out of TagEditorView.
+    func testCompatibilityDeleteAndMoveRetainSuccessfulBehavior() async {
         let client = RecordingTrackClient()
         let model = TagEditorViewModel(client: client, track: trackFixture())
 
@@ -45,37 +222,17 @@ final class TagEditorViewModelTests: XCTestCase {
         XCTAssertTrue(model.didDelete)
     }
 
-    func testSavePermissionFailureUsesReauthenticationMessage() async {
-        let client = RecordingTrackClient(operationError: CoreError.Server(code: 50, message: "forbidden"))
-        let model = TagEditorViewModel(client: client, trackID: "track:1")
-
-        await model.save()
-
-        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
-        XCTAssertFalse(model.didSave)
-    }
-
-    func testDeleteFailureDoesNotPublishAuthenticatedURL() async {
-        let client = RecordingTrackClient(operationError: CoreError.Network(
-            message: "DELETE HTTPS://music.test/rest/delete?u=me&t=secret failed"
-        ))
-        let model = TagEditorViewModel(client: client, trackID: "track:1")
-
-        await model.delete()
-
-        XCTAssertFalse(model.errorMessage?.contains("HTTPS://music.test") ?? true)
-        XCTAssertFalse(model.errorMessage?.contains("secret") ?? true)
-        XCTAssertFalse(model.didDelete)
-    }
-
-    func testMovePermissionFailureUsesReauthenticationMessage() async {
+    func testCompatibilityDeleteAndMoveRetainSafeErrorPresentation() async {
         let client = RecordingTrackClient(operationError: CoreError.NotAuthenticated)
-        let model = TagEditorViewModel(client: client, trackID: "track:1")
+        let model = TagEditorViewModel(client: client, track: trackFixture())
 
         await model.move()
-
         XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
         XCTAssertFalse(model.didMove)
+
+        await model.delete()
+        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
+        XCTAssertFalse(model.didDelete)
     }
 
     func testBatchTagUpdateContinuesAfterFailuresAndRefreshes() async {
@@ -119,14 +276,18 @@ private func albumFixture() -> Album {
 private final class RecordingTrackClient: MusicClientProviding, @unchecked Sendable {
     let failingTrackIDs: Set<String>
     let operationError: Error?
+    let suspendUpdates: Bool
     private(set) var tagUpdates: [TagUpdateCall] = []
     private(set) var deletedTrackIDs: [String] = []
     private(set) var moves: [MoveCall] = []
     private(set) var albumLoads: [String] = []
+    private(set) var isUpdateSuspended = false
+    private var updateContinuation: CheckedContinuation<Void, Never>?
 
-    init(failingTrackIDs: Set<String> = [], operationError: Error? = nil) {
+    init(failingTrackIDs: Set<String> = [], operationError: Error? = nil, suspendUpdates: Bool = false) {
         self.failingTrackIDs = failingTrackIDs
         self.operationError = operationError
+        self.suspendUpdates = suspendUpdates
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue { .init(server: server, user: user) }
@@ -139,8 +300,20 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
 
     func updateTags(id: String, update: TagUpdate) async throws {
         tagUpdates.append(.init(id: id, update: update))
+        if suspendUpdates {
+            await withCheckedContinuation {
+                updateContinuation = $0
+                isUpdateSuspended = true
+            }
+        }
         if let operationError { throw operationError }
         if failingTrackIDs.contains(id) { throw CocoaError(.fileReadUnknown) }
+    }
+
+    func resumeUpdate() {
+        updateContinuation?.resume()
+        updateContinuation = nil
+        isUpdateSuspended = false
     }
 
     func deleteTrack(id: String) async throws {

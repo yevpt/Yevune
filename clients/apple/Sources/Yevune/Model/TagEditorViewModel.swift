@@ -1,19 +1,11 @@
-import YevuneCoreFFI
 import Foundation
+import YevuneCoreFFI
 
 @MainActor
 final class TagEditorViewModel: ObservableObject {
-    @Published var title = ""
-    @Published var album = ""
-    @Published var artist = ""
-    @Published var genre = ""
-    @Published var year = ""
-    @Published var track = ""
-    @Published var discNumber = ""
-    @Published var moveKey = ""
+    @Published var draft: TagDraft
     @Published private(set) var didSave = false
-    @Published private(set) var didDelete = false
-    @Published private(set) var didMove = false
+    @Published private(set) var isSubmitting = false
     @Published private(set) var errorMessage: String?
 
     private let client: any MusicClientProviding
@@ -22,34 +14,74 @@ final class TagEditorViewModel: ObservableObject {
     init(client: any MusicClientProviding, trackID: String) {
         self.client = client
         self.trackID = trackID
+        draft = TagDraft()
     }
 
     init(client: any MusicClientProviding, track: Track) {
         self.client = client
         trackID = track.id
-        title = track.title
-        album = track.album ?? ""
-        artist = track.artist ?? ""
-        genre = track.genre ?? ""
-        year = track.year.map(String.init) ?? ""
-        self.track = track.track.map(String.init) ?? ""
-        discNumber = track.discNumber.map(String.init) ?? ""
+        draft = TagDraft(track: track)
         moveKey = track.path ?? ""
     }
 
+    var validation: TagDraftValidation { draft.validation }
+    var isDirty: Bool { draft.isDirty }
+    var canSave: Bool { isDirty && validation.isValid && !isSubmitting }
+
     func save() async {
+        guard canSave, let update = draft.makeUpdate() else { return }
+        isSubmitting = true
         didSave = false
         errorMessage = nil
+        defer { isSubmitting = false }
         do {
-            try await client.updateTags(id: trackID, update: TagUpdate(
-                title: value(title), album: value(album), artist: value(artist), genre: value(genre),
-                year: UInt32(year), track: UInt32(track), discNumber: UInt32(discNumber), clearFields: []
-            ))
+            try await client.updateTags(id: trackID, update: update)
             didSave = true
         } catch {
             errorMessage = LibraryOperationErrorPresentation.message(error)
         }
     }
+
+    // Temporary bindings retained only so the pre-Task-8 view keeps compiling.
+    var title: String {
+        get { draft.title }
+        set { draft.title = newValue }
+    }
+
+    var album: String {
+        get { draft.album }
+        set { draft.album = newValue }
+    }
+
+    var artist: String {
+        get { draft.artist }
+        set { draft.artist = newValue }
+    }
+
+    var genre: String {
+        get { draft.genre }
+        set { draft.genre = newValue }
+    }
+
+    var year: String {
+        get { draft.year }
+        set { draft.year = newValue }
+    }
+
+    var track: String {
+        get { draft.track }
+        set { draft.track = newValue }
+    }
+
+    var discNumber: String {
+        get { draft.discNumber }
+        set { draft.discNumber = newValue }
+    }
+
+    // Move/delete remain a minimal compatibility shim until Task 8 removes their UI.
+    @Published var moveKey = ""
+    @Published private(set) var didDelete = false
+    @Published private(set) var didMove = false
 
     func delete() async {
         didDelete = false
@@ -57,8 +89,9 @@ final class TagEditorViewModel: ObservableObject {
         do {
             try await client.deleteTrack(id: trackID)
             didDelete = true
+        } catch {
+            errorMessage = LibraryOperationErrorPresentation.message(error)
         }
-        catch { errorMessage = LibraryOperationErrorPresentation.message(error) }
     }
 
     func move() async {
@@ -67,11 +100,8 @@ final class TagEditorViewModel: ObservableObject {
         do {
             try await client.moveTrack(id: trackID, key: moveKey)
             didMove = true
+        } catch {
+            errorMessage = LibraryOperationErrorPresentation.message(error)
         }
-        catch { errorMessage = LibraryOperationErrorPresentation.message(error) }
-    }
-
-    private func value(_ text: String) -> String? {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 }
