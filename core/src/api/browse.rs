@@ -96,6 +96,42 @@ pub struct SearchResult {
     pub tracks: Vec<Track>,
 }
 
+/// `search3` 三类结果的独立分页请求。
+#[derive(Clone, uniffi::Record)]
+pub struct SearchPageRequest {
+    /// 搜索关键字。
+    pub query: String,
+    /// 艺人结果偏移量。
+    pub artist_offset: u32,
+    /// 艺人结果数量。
+    pub artist_count: u32,
+    /// 专辑结果偏移量。
+    pub album_offset: u32,
+    /// 专辑结果数量。
+    pub album_count: u32,
+    /// 曲目结果偏移量。
+    pub track_offset: u32,
+    /// 曲目结果数量。
+    pub track_count: u32,
+}
+
+/// `search3` 三类结果的独立分页响应。
+#[derive(Clone, uniffi::Record)]
+pub struct SearchPage {
+    /// 当前页的艺人。
+    pub artists: Vec<Artist>,
+    /// 当前页的专辑。
+    pub albums: Vec<Album>,
+    /// 当前页的曲目。
+    pub tracks: Vec<Track>,
+    /// 是否还有更多艺人。
+    pub has_more_artists: bool,
+    /// 是否还有更多专辑。
+    pub has_more_albums: bool,
+    /// 是否还有更多曲目。
+    pub has_more_tracks: bool,
+}
+
 pub(crate) async fn list_albums(
     http: &HttpClient,
     auth: &AuthenticatedSession,
@@ -175,14 +211,76 @@ pub(crate) async fn search(
     auth: &AuthenticatedSession,
     query: String,
 ) -> Result<SearchResult> {
-    let payload: SearchResponse = http
-        .get_json(auth, "search3", &[("query".to_owned(), query)])
-        .await?;
+    let page = search_page(
+        http,
+        auth,
+        SearchPageRequest {
+            query,
+            artist_offset: 0,
+            artist_count: 20,
+            album_offset: 0,
+            album_count: 20,
+            track_offset: 0,
+            track_count: 20,
+        },
+    )
+    .await?;
     Ok(SearchResult {
-        artists: payload.search_result3.artist,
-        albums: payload.search_result3.album,
-        tracks: payload.search_result3.song,
+        artists: page.artists,
+        albums: page.albums,
+        tracks: page.tracks,
     })
+}
+
+pub(crate) async fn search_page(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    request: SearchPageRequest,
+) -> Result<SearchPage> {
+    let requested_count = |count| if count == 0 { 0 } else { count + 1 };
+    let payload: SearchResponse = http
+        .get_json(
+            auth,
+            "search3",
+            &[
+                ("query".to_owned(), request.query),
+                ("artistOffset".to_owned(), request.artist_offset.to_string()),
+                (
+                    "artistCount".to_owned(),
+                    requested_count(request.artist_count).to_string(),
+                ),
+                ("albumOffset".to_owned(), request.album_offset.to_string()),
+                (
+                    "albumCount".to_owned(),
+                    requested_count(request.album_count).to_string(),
+                ),
+                ("songOffset".to_owned(), request.track_offset.to_string()),
+                (
+                    "songCount".to_owned(),
+                    requested_count(request.track_count).to_string(),
+                ),
+            ],
+        )
+        .await?;
+    let (artists, has_more_artists) =
+        trim_page(payload.search_result3.artist, request.artist_count);
+    let (albums, has_more_albums) = trim_page(payload.search_result3.album, request.album_count);
+    let (tracks, has_more_tracks) = trim_page(payload.search_result3.song, request.track_count);
+    Ok(SearchPage {
+        artists,
+        albums,
+        tracks,
+        has_more_artists,
+        has_more_albums,
+        has_more_tracks,
+    })
+}
+
+fn trim_page<T>(mut values: Vec<T>, count: u32) -> (Vec<T>, bool) {
+    let limit = count as usize;
+    let has_more = values.len() > limit;
+    values.truncate(limit);
+    (values, has_more)
 }
 
 #[derive(Deserialize)]

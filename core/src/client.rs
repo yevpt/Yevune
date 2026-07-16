@@ -7,7 +7,9 @@ use std::sync::{
 
 use tokio::sync::RwLock;
 
-use crate::api::browse::{self, AlbumDetail, AlbumFilter, ArtistDetail, SearchResult};
+use crate::api::browse::{
+    self, AlbumDetail, AlbumFilter, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
+};
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
 use crate::api::playlist::{self, PlaylistDetail, PlaylistTree};
@@ -252,6 +254,22 @@ impl MusicClient {
     /// 在艺人、专辑与曲目中全文搜索。
     pub async fn search(&self, query: String) -> Result<SearchResult> {
         browse::search(&self.http, &self.authenticated_session().await?, query).await
+    }
+
+    /// 在艺人、专辑与曲目中按类型独立分页搜索。
+    pub async fn search_page(&self, request: SearchPageRequest) -> Result<SearchPage> {
+        for count in [
+            request.artist_count,
+            request.album_count,
+            request.track_count,
+        ] {
+            if count > 100 {
+                return Err(CoreError::InvalidRequest {
+                    message: "search count must be <= 100".into(),
+                });
+            }
+        }
+        browse::search_page(&self.http, &self.authenticated_session().await?, request).await
     }
 
     /// 从本地路径流式上传单曲；音频字节不会穿越 FFI。
