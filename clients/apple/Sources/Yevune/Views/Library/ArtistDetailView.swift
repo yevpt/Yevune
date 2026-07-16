@@ -18,14 +18,15 @@ struct ArtistDetailView: View {
                         .padding(.horizontal, 18)
                     AlbumCollectionView(
                         albums: detail.albums,
-                        selectedAlbumID: nil,
+                        highlightedAlbumID: nil,
                         style: .grid,
                         client: client,
                         isAdmin: isAdmin,
                         hasMoreAlbums: false,
                         isLoadingNextPage: false,
                         nextPageError: nil,
-                        onSelect: onSelectAlbum,
+                        onHighlight: { _ in },
+                        onOpen: onSelectAlbum,
                         onLoadNextPage: {}
                     )
                 }

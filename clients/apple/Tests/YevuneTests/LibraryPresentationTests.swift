@@ -44,7 +44,20 @@ final class LibraryPresentationTests: XCTestCase {
         var navigation = LibraryNavigationState(path: [.artist("artist-1")])
 
         XCTAssertEqual(navigation.handleEscape(isSearchActive: true), .clearSearch)
-        navigation.reconcileForQueryChange(visibleAlbumIDs: [], visibleArtistIDs: [])
+        navigation.reconcileSearch(
+            phase: .idle,
+            searchAlbumIDs: [],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
+        navigation.reconcileSearch(
+            phase: .idle,
+            searchAlbumIDs: [],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
         XCTAssertEqual(navigation.path, [.artist("artist-1")])
         XCTAssertEqual(navigation.handleEscape(isSearchActive: false), .closeNavigation)
         XCTAssertTrue(navigation.path.isEmpty)
@@ -57,16 +70,95 @@ final class LibraryPresentationTests: XCTestCase {
         navigation.openAlbum(id: "album-1")
         XCTAssertEqual(navigation.path, [.artist("artist-1"), .album("album-1")])
 
-        navigation.path.removeLast()
+        navigation.setPath([.artist("artist-1")])
+        XCTAssertEqual(navigation.path, [.artist("artist-1")])
+        XCTAssertEqual(navigation.highlightedArtistID, "artist-1")
+        XCTAssertNil(navigation.highlightedAlbumID)
+    }
+
+    func testAlbumSingleClickHighlightsAndOpenAdvancesNavigation() {
+        var navigation = LibraryNavigationState()
+
+        navigation.highlightAlbum(id: "album-1")
+        XCTAssertEqual(navigation.highlightedAlbumID, "album-1")
+        XCTAssertTrue(navigation.path.isEmpty)
+
+        navigation.openAlbum(id: "album-1")
+        XCTAssertEqual(navigation.path, [.album("album-1")])
+        navigation.returnToLibrary()
+        XCTAssertNil(navigation.highlightedAlbumID)
+    }
+
+    func testArtistSingleClickHighlightsAndOpenAdvancesNavigation() {
+        var navigation = LibraryNavigationState()
+
+        navigation.highlightArtist(id: "artist-1")
+        XCTAssertEqual(navigation.highlightedArtistID, "artist-1")
+        XCTAssertTrue(navigation.path.isEmpty)
+
+        navigation.openArtist(id: "artist-1")
         XCTAssertEqual(navigation.path, [.artist("artist-1")])
     }
 
-    func testAlbumHighlightFollowsNavigationAndClearsWithRoute() {
+    func testPendingSearchKeepsCurrentRouteUntilResultsAreDetermined() {
         var navigation = LibraryNavigationState(path: [.album("album-1")])
 
-        XCTAssertEqual(navigation.selectedAlbumID, "album-1")
-        navigation.returnToLibrary()
-        XCTAssertNil(navigation.selectedAlbumID)
+        for phase in [LibrarySearchPhase.debouncing, .loading] {
+            navigation.reconcileSearch(
+                phase: phase,
+                searchAlbumIDs: [],
+                searchArtistIDs: [],
+                browseAlbumIDs: ["album-1"],
+                browseArtistIDs: []
+            )
+            XCTAssertEqual(navigation.path, [.album("album-1")])
+        }
+    }
+
+    func testDeterminedSearchKeepsMatchingRouteAndClosesMissingRoute() {
+        var navigation = LibraryNavigationState(path: [.album("album-1")])
+
+        navigation.reconcileSearch(
+            phase: .results,
+            searchAlbumIDs: ["album-1"],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
+        XCTAssertEqual(navigation.path, [.album("album-1")])
+
+        navigation.reconcileSearch(
+            phase: .results,
+            searchAlbumIDs: ["album-2"],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
+        XCTAssertTrue(navigation.path.isEmpty)
+    }
+
+    func testEmptyAndFailedSearchCloseRoutesWhileIdleUsesBrowseVisibility() {
+        for phase in [LibrarySearchPhase.empty, .failed("offline")] {
+            var navigation = LibraryNavigationState(path: [.artist("artist-1")])
+            navigation.reconcileSearch(
+                phase: phase,
+                searchAlbumIDs: [],
+                searchArtistIDs: [],
+                browseAlbumIDs: [],
+                browseArtistIDs: ["artist-1"]
+            )
+            XCTAssertTrue(navigation.path.isEmpty)
+        }
+
+        var navigation = LibraryNavigationState(path: [.artist("artist-1")])
+        navigation.reconcileSearch(
+            phase: .idle,
+            searchAlbumIDs: [],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: ["artist-1"]
+        )
+        XCTAssertEqual(navigation.path, [.artist("artist-1")])
     }
 
     func testRouteConsistencyClosesRootSelectionMissingFromVisibleCollection() {
@@ -83,6 +175,8 @@ final class LibraryPresentationTests: XCTestCase {
         navigation.reconcile(visibleAlbumIDs: [], visibleArtistIDs: ["artist-1"])
 
         XCTAssertEqual(navigation.path, [.artist("artist-1"), .album("album-1")])
+        XCTAssertEqual(navigation.highlightedArtistID, "artist-1")
+        XCTAssertEqual(navigation.highlightedAlbumID, "album-1")
     }
 
     func testInitialBrowseLoadingAndFailureDoNotPresentEmptyLibrary() {

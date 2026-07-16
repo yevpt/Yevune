@@ -68,13 +68,13 @@ struct LibraryBrowserView: View {
             _ = await (browseLoad, playlistLoad)
         }
         .onExitCommand(perform: handleEscape)
-        .onChange(of: search.query) { _, _ in reconcileNavigation(isQueryChange: true) }
-        .onChange(of: browse.section) { _, _ in reconcileNavigation() }
-        .onChange(of: browse.albumCriterion) { _, _ in reconcileNavigation() }
-        .onChange(of: browse.albums.map(\.id)) { _, _ in reconcileNavigation() }
-        .onChange(of: browse.artists.map(\.id)) { _, _ in reconcileNavigation() }
-        .onChange(of: search.albums.map(\.id)) { _, _ in reconcileNavigation() }
-        .onChange(of: search.artists.map(\.id)) { _, _ in reconcileNavigation() }
+        .onChange(of: search.phase) { _, _ in reconcileSearchNavigation() }
+        .onChange(of: browse.section) { _, _ in reconcileExplicitBrowseChange() }
+        .onChange(of: browse.albumCriterion) { _, _ in reconcileExplicitBrowseChange() }
+        .onChange(of: browse.albums.map(\.id)) { _, _ in reconcileBrowseNavigation() }
+        .onChange(of: browse.artists.map(\.id)) { _, _ in reconcileBrowseNavigation() }
+        .onChange(of: search.albums.map(\.id)) { _, _ in reconcileSearchNavigation() }
+        .onChange(of: search.artists.map(\.id)) { _, _ in reconcileSearchNavigation() }
     }
 
     private var regularLayout: some View {
@@ -87,12 +87,16 @@ struct LibraryBrowserView: View {
     }
 
     private var compactLayout: some View {
-        NavigationStack(path: $navigation.path) {
+        NavigationStack(path: compactPath) {
             preservedCollection
                 .navigationDestination(for: LibraryNavigationSelection.self) { destination in
                     destinationView(destination)
                 }
         }
+    }
+
+    private var compactPath: Binding<[LibraryNavigationSelection]> {
+        Binding(get: { navigation.path }, set: { navigation.setPath($0) })
     }
 
     private var preservedCollection: some View {
@@ -167,22 +171,25 @@ struct LibraryBrowserView: View {
         if browse.section == .albums {
             AlbumCollectionView(
                 albums: browse.albums,
-                selectedAlbumID: navigation.selectedAlbumID,
+                highlightedAlbumID: navigation.highlightedAlbumID,
                 style: collectionStyle,
                 client: client,
                 isAdmin: session.admin,
                 hasMoreAlbums: browse.hasMoreAlbums,
                 isLoadingNextPage: browse.isLoadingNextPage,
                 nextPageError: browse.nextPageError,
-                onSelect: { navigation.openAlbum(id: $0.id) },
+                onHighlight: { navigation.highlightAlbum(id: $0.id) },
+                onOpen: { navigation.openAlbum(id: $0.id) },
                 onLoadNextPage: browse.loadNextPage
             )
         } else {
             ArtistCollectionView(
                 artists: browse.artists,
+                highlightedArtistID: navigation.highlightedArtistID,
                 client: client,
                 isAdmin: session.admin,
-                onSelect: { navigation.openArtist(id: $0.id) }
+                onHighlight: { navigation.highlightArtist(id: $0.id) },
+                onOpen: { navigation.openArtist(id: $0.id) }
             )
         }
     }
@@ -234,26 +241,27 @@ struct LibraryBrowserView: View {
         }
     }
 
-    private func reconcileNavigation(isQueryChange: Bool = false) {
-        let visibleAlbums: [String]
-        let visibleArtists: [String]
-        if search.query.isEmpty {
-            visibleAlbums = browse.section == .albums ? browse.albums.map(\.id) : []
-            visibleArtists = browse.section == .artists ? browse.artists.map(\.id) : []
-        } else {
-            visibleAlbums = search.albums.map(\.id)
-            visibleArtists = search.artists.map(\.id)
-        }
-        if isQueryChange {
-            navigation.reconcileForQueryChange(
-                visibleAlbumIDs: Set(visibleAlbums),
-                visibleArtistIDs: Set(visibleArtists)
-            )
-        } else {
-            navigation.reconcile(
-                visibleAlbumIDs: Set(visibleAlbums),
-                visibleArtistIDs: Set(visibleArtists)
-            )
-        }
+    private func reconcileSearchNavigation() {
+        navigation.reconcileSearch(
+            phase: search.phase,
+            searchAlbumIDs: Set(search.albums.map(\.id)),
+            searchArtistIDs: Set(search.artists.map(\.id)),
+            browseAlbumIDs: Set(browse.section == .albums ? browse.albums.map(\.id) : []),
+            browseArtistIDs: Set(browse.section == .artists ? browse.artists.map(\.id) : [])
+        )
+    }
+
+    private func reconcileBrowseNavigation() {
+        guard search.phase == .idle else { return }
+        navigation.reconcileBrowse(
+            visibleAlbumIDs: Set(browse.section == .albums ? browse.albums.map(\.id) : []),
+            visibleArtistIDs: Set(browse.section == .artists ? browse.artists.map(\.id) : [])
+        )
+    }
+
+    private func reconcileExplicitBrowseChange() {
+        guard search.phase == .idle else { return }
+        navigation.resumeBrowseReconciliation()
+        reconcileBrowseNavigation()
     }
 }

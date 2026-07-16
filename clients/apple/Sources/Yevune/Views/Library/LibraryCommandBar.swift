@@ -48,62 +48,143 @@ enum LibraryEscapeOutcome: Equatable {
 
 struct LibraryNavigationState: Equatable {
     var path: [LibraryNavigationSelection] = []
-    private var skipsNextQueryReconciliation = false
+    private(set) var highlightedAlbumID: String?
+    private(set) var highlightedArtistID: String?
+    private var preservesPathDuringIdleAfterEscape = false
 
     init(path: [LibraryNavigationSelection] = []) {
         self.path = path
+        if case .album(let id)? = path.last { highlightedAlbumID = id }
+        if case .artist(let id)? = path.first { highlightedArtistID = id }
     }
 
-    var selectedAlbumID: String? {
-        guard case .album(let id)? = path.last else { return nil }
-        return id
+    mutating func highlightAlbum(id: String) {
+        highlightedAlbumID = id
+        highlightedArtistID = nil
+    }
+
+    mutating func highlightArtist(id: String) {
+        highlightedArtistID = id
+        highlightedAlbumID = nil
     }
 
     mutating func openArtist(id: String) {
+        highlightArtist(id: id)
         path = [.artist(id)]
     }
 
     mutating func openAlbum(id: String) {
+        highlightedAlbumID = id
         if case .artist? = path.first {
             path = [path[0], .album(id)]
         } else {
+            highlightedArtistID = nil
             path = [.album(id)]
         }
     }
 
     mutating func returnToLibrary() {
         path = []
+        highlightedAlbumID = nil
+        highlightedArtistID = nil
+        preservesPathDuringIdleAfterEscape = false
+    }
+
+    mutating func setPath(_ value: [LibraryNavigationSelection]) {
+        path = value
+        guard let destination = value.last else {
+            highlightedAlbumID = nil
+            highlightedArtistID = nil
+            preservesPathDuringIdleAfterEscape = false
+            return
+        }
+        switch destination {
+        case .artist(let id):
+            highlightedArtistID = id
+            highlightedAlbumID = nil
+        case .album(let id):
+            highlightedAlbumID = id
+            if case .artist(let artistID)? = value.first {
+                highlightedArtistID = artistID
+            } else {
+                highlightedArtistID = nil
+            }
+        }
     }
 
     mutating func handleEscape(isSearchActive: Bool) -> LibraryEscapeOutcome {
         if isSearchActive {
-            skipsNextQueryReconciliation = true
+            preservesPathDuringIdleAfterEscape = true
             return .clearSearch
         }
         guard !path.isEmpty else { return .ignored }
-        path = []
+        returnToLibrary()
         return .closeNavigation
     }
 
     mutating func reconcile(visibleAlbumIDs: Set<String>, visibleArtistIDs: Set<String>) {
-        guard let root = path.first else { return }
-        let remainsVisible: Bool
-        switch root {
-        case .album(let id): remainsVisible = visibleAlbumIDs.contains(id)
-        case .artist(let id): remainsVisible = visibleArtistIDs.contains(id)
+        if let root = path.first {
+            let remainsVisible: Bool
+            switch root {
+            case .album(let id): remainsVisible = visibleAlbumIDs.contains(id)
+            case .artist(let id): remainsVisible = visibleArtistIDs.contains(id)
+            }
+            if !remainsVisible {
+                returnToLibrary()
+                return
+            }
         }
-        if !remainsVisible { path = [] }
+
+        let routedAlbumID = path.compactMap { selection -> String? in
+            if case .album(let id) = selection { return id }
+            return nil
+        }.last
+        let routedArtistID = path.compactMap { selection -> String? in
+            if case .artist(let id) = selection { return id }
+            return nil
+        }.last
+        if let highlightedAlbumID,
+           highlightedAlbumID != routedAlbumID,
+           !visibleAlbumIDs.contains(highlightedAlbumID) {
+            self.highlightedAlbumID = nil
+        }
+        if let highlightedArtistID,
+           highlightedArtistID != routedArtistID,
+           !visibleArtistIDs.contains(highlightedArtistID) {
+            self.highlightedArtistID = nil
+        }
     }
 
-    mutating func reconcileForQueryChange(
-        visibleAlbumIDs: Set<String>,
-        visibleArtistIDs: Set<String>
+    mutating func reconcileSearch(
+        phase: LibrarySearchPhase,
+        searchAlbumIDs: Set<String>,
+        searchArtistIDs: Set<String>,
+        browseAlbumIDs: Set<String>,
+        browseArtistIDs: Set<String>
     ) {
-        if skipsNextQueryReconciliation {
-            skipsNextQueryReconciliation = false
-            return
+        switch phase {
+        case .debouncing, .loading:
+            preservesPathDuringIdleAfterEscape = false
+        case .results:
+            preservesPathDuringIdleAfterEscape = false
+            reconcile(visibleAlbumIDs: searchAlbumIDs, visibleArtistIDs: searchArtistIDs)
+        case .empty, .failed:
+            preservesPathDuringIdleAfterEscape = false
+            reconcile(visibleAlbumIDs: [], visibleArtistIDs: [])
+        case .idle:
+            if !preservesPathDuringIdleAfterEscape {
+                reconcile(visibleAlbumIDs: browseAlbumIDs, visibleArtistIDs: browseArtistIDs)
+            }
         }
+    }
+
+    mutating func reconcileBrowse(visibleAlbumIDs: Set<String>, visibleArtistIDs: Set<String>) {
+        guard !preservesPathDuringIdleAfterEscape else { return }
         reconcile(visibleAlbumIDs: visibleAlbumIDs, visibleArtistIDs: visibleArtistIDs)
+    }
+
+    mutating func resumeBrowseReconciliation() {
+        preservesPathDuringIdleAfterEscape = false
     }
 }
 

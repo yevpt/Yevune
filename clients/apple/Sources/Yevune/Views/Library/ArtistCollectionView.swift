@@ -3,9 +3,11 @@ import YevuneCoreFFI
 
 struct ArtistCollectionView: View {
     let artists: [Artist]
+    let highlightedArtistID: String?
     let client: any MusicClientProviding
     let isAdmin: Bool
-    let onSelect: (Artist) -> Void
+    let onHighlight: (Artist) -> Void
+    let onOpen: (Artist) -> Void
 
     private var sections: [(String, [Artist])] {
         Dictionary(grouping: artists, by: LibraryViewPolicy.artistSectionTitle)
@@ -28,7 +30,13 @@ struct ArtistCollectionView: View {
                     ForEach(sections, id: \.0) { title, members in
                         Section {
                             ForEach(members, id: \.id) { artist in
-                                ArtistCollectionRow(artist: artist, client: client, onSelect: onSelect)
+                                ArtistCollectionRow(
+                                    artist: artist,
+                                    client: client,
+                                    isHighlighted: highlightedArtistID == artist.id,
+                                    onHighlight: onHighlight,
+                                    onOpen: onOpen
+                                )
                             }
                         } header: {
                             Text(title)
@@ -50,7 +58,9 @@ struct ArtistCollectionView: View {
 private struct ArtistCollectionRow: View {
     let artist: Artist
     let client: any MusicClientProviding
-    let onSelect: (Artist) -> Void
+    let isHighlighted: Bool
+    let onHighlight: (Artist) -> Void
+    let onOpen: (Artist) -> Void
     @State private var coverURL: URL?
 
     var body: some View {
@@ -77,15 +87,20 @@ private struct ArtistCollectionRow: View {
         .contentShape(Rectangle())
         .padding(.horizontal, 18)
         .padding(.vertical, 7)
+        .background(
+            isHighlighted ? Color.accentColor.opacity(0.16) : .clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
         .focusable()
-        .onTapGesture(count: 2) { onSelect(artist) }
+        .onTapGesture(count: 2) { onOpen(artist) }
+        .onTapGesture { onHighlight(artist) }
         .onKeyPress(.return) {
-            onSelect(artist)
+            onOpen(artist)
             return .handled
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("艺人 \(artist.name)，\(artist.albumCount) 张专辑")
-        .accessibilityAction(named: "打开艺人") { onSelect(artist) }
+        .accessibilityAction(named: "打开艺人") { onOpen(artist) }
         .task(id: artist.coverArt) {
             guard let id = artist.coverArt,
                   let value = try? await client.coverArtURL(id: id, size: 160)
