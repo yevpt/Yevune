@@ -1,0 +1,43 @@
+import SwiftUI
+import YevuneCoreFFI
+
+struct ArtistDetailView: View {
+    @ObservedObject var model: ArtistDetailViewModel
+    let artistID: String
+    let client: any MusicClientProviding
+    let onSelectAlbum: (Album) -> Void
+    let onReturn: () -> Void
+
+    var body: some View {
+        Group {
+            if let detail = model.detail, detail.artist.id == artistID {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(detail.artist.name)
+                        .font(.largeTitle.bold())
+                        .padding(.horizontal, 18)
+                    AlbumCollectionView(
+                        albums: detail.albums,
+                        style: .grid,
+                        client: client,
+                        isAdmin: false,
+                        hasMoreAlbums: false,
+                        isLoadingNextPage: false,
+                        nextPageError: nil,
+                        onSelect: onSelectAlbum,
+                        onLoadNextPage: {}
+                    )
+                }
+            } else if model.isLoading {
+                ProgressView("正在加载艺人…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = model.errorMessage {
+                ContentUnavailableView("无法加载艺人", systemImage: "wifi.exclamationmark", description: Text(error))
+            }
+        }
+        .task(id: artistID) { model.load(artistID: artistID) }
+        .navigationTitle("返回曲库，继续播放")
+        .toolbar {
+            Button("返回曲库，继续播放", action: onReturn)
+        }
+    }
+}
