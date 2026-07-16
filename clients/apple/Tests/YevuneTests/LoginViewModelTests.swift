@@ -204,7 +204,7 @@ final class LoginViewModelTests: XCTestCase {
 
     func testWorkbenchShowsUploadSuccessThenScansAndRefreshesLibrary() async {
         let client = FakeMusicClient()
-        let library = LibraryViewModel(client: client)
+        let library = LibraryBrowseViewModel(client: client)
         let model = LibraryWorkflowViewModel(client: client, library: library)
 
         await model.importFiles([URL(fileURLWithPath: "/tmp/Song.flac")])
@@ -214,11 +214,14 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(model.scanResult?.added, 1)
         XCTAssertEqual(model.scanResult?.changes.first?.track.title, "Song")
         XCTAssertFalse(library.albums.isEmpty)
+        let request = await client.recordedAlbumRequest()
+        XCTAssertEqual(request?.offset, 0)
+        XCTAssertEqual(request?.size, 60)
     }
 
     func testWorkbenchKeepsUploadSuccessWhenAutomaticScanFails() async {
         let client = FakeMusicClient(scanFails: true)
-        let model = LibraryWorkflowViewModel(client: client, library: LibraryViewModel(client: client))
+        let model = LibraryWorkflowViewModel(client: client, library: LibraryBrowseViewModel(client: client))
         await model.importFiles([URL(fileURLWithPath: "/tmp/Song.flac")])
         XCTAssertEqual(model.imports.first?.state, .succeeded)
         XCTAssertNotNil(model.scanError)
@@ -249,6 +252,7 @@ private actor FakeMusicClient: MusicClientProviding {
     private var loginContinuation: CheckedContinuation<Void, Never>?
     private var logoutContinuation: CheckedContinuation<Void, Never>?
     private(set) var lastSearchPageRequest: SearchPageRequest?
+    private var lastAlbumRequest: (offset: UInt32, size: UInt32)?
 
     init(album: Album = Album(
         id: "al-0",
@@ -304,6 +308,7 @@ private actor FakeMusicClient: MusicClientProviding {
 
     func recordedLogoutCalls() -> Int { logoutCalls }
     func recordedSearchPageRequest() -> SearchPageRequest? { lastSearchPageRequest }
+    func recordedAlbumRequest() -> (offset: UInt32, size: UInt32)? { lastAlbumRequest }
 
     func resumeLogin() {
         loginContinuation?.resume()
@@ -320,7 +325,8 @@ private actor FakeMusicClient: MusicClientProviding {
     }
 
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] {
-        [album]
+        lastAlbumRequest = (offset, size)
+        return [album]
     }
 
     func listAccessRules() async throws -> [AccessRule] {
