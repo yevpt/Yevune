@@ -26,6 +26,7 @@ final class MediaViewModel: ObservableObject {
     private var generation = 0
     private var detailTask: Task<AlbumDetail, Error>?
     private var coverTask: Task<URL?, Error>?
+    private var coverURLCoverID: String?
 
     init(client: any MusicClientProviding) {
         self.client = client
@@ -137,6 +138,7 @@ final class MediaViewModel: ObservableObject {
         if currentAlbumID != album.id {
             detail = nil
             coverURL = nil
+            coverURLCoverID = nil
             operationError = nil
             operationMessage = nil
         }
@@ -179,6 +181,10 @@ final class MediaViewModel: ObservableObject {
         phase = .content
 
         let fetchedCoverID = fetchedDetail.album.coverArt
+        if coverURLCoverID != fetchedCoverID {
+            coverURL = nil
+            coverURLCoverID = nil
+        }
         guard let fetchedCoverID else {
             routedCoverTask.cancel()
             coverTask = nil
@@ -203,6 +209,7 @@ final class MediaViewModel: ObservableObject {
                   detail?.album.coverArt == fetchedCoverID else { return requestGeneration }
             coverTask = nil
             coverURL = resolvedURL
+            coverURLCoverID = fetchedCoverID
             coverError = nil
             synchronizeLegacyError()
         } catch {
@@ -210,6 +217,7 @@ final class MediaViewModel: ObservableObject {
                   detail?.album.coverArt == fetchedCoverID else { return requestGeneration }
             coverTask = nil
             coverURL = nil
+            coverURLCoverID = nil
             coverError = LibraryOperationErrorPresentation.message(error)
             synchronizeLegacyError()
         }

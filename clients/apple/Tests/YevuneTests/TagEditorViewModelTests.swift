@@ -45,6 +45,39 @@ final class TagEditorViewModelTests: XCTestCase {
         XCTAssertTrue(model.didDelete)
     }
 
+    func testSavePermissionFailureUsesReauthenticationMessage() async {
+        let client = RecordingTrackClient(operationError: CoreError.Server(code: 50, message: "forbidden"))
+        let model = TagEditorViewModel(client: client, trackID: "track:1")
+
+        await model.save()
+
+        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
+        XCTAssertFalse(model.didSave)
+    }
+
+    func testDeleteFailureDoesNotPublishAuthenticatedURL() async {
+        let client = RecordingTrackClient(operationError: CoreError.Network(
+            message: "DELETE HTTPS://music.test/rest/delete?u=me&t=secret failed"
+        ))
+        let model = TagEditorViewModel(client: client, trackID: "track:1")
+
+        await model.delete()
+
+        XCTAssertFalse(model.errorMessage?.contains("HTTPS://music.test") ?? true)
+        XCTAssertFalse(model.errorMessage?.contains("secret") ?? true)
+        XCTAssertFalse(model.didDelete)
+    }
+
+    func testMovePermissionFailureUsesReauthenticationMessage() async {
+        let client = RecordingTrackClient(operationError: CoreError.NotAuthenticated)
+        let model = TagEditorViewModel(client: client, trackID: "track:1")
+
+        await model.move()
+
+        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
+        XCTAssertFalse(model.didMove)
+    }
+
     func testBatchTagUpdateContinuesAfterFailuresAndRefreshes() async {
         let client = RecordingTrackClient(failingTrackIDs: ["track:2"])
         let model = MediaViewModel(client: client)
@@ -85,13 +118,15 @@ private func albumFixture() -> Album {
 
 private final class RecordingTrackClient: MusicClientProviding, @unchecked Sendable {
     let failingTrackIDs: Set<String>
+    let operationError: Error?
     private(set) var tagUpdates: [TagUpdateCall] = []
     private(set) var deletedTrackIDs: [String] = []
     private(set) var moves: [MoveCall] = []
     private(set) var albumLoads: [String] = []
 
-    init(failingTrackIDs: Set<String> = []) {
+    init(failingTrackIDs: Set<String> = [], operationError: Error? = nil) {
         self.failingTrackIDs = failingTrackIDs
+        self.operationError = operationError
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue { .init(server: server, user: user) }
@@ -104,16 +139,19 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
 
     func updateTags(id: String, update: TagUpdate) async throws {
         tagUpdates.append(.init(id: id, update: update))
+        if let operationError { throw operationError }
         if failingTrackIDs.contains(id) { throw CocoaError(.fileReadUnknown) }
     }
 
     func deleteTrack(id: String) async throws {
         deletedTrackIDs.append(id)
+        if let operationError { throw operationError }
         if failingTrackIDs.contains(id) { throw CocoaError(.fileReadUnknown) }
     }
 
     func moveTrack(id: String, key: String) async throws {
         moves.append(.init(id: id, key: key))
+        if let operationError { throw operationError }
         if failingTrackIDs.contains(id) { throw CocoaError(.fileReadUnknown) }
     }
 

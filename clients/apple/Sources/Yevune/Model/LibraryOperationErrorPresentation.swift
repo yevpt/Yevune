@@ -17,7 +17,10 @@ enum LibraryOperationErrorPresentation {
     }
 
     private static func redactingAuthenticatedURLs(in message: String) -> String {
-        guard let expression = try? NSRegularExpression(pattern: authenticatedURLPattern) else {
+        guard let expression = try? NSRegularExpression(
+            pattern: authenticatedURLPattern,
+            options: [.caseInsensitive]
+        ) else {
             return message
         }
         let range = NSRange(message.startIndex..<message.endIndex, in: message)

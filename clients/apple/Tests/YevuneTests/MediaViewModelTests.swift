@@ -99,6 +99,27 @@ final class MediaViewModelTests: XCTestCase {
         XCTAssertNil(model.coverURL)
     }
 
+    func testRefreshClearsOldCoverWhenFetchedCoverChangesBeforeNewURLResolves() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let original = album("a", coverArt: "old-cover")
+        await resolveInitial(model, client: client, album: original, coverURL: "https://example.test/old")
+
+        let refresh = Task { await model.refresh(album: original, successMessage: "完成") }
+        await client.waitForAlbumCalls(2)
+        await client.waitForCoverCalls(2)
+        await client.resolveAlbumCall(1, with: detail("a", coverArt: "new-cover"))
+        await client.waitForCoverCalls(3)
+        await waitUntil { model.detail?.album.coverArt == "new-cover" }
+
+        XCTAssertNil(model.coverURL, "an old-cover URL must not be published for new-cover detail")
+        XCTAssertNil(model.operationMessage)
+
+        await client.resolveCoverCall(1, with: "https://example.test/stale")
+        await client.resolveCoverCall(2, with: "https://example.test/new")
+        await refresh.value
+    }
+
     func testReplaceCoverPublishesSuccessOnlyAfterReloadedCoverResolves() async {
         let client = SuspendedAlbumClient()
         let model = MediaViewModel(client: client)
@@ -151,6 +172,14 @@ final class MediaViewModelTests: XCTestCase {
         let message = LibraryOperationErrorPresentation.message(error)
 
         XCTAssertFalse(message.contains("https://music.test"))
+        XCTAssertFalse(message.contains("secret"))
+    }
+
+    func testUppercaseAuthenticatedURLIsRedactedFromOrdinaryError() {
+        let error = CoreError.Network(message: "GET HTTPS://music.test/rest/getCoverArt?u=me&t=secret failed")
+        let message = LibraryOperationErrorPresentation.message(error)
+
+        XCTAssertFalse(message.contains("HTTPS://music.test"))
         XCTAssertFalse(message.contains("secret"))
     }
 }

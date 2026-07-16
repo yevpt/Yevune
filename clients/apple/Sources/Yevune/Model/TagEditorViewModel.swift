@@ -47,7 +47,7 @@ final class TagEditorViewModel: ObservableObject {
             ))
             didSave = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = LibraryOperationErrorPresentation.message(error)
         }
     }
 
@@ -58,7 +58,7 @@ final class TagEditorViewModel: ObservableObject {
             try await client.deleteTrack(id: trackID)
             didDelete = true
         }
-        catch { errorMessage = error.localizedDescription }
+        catch { errorMessage = LibraryOperationErrorPresentation.message(error) }
     }
 
     func move() async {
@@ -68,7 +68,7 @@ final class TagEditorViewModel: ObservableObject {
             try await client.moveTrack(id: trackID, key: moveKey)
             didMove = true
         }
-        catch { errorMessage = error.localizedDescription }
+        catch { errorMessage = LibraryOperationErrorPresentation.message(error) }
     }
 
     private func value(_ text: String) -> String? {
