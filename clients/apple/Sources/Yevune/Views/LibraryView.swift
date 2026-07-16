@@ -176,10 +176,14 @@ struct LibraryView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { Task { await workflow.importFiles(urls) } }
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            Task { await workflow.importFiles(urls) }; return true
-        } isTargeted: { isDropTargeted = $0 }
-        .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 18).fill(.indigo.opacity(0.2)).overlay { Label("松开以导入音乐", systemImage: "square.and.arrow.down").font(.title2.bold()) } } }
+        .modifier(
+            LibraryImportDropModifier(
+                enabled: LibraryViewPolicy.acceptsFileDrops(isAdmin: session.admin),
+                isTargeted: $isDropTargeted
+            ) { urls in
+                Task { await workflow.importFiles(urls) }
+            }
+        )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if LibraryViewPolicy.managementActions(isAdmin: session.admin).contains(.showTasks),
@@ -338,5 +342,34 @@ struct LibraryView: View {
 
     private var accessTargetIsPresented: Binding<Bool> {
         Binding(get: { accessTarget != nil }, set: { if !$0 { accessTarget = nil } })
+    }
+}
+
+private struct LibraryImportDropModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var isTargeted: Bool
+    let importFiles: ([URL]) -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .dropDestination(for: URL.self) { urls, _ in
+                    importFiles(urls)
+                    return true
+                } isTargeted: { isTargeted = $0 }
+                .overlay {
+                    if isTargeted {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(.indigo.opacity(0.2))
+                            .overlay {
+                                Label("松开以导入音乐", systemImage: "square.and.arrow.down")
+                                    .font(.title2.bold())
+                            }
+                    }
+                }
+        } else {
+            content
+        }
     }
 }

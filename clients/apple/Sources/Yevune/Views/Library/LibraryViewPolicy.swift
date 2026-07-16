@@ -35,6 +35,10 @@ enum LibraryViewPolicy {
         isAdmin ? [.importMusic, .scanLibrary, .showTasks] : []
     }
 
+    static func acceptsFileDrops(isAdmin: Bool) -> Bool {
+        isAdmin
+    }
+
     static func artistSectionTitle(_ artist: Artist) -> String {
         let source = artist.sortName ?? artist.name
         guard let scalar = source

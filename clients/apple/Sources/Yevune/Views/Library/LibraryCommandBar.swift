@@ -12,6 +12,7 @@ struct LibraryPresentation: Equatable {
     let layout: LibraryLayout
     let commandItems: [LibraryCommandItem]
     let managementActions: [LibraryManagementAction]
+    let acceptsFileDrops: Bool
 
     init(width: CGFloat, isAdmin: Bool) {
         layout = LibraryViewPolicy.layout(for: width)
@@ -19,6 +20,7 @@ struct LibraryPresentation: Equatable {
         managementActions = layout == .regular
             ? LibraryViewPolicy.managementActions(isAdmin: isAdmin)
             : []
+        acceptsFileDrops = LibraryViewPolicy.acceptsFileDrops(isAdmin: isAdmin)
     }
 
     static func emptyLibraryMessage(isAdmin: Bool) -> String {

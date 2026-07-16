@@ -23,6 +23,13 @@ final class LibraryPresentationTests: XCTestCase {
         )
     }
 
+    func testMemberNeverConstructsLibraryDropImport() {
+        for width: CGFloat in [920, 1_280] {
+            XCTAssertFalse(LibraryPresentation(width: width, isAdmin: false).acceptsFileDrops)
+            XCTAssertTrue(LibraryPresentation(width: width, isAdmin: true).acceptsFileDrops)
+        }
+    }
+
     func testEmptyLibraryGuidesAdministratorsToImportMusic() {
         XCTAssertEqual(LibraryPresentation.emptyLibraryMessage(isAdmin: true), "导入音乐")
     }

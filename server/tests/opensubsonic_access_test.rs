@@ -231,6 +231,72 @@ async fn get_album_list2_隐藏无可见曲目的专辑() {
 }
 
 #[tokio::test]
+async fn get_album_list2_按可见专辑而非原始曲库分页() {
+    let ctx = common::ctx().await;
+    let alice = ctx.create_user("alice", &[]).await;
+    let bob = ctx.create_user("bob", &[]).await;
+    let media = ctx.index.media();
+    let mut albums = Vec::new();
+
+    for index in 0..5 {
+        let artist = media
+            .upsert_artist(&format!("分页歌手 {index}"))
+            .await
+            .unwrap();
+        let album = media
+            .upsert_album(&format!("分页专辑 {index}"), Some(artist), None, None)
+            .await
+            .unwrap();
+        media
+            .upsert_track(&common::track(
+                &format!("分页曲目 {index}"),
+                Some(album),
+                Some(artist),
+                &format!("pagination/{index}.flac"),
+            ))
+            .await
+            .unwrap();
+        albums.push(album);
+    }
+
+    ctx.index
+        .access()
+        .set_rule(
+            ScopeType::Album,
+            &albums[0].to_string(),
+            None,
+            &[Principal {
+                principal_type: PrincipalType::User,
+                id: alice.to_string(),
+            }],
+        )
+        .await
+        .unwrap();
+
+    let (_, first_page) = ctx
+        .get_json(
+            "/rest/getAlbumList2?type=alphabeticalByName&f=json&size=2&offset=0",
+            Some(&ctx.bearer(bob)),
+        )
+        .await;
+    assert_eq!(
+        ids(&first_page["subsonic-response"]["albumList2"]["album"]),
+        vec![al(albums[1]), al(albums[2])]
+    );
+
+    let (_, second_page) = ctx
+        .get_json(
+            "/rest/getAlbumList2?type=alphabeticalByName&f=json&size=2&offset=2",
+            Some(&ctx.bearer(bob)),
+        )
+        .await;
+    assert_eq!(
+        ids(&second_page["subsonic-response"]["albumList2"]["album"]),
+        vec![al(albums[3]), al(albums[4])]
+    );
+}
+
+#[tokio::test]
 async fn search3_过滤受限命中() {
     let ctx = common::ctx().await;
     let f = seed(&ctx).await;

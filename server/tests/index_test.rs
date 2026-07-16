@@ -2,7 +2,9 @@
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use yevune_server::index::{AccessRepo, Index, NewTrack, NewTranscodeCache, SetRuleOutcome};
+use yevune_server::index::{
+    AccessRepo, Index, NewTrack, NewTranscodeCache, SetRuleOutcome, Viewer,
+};
 
 /// 在临时目录创建并连接一个全新索引；返回 TempDir 保活。
 async fn temp_index() -> (Index, tempfile::TempDir) {
@@ -270,12 +272,17 @@ async fn newest_album_pagination_is_stable_when_timestamps_tie() {
         .execute(index.pool())
         .await
         .unwrap();
+    let viewer = Viewer {
+        user_id: 1,
+        role_ids: vec![],
+        admin: true,
+    };
 
     let mut paged = Vec::new();
     for offset in [0, 2, 4] {
         paged.extend(
             media
-                .album_ids_for_list(1, "newest", offset, 2, None, None, None)
+                .album_ids_for_list(&viewer, "newest", offset, 2, None, None, None)
                 .await
                 .unwrap(),
         );
@@ -283,6 +290,98 @@ async fn newest_album_pagination_is_stable_when_timestamps_tie() {
     ids.reverse();
 
     assert_eq!(paged, ids, "同一入库时间必须用主键稳定打破并列");
+}
+
+#[tokio::test]
+async fn album_pagination_is_stable_for_every_deterministic_tied_sort() {
+    let (index, _dir) = temp_index().await;
+    let user = index.users().create_user("sorter", "enc").await.unwrap();
+    let media = index.media();
+    let mut ids = Vec::new();
+    let mut track_ids = Vec::new();
+    for suffix in 1..=5 {
+        let artist = media
+            .upsert_artist(&format!("Artist {suffix}"))
+            .await
+            .unwrap();
+        let album = media
+            .upsert_album(
+                "Shared Album",
+                Some(artist),
+                Some(2000),
+                Some("Shared Genre"),
+            )
+            .await
+            .unwrap();
+        let track = media
+            .upsert_track(&new_track(
+                &format!("Track {suffix}"),
+                Some(album),
+                Some(artist),
+                &format!("stable/{suffix}.flac"),
+            ))
+            .await
+            .unwrap();
+        ids.push(album);
+        track_ids.push(track);
+    }
+    sqlx::query("UPDATE artists SET sort_name = 'Same Artist'")
+        .execute(index.pool())
+        .await
+        .unwrap();
+    for track in track_ids {
+        index
+            .annotations()
+            .scrobble_at(user, "track", track, Some(1_700_000_000_000))
+            .await
+            .unwrap();
+    }
+    for album in &ids {
+        index
+            .annotations()
+            .set_rating(user, "album", *album, Some(5))
+            .await
+            .unwrap();
+        index
+            .annotations()
+            .star(user, "album", *album)
+            .await
+            .unwrap();
+    }
+    let viewer = Viewer {
+        user_id: user,
+        role_ids: vec![],
+        admin: true,
+    };
+    let ascending = ids.clone();
+    let descending = ids.into_iter().rev().collect::<Vec<_>>();
+
+    for (kind, from_year, to_year, genre, descending_tie) in [
+        ("alphabeticalByName", None, None, None, false),
+        ("alphabeticalByArtist", None, None, None, false),
+        ("byYear", Some(2000), Some(2000), None, false),
+        ("byGenre", None, None, Some("Shared Genre"), false),
+        ("highest", None, None, None, false),
+        ("frequent", None, None, None, false),
+        ("recent", None, None, None, false),
+        ("starred", None, None, None, true),
+    ] {
+        let mut paged = Vec::new();
+        for offset in [0, 2, 4] {
+            paged.extend(
+                media
+                    .album_ids_for_list(&viewer, kind, offset, 2, from_year, to_year, genre)
+                    .await
+                    .unwrap(),
+            );
+        }
+        let expected = if descending_tie {
+            descending.clone()
+        } else {
+            ascending.clone()
+        };
+        assert_eq!(paged, expected, "{kind} 的并列主排序必须用主键稳定分页");
+    }
 }
 
 #[tokio::test]

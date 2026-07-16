@@ -431,11 +431,11 @@ impl<'a> MediaRepo<'a> {
         Ok(result.rows_affected() == 1)
     }
 
-    /// 在数据库侧完成 `getAlbumList2` 排序、过滤与分页，仅返回本页主键。
+    /// 在数据库侧先按 `viewer` 可见性过滤，再完成 `getAlbumList2` 排序与分页，仅返回本页主键。
     #[allow(clippy::too_many_arguments)]
     pub async fn album_ids_for_list(
         &self,
-        user_id: i64,
+        viewer: &Viewer,
         kind: &str,
         offset: i64,
         limit: i64,
@@ -443,36 +443,53 @@ impl<'a> MediaRepo<'a> {
         to_year: Option<u32>,
         genre: Option<&str>,
     ) -> Result<Vec<i64>> {
+        let track_visible = self.visibility(viewer, "vt");
+        let album_visible = format!(
+            "(EXISTS(SELECT 1 FROM tracks vt WHERE vt.album_id = a.id AND ({track_visible})) \
+             OR NOT EXISTS(SELECT 1 FROM tracks all_t WHERE all_t.album_id = a.id))"
+        );
         match kind {
             "random" => {
-                sqlx::query_scalar("SELECT id FROM albums ORDER BY random() LIMIT ? OFFSET ?")
+                let sql = format!(
+                    "SELECT a.id FROM albums a WHERE {album_visible} \
+                     ORDER BY random() LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
                     .bind(limit)
                     .bind(offset)
                     .fetch_all(self.pool)
                     .await
             }
-            "newest" => sqlx::query_scalar(
-                "SELECT id FROM albums ORDER BY added_at DESC, id DESC LIMIT ? OFFSET ?",
-            )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            "alphabeticalByArtist" => sqlx::query_scalar(
-                "SELECT a.id FROM albums a LEFT JOIN artists ar ON ar.id = a.artist_id \
-                 ORDER BY COALESCE(ar.sort_name, ar.name), a.name LIMIT ? OFFSET ?",
-            )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
+            "newest" => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a WHERE {album_visible} \
+                     ORDER BY a.added_at DESC, a.id DESC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "alphabeticalByArtist" => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a LEFT JOIN artists ar ON ar.id = a.artist_id \
+                     WHERE {album_visible} ORDER BY COALESCE(ar.sort_name, ar.name), \
+                     a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
             "byYear" => {
                 let from = from_year.unwrap_or(0);
                 let to = to_year.unwrap_or(0);
                 let order = if from > to { "DESC" } else { "ASC" };
                 let sql = format!(
-                    "SELECT id FROM albums WHERE year BETWEEN ? AND ? \
-                     ORDER BY year {order}, name LIMIT ? OFFSET ?"
+                    "SELECT a.id FROM albums a WHERE a.year BETWEEN ? AND ? \
+                     AND {album_visible} ORDER BY a.year {order}, a.name, a.id ASC LIMIT ? OFFSET ?"
                 );
                 sqlx::query_scalar(&sql)
                     .bind(from.min(to))
@@ -482,61 +499,87 @@ impl<'a> MediaRepo<'a> {
                     .fetch_all(self.pool)
                     .await
             }
-            "byGenre" => sqlx::query_scalar(
-                "SELECT id FROM albums WHERE genre = ? ORDER BY name LIMIT ? OFFSET ?",
-            )
-            .bind(genre)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            "highest" => sqlx::query_scalar(
-                "SELECT a.id FROM albums a JOIN annotations n \
-                 ON n.user_id = ? AND n.item_type = 'album' AND n.item_id = a.id \
-                 WHERE n.rating IS NOT NULL ORDER BY n.rating DESC, a.name LIMIT ? OFFSET ?",
-            )
-            .bind(user_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            "frequent" => sqlx::query_scalar(
-                "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
+            "byGenre" => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a WHERE a.genre = ? AND {album_visible} \
+                     ORDER BY a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(genre)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "highest" => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a JOIN annotations n \
+                     ON n.user_id = ? AND n.item_type = 'album' AND n.item_id = a.id \
+                     WHERE n.rating IS NOT NULL AND {album_visible} \
+                     ORDER BY n.rating DESC, a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(viewer.user_id)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "frequent" => {
+                let visible_track = self.visibility(viewer, "t");
+                let sql = format!(
+                    "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
                  JOIN annotations n ON n.user_id = ? AND n.item_type = 'track' AND n.item_id = t.id \
-                 GROUP BY a.id HAVING SUM(n.play_count) > 0 \
-                 ORDER BY SUM(n.play_count) DESC, a.name LIMIT ? OFFSET ?",
-            )
-            .bind(user_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            "recent" => sqlx::query_scalar(
-                "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
+                     WHERE ({visible_track}) GROUP BY a.id HAVING SUM(n.play_count) > 0 \
+                     ORDER BY SUM(n.play_count) DESC, a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(viewer.user_id)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "recent" => {
+                let visible_track = self.visibility(viewer, "t");
+                let sql = format!(
+                    "SELECT a.id FROM albums a JOIN tracks t ON t.album_id = a.id \
                  JOIN annotations n ON n.user_id = ? AND n.item_type = 'track' AND n.item_id = t.id \
-                 WHERE n.last_played IS NOT NULL GROUP BY a.id \
-                 ORDER BY MAX(n.last_played) DESC, a.name LIMIT ? OFFSET ?",
-            )
-            .bind(user_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            "starred" => sqlx::query_scalar(
-                "SELECT a.id FROM albums a JOIN annotations n \
+                     WHERE n.last_played IS NOT NULL AND ({visible_track}) GROUP BY a.id \
+                     ORDER BY MAX(n.last_played) DESC, a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(viewer.user_id)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            "starred" => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a JOIN annotations n \
                  ON n.user_id = ? AND n.item_type = 'album' AND n.item_id = a.id \
-                 WHERE n.starred_at IS NOT NULL ORDER BY n.starred_at DESC LIMIT ? OFFSET ?",
-            )
-            .bind(user_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(self.pool)
-            .await,
-            _ => sqlx::query_scalar("SELECT id FROM albums ORDER BY name LIMIT ? OFFSET ?")
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(self.pool)
-                .await,
+                     WHERE n.starred_at IS NOT NULL AND {album_visible} \
+                     ORDER BY n.starred_at DESC, a.id DESC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(viewer.user_id)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
+            _ => {
+                let sql = format!(
+                    "SELECT a.id FROM albums a WHERE {album_visible} \
+                     ORDER BY a.name, a.id ASC LIMIT ? OFFSET ?"
+                );
+                sqlx::query_scalar(&sql)
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(self.pool)
+                    .await
+            }
         }
     }
 

@@ -253,7 +253,7 @@ async fn get_album_list2(
         .index
         .media()
         .album_ids_for_list(
-            user.id,
+            &viewer,
             list_type,
             offset,
             size,
