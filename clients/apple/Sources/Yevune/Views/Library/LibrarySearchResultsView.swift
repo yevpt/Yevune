@@ -1,12 +1,31 @@
 import SwiftUI
 import YevuneCoreFFI
 
+struct LibrarySearchSelectionPresentation: Equatable {
+    let highlightedAlbumID: String?
+    let highlightedArtistID: String?
+
+    func isAlbumHighlighted(_ id: String) -> Bool { highlightedAlbumID == id }
+    func isArtistHighlighted(_ id: String) -> Bool { highlightedArtistID == id }
+}
+
 struct LibrarySearchResultsView: View {
     @ObservedObject var model: LibrarySearchViewModel
     @ObservedObject var playback: PlaybackController
     let client: any MusicClientProviding
-    let onSelectArtist: (Artist) -> Void
-    let onSelectAlbum: (Album) -> Void
+    let highlightedAlbumID: String?
+    let highlightedArtistID: String?
+    let onHighlightArtist: (Artist) -> Void
+    let onOpenArtist: (Artist) -> Void
+    let onHighlightAlbum: (Album) -> Void
+    let onOpenAlbum: (Album) -> Void
+
+    private var selection: LibrarySearchSelectionPresentation {
+        LibrarySearchSelectionPresentation(
+            highlightedAlbumID: highlightedAlbumID,
+            highlightedArtistID: highlightedArtistID
+        )
+    }
 
     var body: some View {
         Group {
@@ -86,18 +105,28 @@ struct LibrarySearchResultsView: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 12) {
                 ForEach(model.artists, id: \.id) { artist in
-                    Button { onSelectArtist(artist) } label: {
-                        VStack(alignment: .leading) {
-                            Circle().fill(.quaternary).frame(width: 68, height: 68).overlay {
-                                Text(String(artist.name.prefix(1)).uppercased()).font(.title2.bold())
-                            }
-                            Text(artist.name).lineLimit(2)
+                    VStack(alignment: .leading) {
+                        Circle().fill(.quaternary).frame(width: 68, height: 68).overlay {
+                            Text(String(artist.name.prefix(1)).uppercased()).font(.title2.bold())
                         }
-                        .frame(width: 100, alignment: .leading)
+                        Text(artist.name).lineLimit(2)
                     }
-                    .buttonStyle(.plain)
+                    .frame(width: 100, alignment: .leading)
+                    .padding(6)
+                    .background(
+                        selection.isArtistHighlighted(artist.id) ? Color.accentColor.opacity(0.16) : .clear,
+                        in: RoundedRectangle(cornerRadius: 7)
+                    )
+                    .contentShape(Rectangle())
+                    .focusable()
+                    .onTapGesture(count: 2) { onOpenArtist(artist) }
+                    .onTapGesture { onHighlightArtist(artist) }
+                    .onKeyPress(.return) {
+                        onOpenArtist(artist)
+                        return .handled
+                    }
                     .accessibilityLabel("艺人 \(artist.name)，\(artist.albumCount) 张专辑")
-                    .accessibilityAction(named: "打开艺人") { onSelectArtist(artist) }
+                    .accessibilityAction(named: "打开艺人") { onOpenArtist(artist) }
                 }
             }
         }
@@ -107,7 +136,13 @@ struct LibrarySearchResultsView: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 14) {
                 ForEach(model.albums, id: \.id) { album in
-                    SearchAlbumCell(album: album, client: client, onSelect: onSelectAlbum)
+                    SearchAlbumCell(
+                        album: album,
+                        client: client,
+                        isHighlighted: selection.isAlbumHighlighted(album.id),
+                        onHighlight: onHighlightAlbum,
+                        onOpen: onOpenAlbum
+                    )
                 }
             }
         }
@@ -160,24 +195,36 @@ struct LibrarySearchResultsView: View {
 private struct SearchAlbumCell: View {
     let album: Album
     let client: any MusicClientProviding
-    let onSelect: (Album) -> Void
+    let isHighlighted: Bool
+    let onHighlight: (Album) -> Void
+    let onOpen: (Album) -> Void
     @State private var coverURL: URL?
 
     var body: some View {
-        Button { onSelect(album) } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                AuthenticatedArtworkView(url: coverURL) { Rectangle().fill(.quaternary) }
-                    .frame(width: 116, height: 116)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                Text(album.name).lineLimit(2)
-                Text(album.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(width: 116, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            AuthenticatedArtworkView(url: coverURL) { Rectangle().fill(.quaternary) }
+                .frame(width: 116, height: 116)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            Text(album.name).lineLimit(2)
+            Text(album.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .buttonStyle(.plain)
+        .frame(width: 116, alignment: .leading)
+        .padding(6)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHighlighted ? Color.accentColor : .clear, lineWidth: 2)
+        }
+        .contentShape(Rectangle())
+        .focusable()
+        .onTapGesture(count: 2) { onOpen(album) }
+        .onTapGesture { onHighlight(album) }
+        .onKeyPress(.return) {
+            onOpen(album)
+            return .handled
+        }
         .accessibilityLabel("专辑 \(album.name)，艺人 \(album.artist ?? "未知")")
-        .accessibilityAction(named: "打开专辑") { onSelect(album) }
+        .accessibilityAction(named: "打开专辑") { onOpen(album) }
         .task(id: album.coverArt) { coverURL = await loadCoverURL(for: album, client: client) }
     }
 }

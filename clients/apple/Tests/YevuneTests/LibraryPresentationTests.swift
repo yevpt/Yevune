@@ -1,5 +1,6 @@
 import XCTest
 @testable import Yevune
+import YevuneCoreFFI
 
 final class LibraryPresentationTests: XCTestCase {
     func testCompactPresentationFitsMinimumWindow() {
@@ -65,31 +66,38 @@ final class LibraryPresentationTests: XCTestCase {
 
     func testCompactNavigationPreservesArtistWhenOpeningAlbumAndBackReturnsToArtist() {
         var navigation = LibraryNavigationState()
+        let album = presentationAlbum("album-1")
 
         navigation.openArtist(id: "artist-1")
-        navigation.openAlbum(id: "album-1")
+        navigation.openAlbum(album)
         XCTAssertEqual(navigation.path, [.artist("artist-1"), .album("album-1")])
+        XCTAssertEqual(navigation.routedAlbumSnapshot?.id, "album-1")
 
         navigation.setPath([.artist("artist-1")])
         XCTAssertEqual(navigation.path, [.artist("artist-1")])
         XCTAssertEqual(navigation.highlightedArtistID, "artist-1")
         XCTAssertNil(navigation.highlightedAlbumID)
+        XCTAssertNil(navigation.routedAlbumSnapshot)
     }
 
-    func testAlbumSingleClickHighlightsAndOpenAdvancesNavigation() {
+    func testSearchAlbumSingleClickHighlightsAndOpenAdvancesNavigation() {
         var navigation = LibraryNavigationState()
+        let album = presentationAlbum("album-1")
 
         navigation.highlightAlbum(id: "album-1")
         XCTAssertEqual(navigation.highlightedAlbumID, "album-1")
         XCTAssertTrue(navigation.path.isEmpty)
+        XCTAssertNil(navigation.routedAlbumSnapshot)
 
-        navigation.openAlbum(id: "album-1")
+        navigation.openAlbum(album)
         XCTAssertEqual(navigation.path, [.album("album-1")])
+        XCTAssertEqual(navigation.routedAlbumSnapshot?.id, "album-1")
         navigation.returnToLibrary()
         XCTAssertNil(navigation.highlightedAlbumID)
+        XCTAssertNil(navigation.routedAlbumSnapshot)
     }
 
-    func testArtistSingleClickHighlightsAndOpenAdvancesNavigation() {
+    func testSearchArtistSingleClickHighlightsAndOpenAdvancesNavigation() {
         var navigation = LibraryNavigationState()
 
         navigation.highlightArtist(id: "artist-1")
@@ -98,6 +106,77 @@ final class LibraryPresentationTests: XCTestCase {
 
         navigation.openArtist(id: "artist-1")
         XCTAssertEqual(navigation.path, [.artist("artist-1")])
+    }
+
+    func testOpeningArtistClearsRoutedAlbumSnapshot() {
+        var navigation = LibraryNavigationState()
+        navigation.openAlbum(presentationAlbum("album-1"))
+
+        navigation.openArtist(id: "artist-1")
+
+        XCTAssertEqual(navigation.path, [.artist("artist-1")])
+        XCTAssertNil(navigation.routedAlbumSnapshot)
+    }
+
+    func testSearchResultHighlightPresentationUsesNavigationIDs() {
+        let presentation = LibrarySearchSelectionPresentation(
+            highlightedAlbumID: "album-1",
+            highlightedArtistID: "artist-1"
+        )
+
+        XCTAssertTrue(presentation.isAlbumHighlighted("album-1"))
+        XCTAssertFalse(presentation.isAlbumHighlighted("album-2"))
+        XCTAssertTrue(presentation.isArtistHighlighted("artist-1"))
+        XCTAssertFalse(presentation.isArtistHighlighted("artist-2"))
+    }
+
+    func testSearchOnlyAlbumSnapshotSurvivesNewQueryPending() {
+        var navigation = LibraryNavigationState()
+        navigation.openAlbum(presentationAlbum("search-only"))
+
+        for phase in [LibrarySearchPhase.debouncing, .loading] {
+            navigation.reconcileSearch(
+                phase: phase,
+                searchAlbumIDs: [],
+                searchArtistIDs: [],
+                browseAlbumIDs: [],
+                browseArtistIDs: []
+            )
+            XCTAssertEqual(navigation.routedAlbumSnapshot?.id, "search-only")
+        }
+    }
+
+    func testSearchOnlyAlbumSnapshotSurvivesFirstEscapeClear() {
+        var navigation = LibraryNavigationState()
+        navigation.openAlbum(presentationAlbum("search-only"))
+
+        XCTAssertEqual(navigation.handleEscape(isSearchActive: true), .clearSearch)
+        navigation.reconcileSearch(
+            phase: .idle,
+            searchAlbumIDs: [],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
+
+        XCTAssertEqual(navigation.path, [.album("search-only")])
+        XCTAssertEqual(navigation.routedAlbumSnapshot?.id, "search-only")
+    }
+
+    func testTerminalSearchWithoutRoutedAlbumClearsSnapshot() {
+        var navigation = LibraryNavigationState()
+        navigation.openAlbum(presentationAlbum("search-only"))
+
+        navigation.reconcileSearch(
+            phase: .results,
+            searchAlbumIDs: ["another-album"],
+            searchArtistIDs: [],
+            browseAlbumIDs: [],
+            browseArtistIDs: []
+        )
+
+        XCTAssertTrue(navigation.path.isEmpty)
+        XCTAssertNil(navigation.routedAlbumSnapshot)
     }
 
     func testPendingSearchKeepsCurrentRouteUntilResultsAreDetermined() {
@@ -226,4 +305,19 @@ final class LibraryPresentationTests: XCTestCase {
 
         XCTAssertEqual(member, .empty("曲库尚无音乐，请联系管理员添加"))
     }
+}
+
+private func presentationAlbum(_ id: String) -> Album {
+    Album(
+        id: id,
+        name: "Album \(id)",
+        artist: nil,
+        artistId: nil,
+        coverArt: nil,
+        songCount: 0,
+        duration: 0,
+        year: nil,
+        genre: nil,
+        created: nil
+    )
 }

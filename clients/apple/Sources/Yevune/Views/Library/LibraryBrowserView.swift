@@ -110,8 +110,12 @@ struct LibraryBrowserView: View {
                     model: search,
                     playback: playback,
                     client: client,
-                    onSelectArtist: { navigation.openArtist(id: $0.id) },
-                    onSelectAlbum: { navigation.openAlbum(id: $0.id) }
+                    highlightedAlbumID: navigation.highlightedAlbumID,
+                    highlightedArtistID: navigation.highlightedArtistID,
+                    onHighlightArtist: { navigation.highlightArtist(id: $0.id) },
+                    onOpenArtist: { navigation.openArtist(id: $0.id) },
+                    onHighlightAlbum: { navigation.highlightAlbum(id: $0.id) },
+                    onOpenAlbum: { navigation.openAlbum($0) }
                 )
             }
         }
@@ -179,7 +183,7 @@ struct LibraryBrowserView: View {
                 isLoadingNextPage: browse.isLoadingNextPage,
                 nextPageError: browse.nextPageError,
                 onHighlight: { navigation.highlightAlbum(id: $0.id) },
-                onOpen: { navigation.openAlbum(id: $0.id) },
+                onOpen: { navigation.openAlbum($0) },
                 onLoadNextPage: browse.loadNextPage
             )
         } else {
@@ -210,7 +214,7 @@ struct LibraryBrowserView: View {
                 artistID: id,
                 client: client,
                 isAdmin: session.admin,
-                onSelectAlbum: { navigation.openAlbum(id: $0.id) },
+                onSelectAlbum: { navigation.openAlbum($0) },
                 onReturn: returnToLibrary
             )
         case .album(let id):
@@ -228,6 +232,7 @@ struct LibraryBrowserView: View {
         browse.albums.first { $0.id == id }
             ?? search.albums.first { $0.id == id }
             ?? artistDetail.detail?.albums.first { $0.id == id }
+            ?? navigation.routedAlbumSnapshot.flatMap { $0.id == id ? $0 : nil }
     }
 
     private func returnToLibrary() {

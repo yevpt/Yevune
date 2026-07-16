@@ -50,6 +50,7 @@ struct LibraryNavigationState: Equatable {
     var path: [LibraryNavigationSelection] = []
     private(set) var highlightedAlbumID: String?
     private(set) var highlightedArtistID: String?
+    private(set) var routedAlbumSnapshot: Album?
     private var preservesPathDuringIdleAfterEscape = false
 
     init(path: [LibraryNavigationSelection] = []) {
@@ -70,16 +71,18 @@ struct LibraryNavigationState: Equatable {
 
     mutating func openArtist(id: String) {
         highlightArtist(id: id)
+        routedAlbumSnapshot = nil
         path = [.artist(id)]
     }
 
-    mutating func openAlbum(id: String) {
-        highlightedAlbumID = id
+    mutating func openAlbum(_ album: Album) {
+        highlightedAlbumID = album.id
+        routedAlbumSnapshot = album
         if case .artist? = path.first {
-            path = [path[0], .album(id)]
+            path = [path[0], .album(album.id)]
         } else {
             highlightedArtistID = nil
-            path = [.album(id)]
+            path = [.album(album.id)]
         }
     }
 
@@ -87,6 +90,7 @@ struct LibraryNavigationState: Equatable {
         path = []
         highlightedAlbumID = nil
         highlightedArtistID = nil
+        routedAlbumSnapshot = nil
         preservesPathDuringIdleAfterEscape = false
     }
 
@@ -102,8 +106,10 @@ struct LibraryNavigationState: Equatable {
         case .artist(let id):
             highlightedArtistID = id
             highlightedAlbumID = nil
+            routedAlbumSnapshot = nil
         case .album(let id):
             highlightedAlbumID = id
+            if routedAlbumSnapshot?.id != id { routedAlbumSnapshot = nil }
             if case .artist(let artistID)? = value.first {
                 highlightedArtistID = artistID
             } else {
