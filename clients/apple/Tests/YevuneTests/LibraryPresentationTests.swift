@@ -80,6 +80,18 @@ final class LibraryPresentationTests: XCTestCase {
         XCTAssertNil(navigation.routedAlbumSnapshot)
     }
 
+    func testRootAlbumSystemBackClearsPathHighlightsAndSnapshot() {
+        var navigation = LibraryNavigationState()
+        navigation.openAlbum(presentationAlbum("album-1"))
+
+        navigation.setPath([])
+
+        XCTAssertTrue(navigation.path.isEmpty)
+        XCTAssertNil(navigation.highlightedAlbumID)
+        XCTAssertNil(navigation.highlightedArtistID)
+        XCTAssertNil(navigation.routedAlbumSnapshot)
+    }
+
     func testSearchAlbumSingleClickHighlightsAndOpenAdvancesNavigation() {
         var navigation = LibraryNavigationState()
         let album = presentationAlbum("album-1")

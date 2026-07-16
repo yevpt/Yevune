@@ -99,6 +99,7 @@ struct LibraryNavigationState: Equatable {
         guard let destination = value.last else {
             highlightedAlbumID = nil
             highlightedArtistID = nil
+            routedAlbumSnapshot = nil
             preservesPathDuringIdleAfterEscape = false
             return
         }
