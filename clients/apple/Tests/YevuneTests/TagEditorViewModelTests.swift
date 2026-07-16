@@ -11,10 +11,14 @@ final class TagEditorViewModelTests: XCTestCase {
     func testUneditedTitleWithOriginalOuterWhitespaceStaysUnchanged() {
         var track = trackFixture()
         track.title = "  Song  "
-        let draft = TagDraft(track: track)
+        var draft = TagDraft(track: track)
 
         XCTAssertFalse(draft.isDirty)
         XCTAssertNil(draft.makeUpdate())
+
+        draft.title = "Song"
+        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(draft.makeUpdate()?.title, "Song")
     }
 
     func testUneditedOptionalTextWithOriginalOuterWhitespaceStaysUnchanged() {
@@ -22,17 +26,30 @@ final class TagEditorViewModelTests: XCTestCase {
         track.album = "  Album  "
         track.artist = "  Artist  "
         track.genre = "  Rock  "
-        let draft = TagDraft(track: track)
+        var draft = TagDraft(track: track)
 
         XCTAssertFalse(draft.isDirty)
         XCTAssertNil(draft.makeUpdate())
+
+        draft.album = "Album"
+        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(draft.makeUpdate()?.album, "Album")
     }
 
-    func testUneditedWhitespaceOnlyOptionalRetainsNonNilIdentityWithoutClearing() {
+    func testWhitespaceOnlyOptionalKeepsRawUnchangedButExplicitEmptyClears() throws {
         var track = trackFixture()
         track.album = "   "
+        var draft = TagDraft(track: track)
 
-        XCTAssertNil(TagDraft(track: track).makeUpdate())
+        XCTAssertFalse(draft.isDirty)
+        XCTAssertNil(draft.makeUpdate())
+
+        draft.album = ""
+        let update = try XCTUnwrap(draft.makeUpdate())
+
+        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(update.clearFields, [.album])
+        XCTAssertNil(update.album)
     }
 
     func testChangedSingleDraftTrimsAndProducesOnlyChangedValues() throws {

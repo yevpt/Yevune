@@ -61,7 +61,7 @@ struct TagDraft {
     }
 
     var isDirty: Bool {
-        normalizedTitle != original.title
+        requiredTextIntent(title, original: original.title).isChanged
             || textIntent(album, original: original.album).isChanged
             || textIntent(artist, original: original.artist).isChanged
             || textIntent(genre, original: original.genre).isChanged
@@ -76,6 +76,7 @@ struct TagDraft {
         let albumIntent = textIntent(album, original: original.album)
         let artistIntent = textIntent(artist, original: original.artist)
         let genreIntent = textIntent(genre, original: original.genre)
+        let titleIntent = requiredTextIntent(title, original: original.title)
         let yearIntent = numberIntent(year, original: original.year)
         let trackIntent = numberIntent(track, original: original.track)
         let discIntent = numberIntent(discNumber, original: original.discNumber)
@@ -88,7 +89,7 @@ struct TagDraft {
         appendClear(.track, for: trackIntent, to: &clearFields)
         appendClear(.discNumber, for: discIntent, to: &clearFields)
 
-        let title = normalizedTitle == original.title ? nil : normalizedTitle
+        let title = titleIntent.value
         guard title != nil
             || albumIntent.isChanged || artistIntent.isChanged || genreIntent.isChanged
             || yearIntent.isChanged || trackIntent.isChanged || discIntent.isChanged
@@ -105,8 +106,6 @@ struct TagDraft {
             clearFields: clearFields
         )
     }
-
-    private var normalizedTitle: String { trimmed(title) }
 }
 
 struct BatchTagDraft {
@@ -169,10 +168,10 @@ private struct OriginalTags {
     let discNumber: UInt32?
 
     init(track: Track) {
-        title = trimmed(track.title)
-        album = track.album.map(trimmed)
-        artist = track.artist.map(trimmed)
-        genre = track.genre.map(trimmed)
+        title = track.title
+        album = track.album
+        artist = track.artist
+        genre = track.genre
         year = track.year
         self.track = track.track
         discNumber = track.discNumber
@@ -231,12 +230,16 @@ private func numericError(
 }
 
 private func textIntent(_ text: String, original: String?) -> FieldIntent {
+    if text == original { return .keep }
     let value = trimmed(text)
     if value.isEmpty {
-        guard let original else { return .keep }
-        return original.isEmpty ? .keep : .clear
+        return original == nil ? .keep : .clear
     }
-    return value == original ? .keep : .setText(value)
+    return .setText(value)
+}
+
+private func requiredTextIntent(_ text: String, original: String) -> FieldIntent {
+    text == original ? .keep : .setText(trimmed(text))
 }
 
 private func numberIntent(_ text: String, original: UInt32?) -> FieldIntent {
