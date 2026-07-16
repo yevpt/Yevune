@@ -20,6 +20,7 @@ protocol MusicClientProviding: Sendable {
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album]
     func listGenres() async throws -> [Genre]
     func search(query: String) async throws -> SearchResult
+    func searchPage(request: SearchPageRequest) async throws -> SearchPage
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track
     func updateTags(id: String, update: TagUpdate) async throws
     func deleteTrack(id: String) async throws
@@ -63,6 +64,7 @@ protocol MusicClientProviding: Sendable {
 }
 
 extension MusicClientProviding {
+    func searchPage(request: SearchPageRequest) async throws -> SearchPage { throw CocoaError(.featureUnsupported) }
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] { throw CocoaError(.featureUnsupported) }
     func listGenres() async throws -> [Genre] { throw CocoaError(.featureUnsupported) }
     func getAlbum(id: String) async throws -> AlbumDetail { throw CocoaError(.featureUnsupported) }

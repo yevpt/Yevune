@@ -28,6 +28,10 @@ actor CoreMusicClient: MusicClientProviding {
         try await client.search(query: query)
     }
 
+    func searchPage(request: SearchPageRequest) async throws -> SearchPage {
+        try await client.searchPage(request: request)
+    }
+
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
         try await client.uploadTrack(
             localPath: localPath,

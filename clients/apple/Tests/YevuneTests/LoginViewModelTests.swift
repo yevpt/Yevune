@@ -35,6 +35,38 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(rules, [rule])
     }
 
+    func testMusicClientProtocolForwardsPagedSearchRequestAndResponse() async throws {
+        let response = SearchPage(
+            artists: [],
+            albums: [],
+            tracks: [],
+            hasMoreArtists: false,
+            hasMoreAlbums: true,
+            hasMoreTracks: false
+        )
+        let spy = FakeMusicClient(searchPage: response)
+        let client: any MusicClientProviding = spy
+        let request = SearchPageRequest(
+            query: "blue", artistOffset: 1, artistCount: 24,
+            albumOffset: 2, albumCount: 24,
+            trackOffset: 3, trackCount: 24
+        )
+
+        let page = try await client.searchPage(request: request)
+        let recordedRequest = await spy.recordedSearchPageRequest()
+
+        XCTAssertEqual(page.hasMoreArtists, false)
+        XCTAssertEqual(page.hasMoreAlbums, true)
+        XCTAssertEqual(page.hasMoreTracks, false)
+        XCTAssertEqual(recordedRequest?.query, "blue")
+        XCTAssertEqual(recordedRequest?.artistOffset, 1)
+        XCTAssertEqual(recordedRequest?.artistCount, 24)
+        XCTAssertEqual(recordedRequest?.albumOffset, 2)
+        XCTAssertEqual(recordedRequest?.albumCount, 24)
+        XCTAssertEqual(recordedRequest?.trackOffset, 3)
+        XCTAssertEqual(recordedRequest?.trackCount, 24)
+    }
+
     func testSubmitPublishesAuthenticatedSession() async {
         let client = FakeMusicClient()
         let model = LoginViewModel(client: client)
@@ -204,6 +236,7 @@ private final class FakeApplicationActivation: ApplicationActivating {
 private actor FakeMusicClient: MusicClientProviding {
     private let album: Album
     private let accessRules: [AccessRule]
+    private let searchPageResponse: SearchPage?
     private let scanFails: Bool
     private let loginIsAdmin: Bool
     private let failLoginAfter: Int?
@@ -215,6 +248,7 @@ private actor FakeMusicClient: MusicClientProviding {
     private var logoutCalls = 0
     private var loginContinuation: CheckedContinuation<Void, Never>?
     private var logoutContinuation: CheckedContinuation<Void, Never>?
+    private(set) var lastSearchPageRequest: SearchPageRequest?
 
     init(album: Album = Album(
         id: "al-0",
@@ -227,12 +261,14 @@ private actor FakeMusicClient: MusicClientProviding {
         year: nil,
         genre: nil,
         created: nil
-    ), accessRules: [AccessRule] = [], scanFails: Bool = false, loginIsAdmin: Bool = true,
+    ), accessRules: [AccessRule] = [], searchPage: SearchPage? = nil,
+       scanFails: Bool = false, loginIsAdmin: Bool = true,
        failLoginAfter: Int? = nil, suspendFirstLogin: Bool = false,
        onLoginStarted: (@Sendable () -> Void)? = nil, suspendLogout: Bool = false,
        onLogoutStarted: (@Sendable () -> Void)? = nil) {
         self.album = album
         self.accessRules = accessRules
+        self.searchPageResponse = searchPage
         self.scanFails = scanFails
         self.loginIsAdmin = loginIsAdmin
         self.failLoginAfter = failLoginAfter
@@ -267,6 +303,7 @@ private actor FakeMusicClient: MusicClientProviding {
     }
 
     func recordedLogoutCalls() -> Int { logoutCalls }
+    func recordedSearchPageRequest() -> SearchPageRequest? { lastSearchPageRequest }
 
     func resumeLogin() {
         loginContinuation?.resume()
@@ -292,6 +329,12 @@ private actor FakeMusicClient: MusicClientProviding {
 
     func search(query: String) async throws -> SearchResult {
         SearchResult(artists: [], albums: [album], tracks: [])
+    }
+
+    func searchPage(request: SearchPageRequest) async throws -> SearchPage {
+        lastSearchPageRequest = request
+        guard let searchPageResponse else { throw CocoaError(.featureUnsupported) }
+        return searchPageResponse
     }
 
     func upload(localPath: String, libraryKey: String, progress: UploadProgress) async throws -> Track {
