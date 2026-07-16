@@ -56,6 +56,57 @@ final class MediaViewModelTests: XCTestCase {
         XCTAssertNil(model.operationMessage)
     }
 
+    func testRefreshAfterBatchReloadsAlbumAndPublishesMessage() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        await resolveInitial(model, client: client, albumID: "a")
+
+        let refresh = Task {
+            await model.refreshAfterBatch(album: album("a"), message: "批量操作完成")
+        }
+        await client.waitForAlbumCalls(2)
+        await client.resolveAlbumCall(1, with: detail("a"))
+        await refresh.value
+
+        XCTAssertEqual(model.operationMessage, "批量操作完成")
+    }
+
+    func testRefreshAfterBatchFromOldAlbumCannotReplaceCurrentAlbum() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        await resolveInitial(model, client: client, albumID: "a")
+        let loadB = Task { await model.load(album: album("b")) }
+        await client.waitForAlbumCalls(2)
+        await client.resolveAlbumCall(1, with: detail("b"))
+        await loadB.value
+
+        let staleRefresh = Task {
+            await model.refreshAfterBatch(album: album("a"), message: "旧操作完成")
+        }
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        let callCount = await client.albumCallCount()
+        if callCount == 3 {
+            await client.resolveAlbumCall(2, with: detail("a"))
+        }
+        await staleRefresh.value
+
+        XCTAssertEqual(callCount, 2)
+        XCTAssertEqual(model.currentAlbumID, "b")
+        XCTAssertEqual(model.detail?.album.id, "b")
+        XCTAssertNil(model.operationMessage)
+    }
+
+    func testMakeBatchControllerCreatesAlbumUnboundController() {
+        let model = MediaViewModel(client: SuspendedAlbumClient())
+
+        let controller = model.makeBatchController()
+
+        XCTAssertNil(controller.albumID)
+        XCTAssertFalse(controller.isRunning)
+    }
+
     func testRetryAfterInitialFailureClearsPreviousErrorWhileLoading() async {
         let client = SuspendedAlbumClient()
         let model = MediaViewModel(client: client)
@@ -297,6 +348,7 @@ private actor SuspendedAlbumClient: MusicClientProviding {
     }
 
     func recordedCoverReplacement() -> CoverReplacement? { coverReplacement }
+    func albumCallCount() -> Int { albumCalls.count }
 
     private func resumeSatisfiedWaiters() {
         let readyAlbums = albumWaiters.filter { $0.0 <= albumCalls.count }

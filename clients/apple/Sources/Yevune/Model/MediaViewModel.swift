@@ -40,6 +40,10 @@ final class MediaViewModel: ObservableObject {
         TagEditorViewModel(client: client, track: track)
     }
 
+    func makeBatchController() -> TrackBatchOperationController {
+        TrackBatchOperationController(client: client)
+    }
+
     func refresh(album: Album, successMessage: String) async {
         if currentAlbumID == album.id {
             operationMessage = nil
@@ -48,6 +52,11 @@ final class MediaViewModel: ObservableObject {
         guard isCurrent(requestGeneration, albumID: album.id) else { return }
         guard refreshError == nil, coverError == nil, phase == .content else { return }
         operationMessage = successMessage
+    }
+
+    func refreshAfterBatch(album: Album, message: String) async {
+        guard currentAlbumID == album.id else { return }
+        await refresh(album: album, successMessage: message)
     }
 
     @discardableResult
