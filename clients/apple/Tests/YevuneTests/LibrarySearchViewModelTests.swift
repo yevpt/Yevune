@@ -259,6 +259,63 @@ final class LibrarySearchViewModelTests: XCTestCase {
         await newLoad.value
     }
 
+    func testCategoryLoadingIsObservableAndPreventsDuplicatePagination() async {
+        let client = SuspendedSearchClient()
+        let model = makeImmediateModel(client: client)
+        model.setInput("loading")
+        await client.waitForCallCount(1)
+        await client.resolveCall(0, with: page(albums: [album("1")], hasMoreAlbums: true))
+        await waitUntil { model.phase == .results }
+
+        let load = Task { await model.loadMore(.albums) }
+        await client.waitForCallCount(2)
+
+        XCTAssertTrue(model.isLoading(.albums))
+        XCTAssertFalse(model.isLoading(.artists))
+        XCTAssertFalse(model.isLoading(.tracks))
+
+        let duplicate = Task { await model.loadMore(.albums) }
+        await Task.yield()
+        let callCount = await client.callCount()
+        XCTAssertEqual(callCount, 2)
+
+        await client.resolveCall(1, with: page())
+        await load.value
+        await duplicate.value
+        XCTAssertFalse(model.isLoading(.albums))
+    }
+
+    func testOldGenerationDeferCannotClearCurrentCategoryLoading() async {
+        let client = SuspendedSearchClient()
+        let model = makeImmediateModel(client: client)
+        model.setInput("old")
+        await client.waitForCallCount(1)
+        await client.resolveCall(0, with: page(albums: [album("old")], hasMoreAlbums: true))
+        await waitUntil { model.phase == .results }
+
+        let oldLoad = Task { await model.loadMore(.albums) }
+        await client.waitForCallCount(2)
+        XCTAssertTrue(model.isLoading(.albums))
+
+        model.setInput("new")
+        XCTAssertFalse(model.isLoading(.albums))
+        await client.waitForCallCount(3)
+        await client.resolveCall(2, with: page(albums: [album("new")], hasMoreAlbums: true))
+        await waitUntil { model.albums.map(\.id) == ["album-new"] }
+
+        let currentLoad = Task { await model.loadMore(.albums) }
+        await client.waitForCallCount(4)
+        XCTAssertTrue(model.isLoading(.albums))
+
+        await client.resolveCall(1, with: page())
+        await oldLoad.value
+        XCTAssertTrue(model.isLoading(.albums))
+
+        await client.resolveCall(3, with: page())
+        await currentLoad.value
+        XCTAssertFalse(model.isLoading(.albums))
+    }
+
     func testInitialFailureUsesFailedPhaseAndRetryCanRecover() async {
         let client = SuspendedSearchClient()
         let model = makeImmediateModel(client: client)

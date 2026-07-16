@@ -96,6 +96,8 @@ struct LibrarySearchResultsView: View {
                         .frame(width: 100, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("艺人 \(artist.name)，\(artist.albumCount) 张专辑")
+                    .accessibilityAction(named: "打开艺人") { onSelectArtist(artist) }
                 }
             }
         }
@@ -129,17 +131,24 @@ struct LibrarySearchResultsView: View {
             playTracks(startingAt: index)
             return .handled
         }
+        .contextMenu { PlaybackTrackActions(track: track, playback: playback) }
+        .accessibilityLabel("曲目 \(track.title)，艺人 \(track.artist ?? "未知")")
         .accessibilityAction(named: "播放") { playTracks(startingAt: index) }
     }
 
     @ViewBuilder private func pagination(category: SearchResultCategory, hasMore: Bool) -> some View {
-        if let error = model.nextPageErrors[category] {
+        if model.isLoading(category) {
+            ProgressView("正在加载更多…")
+                .controlSize(.small)
+        } else if let error = model.nextPageErrors[category] {
             HStack {
                 Text(error).font(.caption).foregroundStyle(.red)
                 Button("重试") { Task { await model.loadMore(category) } }
+                    .disabled(model.isLoading(category))
             }
         } else if hasMore {
             Button("加载更多") { Task { await model.loadMore(category) } }
+                .disabled(model.isLoading(category))
         }
     }
 
@@ -167,6 +176,8 @@ private struct SearchAlbumCell: View {
             .frame(width: 116, alignment: .leading)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("专辑 \(album.name)，艺人 \(album.artist ?? "未知")")
+        .accessibilityAction(named: "打开专辑") { onSelect(album) }
         .task(id: album.coverArt) { coverURL = await loadCoverURL(for: album, client: client) }
     }
 }

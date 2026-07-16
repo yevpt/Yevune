@@ -5,6 +5,7 @@ struct ArtistDetailView: View {
     @ObservedObject var model: ArtistDetailViewModel
     let artistID: String
     let client: any MusicClientProviding
+    let isAdmin: Bool
     let onSelectAlbum: (Album) -> Void
     let onReturn: () -> Void
 
@@ -17,9 +18,10 @@ struct ArtistDetailView: View {
                         .padding(.horizontal, 18)
                     AlbumCollectionView(
                         albums: detail.albums,
+                        selectedAlbumID: nil,
                         style: .grid,
                         client: client,
-                        isAdmin: false,
+                        isAdmin: isAdmin,
                         hasMoreAlbums: false,
                         isLoadingNextPage: false,
                         nextPageError: nil,
@@ -31,7 +33,13 @@ struct ArtistDetailView: View {
                 ProgressView("正在加载艺人…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = model.errorMessage {
-                ContentUnavailableView("无法加载艺人", systemImage: "wifi.exclamationmark", description: Text(error))
+                ContentUnavailableView {
+                    Label("无法加载艺人", systemImage: "wifi.exclamationmark")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("重试") { model.load(artistID: artistID) }
+                }
             }
         }
         .task(id: artistID) { model.load(artistID: artistID) }

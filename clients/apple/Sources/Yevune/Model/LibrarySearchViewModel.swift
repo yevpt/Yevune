@@ -12,7 +12,7 @@ enum LibrarySearchPhase: Equatable {
     case failed(String)
 }
 
-enum SearchResultCategory: CaseIterable {
+enum SearchResultCategory: CaseIterable, Hashable {
     case artists
     case albums
     case tracks
@@ -32,6 +32,7 @@ final class LibrarySearchViewModel: ObservableObject {
     @Published private(set) var hasMoreAlbums = false
     @Published private(set) var hasMoreTracks = false
     @Published private(set) var nextPageErrors: [SearchResultCategory: String] = [:]
+    @Published private(set) var loadingCategories: Set<SearchResultCategory> = []
 
     private let client: any MusicClientProviding
     private let sleeper: SearchSleeper
@@ -93,9 +94,11 @@ final class LibrarySearchViewModel: ObservableObject {
         let capturedQuery = query
         guard canLoadMore(category), loadingCategoryGenerations[category] != capturedGeneration else { return }
         loadingCategoryGenerations[category] = capturedGeneration
+        loadingCategories.insert(category)
         defer {
             if loadingCategoryGenerations[category] == capturedGeneration {
                 loadingCategoryGenerations[category] = nil
+                loadingCategories.remove(category)
             }
         }
 
@@ -117,6 +120,7 @@ final class LibrarySearchViewModel: ObservableObject {
         task?.cancel()
         task = nil
         loadingCategoryGenerations = [:]
+        loadingCategories = []
         input = ""
         query = ""
         phase = .idle
@@ -131,6 +135,12 @@ final class LibrarySearchViewModel: ObservableObject {
         hasMoreAlbums = false
         hasMoreTracks = false
         nextPageErrors = [:]
+        loadingCategoryGenerations = [:]
+        loadingCategories = []
+    }
+
+    func isLoading(_ category: SearchResultCategory) -> Bool {
+        loadingCategories.contains(category)
     }
 
     private func applyInitial(_ response: SearchPage) {

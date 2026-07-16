@@ -16,7 +16,9 @@ struct LibraryPresentation: Equatable {
     init(width: CGFloat, isAdmin: Bool) {
         layout = LibraryViewPolicy.layout(for: width)
         commandItems = LibraryViewPolicy.commandBarItems(compact: layout == .compact)
-        managementActions = LibraryViewPolicy.managementActions(isAdmin: isAdmin)
+        managementActions = layout == .regular
+            ? LibraryViewPolicy.managementActions(isAdmin: isAdmin)
+            : []
     }
 
     static func emptyLibraryMessage(isAdmin: Bool) -> String {
@@ -38,11 +40,96 @@ enum LibraryNavigationSelection: Hashable {
     case album(String)
 }
 
-enum LibraryNavigationAction {
-    case returnToLibrary
+enum LibraryEscapeOutcome: Equatable {
+    case clearSearch
+    case closeNavigation
+    case ignored
+}
 
-    func apply(to selection: inout LibraryNavigationSelection?) {
-        selection = nil
+struct LibraryNavigationState: Equatable {
+    var path: [LibraryNavigationSelection] = []
+    private var skipsNextQueryReconciliation = false
+
+    init(path: [LibraryNavigationSelection] = []) {
+        self.path = path
+    }
+
+    var selectedAlbumID: String? {
+        guard case .album(let id)? = path.last else { return nil }
+        return id
+    }
+
+    mutating func openArtist(id: String) {
+        path = [.artist(id)]
+    }
+
+    mutating func openAlbum(id: String) {
+        if case .artist? = path.first {
+            path = [path[0], .album(id)]
+        } else {
+            path = [.album(id)]
+        }
+    }
+
+    mutating func returnToLibrary() {
+        path = []
+    }
+
+    mutating func handleEscape(isSearchActive: Bool) -> LibraryEscapeOutcome {
+        if isSearchActive {
+            skipsNextQueryReconciliation = true
+            return .clearSearch
+        }
+        guard !path.isEmpty else { return .ignored }
+        path = []
+        return .closeNavigation
+    }
+
+    mutating func reconcile(visibleAlbumIDs: Set<String>, visibleArtistIDs: Set<String>) {
+        guard let root = path.first else { return }
+        let remainsVisible: Bool
+        switch root {
+        case .album(let id): remainsVisible = visibleAlbumIDs.contains(id)
+        case .artist(let id): remainsVisible = visibleArtistIDs.contains(id)
+        }
+        if !remainsVisible { path = [] }
+    }
+
+    mutating func reconcileForQueryChange(
+        visibleAlbumIDs: Set<String>,
+        visibleArtistIDs: Set<String>
+    ) {
+        if skipsNextQueryReconciliation {
+            skipsNextQueryReconciliation = false
+            return
+        }
+        reconcile(visibleAlbumIDs: visibleAlbumIDs, visibleArtistIDs: visibleArtistIDs)
+    }
+}
+
+enum LibraryBrowsePresentation: Equatable {
+    case loading
+    case initialFailure(String)
+    case content(isRefreshing: Bool, refreshError: String?)
+    case empty(String)
+
+    static func resolve(
+        contentCount: Int,
+        isRefreshing: Bool,
+        initialError: String?,
+        refreshError: String?,
+        isAdmin: Bool
+    ) -> Self {
+        if contentCount > 0 {
+            return .content(isRefreshing: isRefreshing, refreshError: refreshError)
+        }
+        if let initialError {
+            return .initialFailure(initialError)
+        }
+        if isRefreshing {
+            return .loading
+        }
+        return .empty(LibraryPresentation.emptyLibraryMessage(isAdmin: isAdmin))
     }
 }
 

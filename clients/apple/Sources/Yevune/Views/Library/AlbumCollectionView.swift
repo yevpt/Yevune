@@ -3,6 +3,7 @@ import YevuneCoreFFI
 
 struct AlbumCollectionView: View {
     let albums: [Album]
+    let selectedAlbumID: String?
     let style: LibraryCollectionStyle
     let client: any MusicClientProviding
     let isAdmin: Bool
@@ -25,7 +26,12 @@ struct AlbumCollectionView: View {
                         spacing: 22
                     ) {
                         ForEach(albums, id: \.id) { album in
-                            AlbumCollectionCell(album: album, client: client, onSelect: onSelect)
+                            AlbumCollectionCell(
+                                album: album,
+                                client: client,
+                                isSelected: selectedAlbumID == album.id,
+                                onSelect: select
+                            )
                                 .onAppear { loadIfLast(album) }
                         }
                     }
@@ -34,7 +40,7 @@ struct AlbumCollectionView: View {
                 }
             } else {
                 List(albums, id: \.id) { album in
-                    Button { onSelect(album) } label: {
+                    Button { select(album) } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(album.name).lineLimit(2)
                             Text(album.artist ?? "未知艺人")
@@ -42,8 +48,14 @@ struct AlbumCollectionView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                        .background(
+                            selectedAlbumID == album.id ? Color.accentColor.opacity(0.16) : .clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
                     }
                     .buttonStyle(.plain)
+                    .onTapGesture(count: 2) { select(album) }
                     .onAppear { loadIfLast(album) }
                 }
                 .safeAreaInset(edge: .bottom) { paginationFooter }
@@ -67,11 +79,16 @@ struct AlbumCollectionView: View {
         guard hasMoreAlbums, album.id == albums.last?.id else { return }
         Task { await onLoadNextPage() }
     }
+
+    private func select(_ album: Album) {
+        onSelect(album)
+    }
 }
 
 private struct AlbumCollectionCell: View {
     let album: Album
     let client: any MusicClientProviding
+    let isSelected: Bool
     let onSelect: (Album) -> Void
     @State private var coverURL: URL?
 
@@ -97,6 +114,12 @@ private struct AlbumCollectionCell: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                .padding(-4)
+        }
+        .onTapGesture(count: 2) { onSelect(album) }
         .accessibilityLabel("专辑 \(album.name)，艺人 \(album.artist ?? "未知")")
         .task(id: album.coverArt) {
             coverURL = await loadCoverURL(for: album, client: client)

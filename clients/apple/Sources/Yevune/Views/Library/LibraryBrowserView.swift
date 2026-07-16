@@ -14,7 +14,7 @@ struct LibraryBrowserView: View {
 
     @StateObject private var media: MediaViewModel
     @StateObject private var playlists: PlaylistViewModel
-    @State private var selection: LibraryNavigationSelection?
+    @State private var navigation = LibraryNavigationState()
     @State private var collectionStyle = LibraryCollectionStyle.grid
 
     init(
@@ -67,6 +67,14 @@ struct LibraryBrowserView: View {
             async let playlistLoad: Void = playlists.loadTree()
             _ = await (browseLoad, playlistLoad)
         }
+        .onExitCommand(perform: handleEscape)
+        .onChange(of: search.query) { _, _ in reconcileNavigation(isQueryChange: true) }
+        .onChange(of: browse.section) { _, _ in reconcileNavigation() }
+        .onChange(of: browse.albumCriterion) { _, _ in reconcileNavigation() }
+        .onChange(of: browse.albums.map(\.id)) { _, _ in reconcileNavigation() }
+        .onChange(of: browse.artists.map(\.id)) { _, _ in reconcileNavigation() }
+        .onChange(of: search.albums.map(\.id)) { _, _ in reconcileNavigation() }
+        .onChange(of: search.artists.map(\.id)) { _, _ in reconcileNavigation() }
     }
 
     private var regularLayout: some View {
@@ -79,7 +87,7 @@ struct LibraryBrowserView: View {
     }
 
     private var compactLayout: some View {
-        NavigationStack(path: compactPath) {
+        NavigationStack(path: $navigation.path) {
             preservedCollection
                 .navigationDestination(for: LibraryNavigationSelection.self) { destination in
                     destinationView(destination)
@@ -87,16 +95,9 @@ struct LibraryBrowserView: View {
         }
     }
 
-    private var compactPath: Binding<[LibraryNavigationSelection]> {
-        Binding(
-            get: { selection.map { [$0] } ?? [] },
-            set: { selection = $0.last }
-        )
-    }
-
     private var preservedCollection: some View {
         ZStack {
-            collection
+            browseContent
                 .opacity(search.query.isEmpty ? 1 : 0)
                 .allowsHitTesting(search.query.isEmpty)
 
@@ -105,24 +106,75 @@ struct LibraryBrowserView: View {
                     model: search,
                     playback: playback,
                     client: client,
-                    onSelectArtist: { selection = .artist($0.id) },
-                    onSelectAlbum: { selection = .album($0.id) }
+                    onSelectArtist: { navigation.openArtist(id: $0.id) },
+                    onSelectAlbum: { navigation.openAlbum(id: $0.id) }
                 )
             }
         }
+    }
+
+    @ViewBuilder private var browseContent: some View {
+        switch browsePresentation {
+        case .loading:
+            ProgressView("正在加载曲库…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .initialFailure(let message):
+            ContentUnavailableView {
+                Label("无法加载曲库", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("重试") { Task { await browse.reload() } }
+            }
+        case .empty(let message):
+            ContentUnavailableView {
+                Label(message, systemImage: browse.section == .albums ? "opticaldisc" : "person.2")
+            }
+        case .content(let isRefreshing, let refreshError):
+            VStack(spacing: 0) {
+                if isRefreshing {
+                    ProgressView().controlSize(.small).padding(.vertical, 5)
+                }
+                if let refreshError {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle")
+                        Text(refreshError).lineLimit(2)
+                        Spacer()
+                        Button("重试") { Task { await browse.reload() } }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
+                    Divider()
+                }
+                collection
+            }
+        }
+    }
+
+    private var browsePresentation: LibraryBrowsePresentation {
+        LibraryBrowsePresentation.resolve(
+            contentCount: browse.section == .albums ? browse.albums.count : browse.artists.count,
+            isRefreshing: browse.isRefreshing,
+            initialError: browse.initialError,
+            refreshError: browse.refreshError,
+            isAdmin: session.admin
+        )
     }
 
     @ViewBuilder private var collection: some View {
         if browse.section == .albums {
             AlbumCollectionView(
                 albums: browse.albums,
+                selectedAlbumID: navigation.selectedAlbumID,
                 style: collectionStyle,
                 client: client,
                 isAdmin: session.admin,
                 hasMoreAlbums: browse.hasMoreAlbums,
                 isLoadingNextPage: browse.isLoadingNextPage,
                 nextPageError: browse.nextPageError,
-                onSelect: { selection = .album($0.id) },
+                onSelect: { navigation.openAlbum(id: $0.id) },
                 onLoadNextPage: browse.loadNextPage
             )
         } else {
@@ -130,13 +182,13 @@ struct LibraryBrowserView: View {
                 artists: browse.artists,
                 client: client,
                 isAdmin: session.admin,
-                onSelect: { selection = .artist($0.id) }
+                onSelect: { navigation.openArtist(id: $0.id) }
             )
         }
     }
 
     @ViewBuilder private var inspector: some View {
-        if let selection {
+        if let selection = navigation.path.last {
             destinationView(selection)
         } else {
             ContentUnavailableView("选择专辑或艺人", systemImage: "music.note.list")
@@ -150,7 +202,8 @@ struct LibraryBrowserView: View {
                 model: artistDetail,
                 artistID: id,
                 client: client,
-                onSelectAlbum: { selection = .album($0.id) },
+                isAdmin: session.admin,
+                onSelectAlbum: { navigation.openAlbum(id: $0.id) },
                 onReturn: returnToLibrary
             )
         case .album(let id):
@@ -171,6 +224,36 @@ struct LibraryBrowserView: View {
     }
 
     private func returnToLibrary() {
-        LibraryNavigationAction.returnToLibrary.apply(to: &selection)
+        navigation.returnToLibrary()
+    }
+
+    private func handleEscape() {
+        switch navigation.handleEscape(isSearchActive: !search.query.isEmpty) {
+        case .clearSearch: search.clear()
+        case .closeNavigation, .ignored: break
+        }
+    }
+
+    private func reconcileNavigation(isQueryChange: Bool = false) {
+        let visibleAlbums: [String]
+        let visibleArtists: [String]
+        if search.query.isEmpty {
+            visibleAlbums = browse.section == .albums ? browse.albums.map(\.id) : []
+            visibleArtists = browse.section == .artists ? browse.artists.map(\.id) : []
+        } else {
+            visibleAlbums = search.albums.map(\.id)
+            visibleArtists = search.artists.map(\.id)
+        }
+        if isQueryChange {
+            navigation.reconcileForQueryChange(
+                visibleAlbumIDs: Set(visibleAlbums),
+                visibleArtistIDs: Set(visibleArtists)
+            )
+        } else {
+            navigation.reconcile(
+                visibleAlbumIDs: Set(visibleAlbums),
+                visibleArtistIDs: Set(visibleArtists)
+            )
+        }
     }
 }
