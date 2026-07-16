@@ -112,17 +112,24 @@ impl From<ArtistRow> for Artist {
 
 /// 取单曲目的 SELECT（含 LEFT JOIN 专辑/艺人）。
 const TRACK_SELECT: &str = "\
-SELECT t.id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title) AS title, \
-       t.album_id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='album'), a.name) AS album_name, \
-       t.artist_id, COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='artist'), ar.name) AS artist_name, \
-       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no) AS disc_no, \
-       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no) AS track_no, \
-       COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='year') AS INTEGER), t.year) AS year, \
-       COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='genre'), t.genre) AS genre, \
+SELECT t.id, COALESCE(title_override.value, t.title) AS title, \
+       t.album_id, CASE WHEN album_override.track_id IS NULL THEN a.name ELSE album_override.value END AS album_name, \
+       t.artist_id, CASE WHEN artist_override.track_id IS NULL THEN ar.name ELSE artist_override.value END AS artist_name, \
+       CASE WHEN disc_override.track_id IS NULL THEN t.disc_no ELSE CAST(disc_override.value AS INTEGER) END AS disc_no, \
+       CASE WHEN track_override.track_id IS NULL THEN t.track_no ELSE CAST(track_override.value AS INTEGER) END AS track_no, \
+       CASE WHEN year_override.track_id IS NULL THEN t.year ELSE CAST(year_override.value AS INTEGER) END AS year, \
+       CASE WHEN genre_override.track_id IS NULL THEN t.genre ELSE genre_override.value END AS genre, \
        t.duration, t.codec, t.bitrate, t.size, a.cover_key AS cover_key, t.added_at, t.object_key \
 FROM tracks t \
 LEFT JOIN albums a ON t.album_id = a.id \
-LEFT JOIN artists ar ON t.artist_id = ar.id";
+LEFT JOIN artists ar ON t.artist_id = ar.id \
+LEFT JOIN tag_overrides title_override ON title_override.track_id=t.id AND title_override.field='title' \
+LEFT JOIN tag_overrides album_override ON album_override.track_id=t.id AND album_override.field='album' \
+LEFT JOIN tag_overrides artist_override ON artist_override.track_id=t.id AND artist_override.field='artist' \
+LEFT JOIN tag_overrides disc_override ON disc_override.track_id=t.id AND disc_override.field='discNumber' \
+LEFT JOIN tag_overrides track_override ON track_override.track_id=t.id AND track_override.field='track' \
+LEFT JOIN tag_overrides year_override ON year_override.track_id=t.id AND year_override.field='year' \
+LEFT JOIN tag_overrides genre_override ON genre_override.track_id=t.id AND genre_override.field='genre'";
 
 /// 取专辑的 SELECT（含艺人名与曲目聚合）。
 const ALBUM_SELECT: &str = "\
@@ -362,9 +369,9 @@ impl<'a> MediaRepo<'a> {
     pub async fn tracks_by_album(&self, album_id: i64) -> Result<Vec<Track>> {
         let rows: Vec<TrackRow> = sqlx::query_as(&format!(
             "{TRACK_SELECT} WHERE t.album_id = ? ORDER BY \
-             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no, 0), \
-             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no, 0), \
-             COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title)"
+             COALESCE(CASE WHEN disc_override.track_id IS NULL THEN t.disc_no ELSE CAST(disc_override.value AS INTEGER) END, 0), \
+             COALESCE(CASE WHEN track_override.track_id IS NULL THEN t.track_no ELSE CAST(track_override.value AS INTEGER) END, 0), \
+             COALESCE(title_override.value, t.title)"
         ))
         .bind(album_id)
         .fetch_all(self.pool)
@@ -586,12 +593,12 @@ impl<'a> MediaRepo<'a> {
     /// 聚合非空流派的曲目数与专辑数。
     pub async fn list_genres(&self) -> Result<Vec<contract::Genre>> {
         let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-            "SELECT COALESCE(o.value, t.genre) AS display_genre, \
+            "SELECT CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END AS display_genre, \
                     COUNT(DISTINCT t.id), COUNT(DISTINCT t.album_id) \
              FROM tracks t \
              LEFT JOIN tag_overrides o ON o.track_id = t.id AND o.field = 'genre' \
-             WHERE COALESCE(o.value, t.genre) IS NOT NULL \
-               AND COALESCE(o.value, t.genre) <> '' \
+             WHERE (CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END) IS NOT NULL \
+               AND (CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END) <> '' \
              GROUP BY display_genre ORDER BY display_genre",
         )
         .fetch_all(self.pool)
@@ -610,12 +617,12 @@ impl<'a> MediaRepo<'a> {
     pub async fn list_genres_visible(&self, viewer: &Viewer) -> Result<Vec<contract::Genre>> {
         let pred = self.visibility(viewer, "t");
         let rows: Vec<(String, i64, i64)> = sqlx::query_as(&format!(
-            "SELECT COALESCE(o.value, t.genre) AS display_genre, \
+            "SELECT CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END AS display_genre, \
                     COUNT(DISTINCT t.id), COUNT(DISTINCT t.album_id) \
              FROM tracks t \
              LEFT JOIN tag_overrides o ON o.track_id = t.id AND o.field = 'genre' \
-             WHERE COALESCE(o.value, t.genre) IS NOT NULL \
-               AND COALESCE(o.value, t.genre) <> '' \
+             WHERE (CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END) IS NOT NULL \
+               AND (CASE WHEN o.track_id IS NULL THEN t.genre ELSE o.value END) <> '' \
                AND ({pred}) \
              GROUP BY display_genre ORDER BY display_genre"
         ))
@@ -666,7 +673,11 @@ impl<'a> MediaRepo<'a> {
     }
 
     /// upsert 指定曲目的标签覆盖值；未提供的字段保持不变。
-    pub async fn set_tag_overrides(&self, id: i64, values: &[(&str, &str)]) -> Result<bool> {
+    pub async fn set_tag_overrides(
+        &self,
+        id: i64,
+        values: &[(&str, Option<&str>)],
+    ) -> Result<bool> {
         let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tracks WHERE id = ?")
             .bind(id)
             .fetch_one(self.pool)
@@ -831,9 +842,9 @@ impl<'a> MediaRepo<'a> {
         let pred = self.visibility(viewer, "t");
         let rows: Vec<TrackRow> = sqlx::query_as(&format!(
             "{TRACK_SELECT} WHERE t.album_id = ? AND ({pred}) ORDER BY \
-             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='discNumber') AS INTEGER), t.disc_no, 0), \
-             COALESCE(CAST((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='track') AS INTEGER), t.track_no, 0), \
-             COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id=t.id AND o.field='title'), t.title)"
+             COALESCE(CASE WHEN disc_override.track_id IS NULL THEN t.disc_no ELSE CAST(disc_override.value AS INTEGER) END, 0), \
+             COALESCE(CASE WHEN track_override.track_id IS NULL THEN t.track_no ELSE CAST(track_override.value AS INTEGER) END, 0), \
+             COALESCE(title_override.value, t.title)"
         ))
         .bind(album_id)
         .fetch_all(self.pool)

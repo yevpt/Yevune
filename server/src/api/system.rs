@@ -46,7 +46,7 @@ async fn get_open_subsonic_extensions(OriginalUri(uri): OriginalUri) -> Response
         Format::from_uri(&uri),
         serde_json::json!({"openSubsonicExtensions": [
             {"name": "playlistTree", "versions": [1]},
-            {"name": "libraryManagement", "versions": [1]},
+            {"name": "libraryManagement", "versions": [1, 2]},
             {"name": "accessControl", "versions": [1]},
             {"name": "roleManagement", "versions": [1]},
             {"name": "userManagement", "versions": [1]},

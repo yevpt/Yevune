@@ -185,7 +185,7 @@ async fn 有效流派规则覆盖_stream_与_download() {
     let track_id = ctx.index.media().upsert_track(&track).await.unwrap();
     ctx.index
         .media()
-        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .set_tag_overrides(track_id, &[("genre", Some("Kids"))])
         .await
         .unwrap();
     ctx.store

@@ -331,7 +331,7 @@ async fn 有效流派规则覆盖浏览搜索与取曲路径() {
     track.genre = Some("Rock".into());
     let track_id = media.upsert_track(&track).await.unwrap();
     media
-        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .set_tag_overrides(track_id, &[("genre", Some("Kids"))])
         .await
         .unwrap();
     ctx.index

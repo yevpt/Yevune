@@ -327,7 +327,7 @@ async fn 流派覆盖后按有效流派强制规则() {
     let track_id = index.media().upsert_track(&track).await.unwrap();
     index
         .media()
-        .set_tag_overrides(track_id, &[("genre", "Kids")])
+        .set_tag_overrides(track_id, &[("genre", Some("Kids"))])
         .await
         .unwrap();
     index

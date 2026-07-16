@@ -192,8 +192,9 @@ async fn scope_exists(
         ScopeType::Album => ("SELECT COUNT(*) FROM albums WHERE id = ?", scope_id),
         ScopeType::Artist => ("SELECT COUNT(*) FROM artists WHERE id = ?", scope_id),
         ScopeType::Genre => (
-            "SELECT COUNT(*) FROM tracks WHERE COALESCE((SELECT value FROM tag_overrides o \
-             WHERE o.track_id=tracks.id AND o.field='genre'), tracks.genre) = ?",
+            "SELECT COUNT(*) FROM tracks WHERE (CASE WHEN EXISTS(SELECT 1 FROM tag_overrides o \
+             WHERE o.track_id=tracks.id AND o.field='genre') THEN (SELECT value FROM tag_overrides o \
+             WHERE o.track_id=tracks.id AND o.field='genre') ELSE tracks.genre END) = ?",
             scope_id,
         ),
     };

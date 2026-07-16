@@ -157,9 +157,19 @@ async fn update_tags(
     if !valid_tag_numbers(&params) {
         return response::parameter_error(format, "Numeric tag is malformed or out of range");
     }
-    let values = tag_values(&params);
+    let clear_fields = match parse_clear_fields(&uri) {
+        Ok(fields) => fields,
+        Err(()) => return response::parameter_error(format, "Tag patch is malformed"),
+    };
+    let mut values = tag_values(&params);
+    for field in clear_fields {
+        if values.iter().any(|(set_field, _)| *set_field == field) {
+            return response::parameter_error(format, "Tag patch is malformed");
+        }
+        values.push((field, None));
+    }
     if values.is_empty() {
-        return response::parameter_error(format, "At least one tag is required");
+        return response::parameter_error(format, "Tag patch is malformed");
     }
     match state.index.media().set_tag_overrides(id, &values).await {
         Ok(true) => response::empty(format),
@@ -258,7 +268,7 @@ fn parse_track(value: Option<&str>) -> Option<i64> {
     value.and_then(|value| response::parse_entity_id(value, "track"))
 }
 
-fn tag_values(params: &TagParams) -> Vec<(&str, &str)> {
+fn tag_values(params: &TagParams) -> Vec<(&str, Option<&str>)> {
     let mut values = Vec::new();
     for (field, value) in [
         ("title", params.title.as_deref()),
@@ -270,10 +280,33 @@ fn tag_values(params: &TagParams) -> Vec<(&str, &str)> {
         ("discNumber", params.disc_number.as_deref()),
     ] {
         if let Some(value) = value {
-            values.push((field, value));
+            values.push((field, Some(value)));
         }
     }
     values
+}
+
+fn parse_clear_fields(uri: &axum::http::Uri) -> Result<Vec<&'static str>, ()> {
+    let mut fields = Vec::new();
+    for (name, value) in form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes()) {
+        if name != "clear" {
+            continue;
+        }
+        let field = match value.as_ref() {
+            "album" => "album",
+            "artist" => "artist",
+            "genre" => "genre",
+            "year" => "year",
+            "track" => "track",
+            "discNumber" => "discNumber",
+            _ => return Err(()),
+        };
+        if fields.contains(&field) {
+            return Err(());
+        }
+        fields.push(field);
+    }
+    Ok(fields)
 }
 
 fn valid_tag_numbers(params: &TagParams) -> bool {

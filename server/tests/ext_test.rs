@@ -630,6 +630,261 @@ async fn update_tags_is_override_only_and_write_back_is_explicit() {
 }
 
 #[tokio::test]
+async fn update_tags_can_explicitly_clear_optional_fields_without_source_fallback() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/a.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let id = payload(&uploaded, "track")["id"].as_str().unwrap();
+    let cleared = json(
+        fixture
+            .get(
+                "admin",
+                &format!(
+                    "/rest/ext/updateTags?id={id}&clear=album&clear=artist&clear=genre&clear=year&clear=track&clear=discNumber"
+                ),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cleared["subsonic-response"]["status"], "ok", "{cleared}");
+    let shown = json(
+        fixture
+            .get("admin", &format!("/rest/getSong?id={id}"))
+            .await,
+    )
+    .await;
+    let song = payload(&shown, "song");
+    for field in ["album", "artist", "genre", "year", "track", "discNumber"] {
+        assert!(song.get(field).is_none(), "{field}: {shown}");
+    }
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tag_overrides WHERE track_id = ? AND value IS NULL",
+    )
+    .bind(id.trim_start_matches("tr-").parse::<i64>().unwrap())
+    .fetch_one(fixture.index.pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 6);
+}
+
+#[tokio::test]
+async fn update_tags_rejects_malformed_clear_patches() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/invalid.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let id = payload(&uploaded, "track")["id"].as_str().unwrap();
+
+    for query in [
+        "clear=title",
+        "clear=missing",
+        "genre=Jazz&clear=genre",
+        "clear=year&clear=year",
+    ] {
+        let body = json(
+            fixture
+                .get("admin", &format!("/rest/ext/updateTags?id={id}&{query}"))
+                .await,
+        )
+        .await;
+        assert_eq!(
+            body["subsonic-response"]["error"]["code"], 10,
+            "{query}: {body}"
+        );
+    }
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tag_overrides")
+        .fetch_one(fixture.index.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn cleared_genre_leaves_aggregation_and_deleting_override_restores_source() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/genre.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let id = payload(&uploaded, "track")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let track_id = id.trim_start_matches("tr-").parse::<i64>().unwrap();
+
+    let cleared = json(
+        fixture
+            .get(
+                "admin",
+                &format!("/rest/ext/updateTags?id={id}&clear=genre"),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cleared["subsonic-response"]["status"], "ok", "{cleared}");
+    let genres = json(fixture.get("admin", "/rest/getGenres").await).await;
+    assert!(
+        payload(&genres, "genres")["genre"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|genre| genre["value"] != "Rock"),
+        "{genres}"
+    );
+
+    sqlx::query("DELETE FROM tag_overrides WHERE track_id = ? AND field = 'genre'")
+        .bind(track_id)
+        .execute(fixture.index.pool())
+        .await
+        .unwrap();
+    let restored = json(
+        fixture
+            .get("admin", &format!("/rest/getSong?id={id}"))
+            .await,
+    )
+    .await;
+    assert_eq!(payload(&restored, "song")["genre"], "Rock", "{restored}");
+}
+
+#[tokio::test]
+async fn cleared_numeric_fields_remain_missing_in_album_and_search_results() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/numeric.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let track = payload(&uploaded, "track");
+    let id = track["id"].as_str().unwrap();
+    let album_id = track["albumId"].as_str().unwrap();
+    assert_eq!(track["year"], 2020, "{uploaded}");
+    assert_eq!(track["track"], 1, "{uploaded}");
+
+    let cleared = json(
+        fixture
+            .get(
+                "admin",
+                &format!("/rest/ext/updateTags?id={id}&clear=year&clear=track"),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cleared["subsonic-response"]["status"], "ok", "{cleared}");
+
+    let album = json(
+        fixture
+            .get("admin", &format!("/rest/getAlbum?id={album_id}"))
+            .await,
+    )
+    .await;
+    let album_song = &payload(&album, "album")["song"][0];
+    assert!(album_song.get("year").is_none(), "{album}");
+    assert!(album_song.get("track").is_none(), "{album}");
+
+    let search = json(fixture.get("admin", "/rest/search3?query=Song%20A").await).await;
+    let search_song = &payload(&search, "searchResult3")["song"][0];
+    assert!(search_song.get("year").is_none(), "{search}");
+    assert!(search_song.get("track").is_none(), "{search}");
+}
+
+#[tokio::test]
+async fn cleared_genre_does_not_inherit_source_access_rule() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/access.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let id = payload(&uploaded, "track")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let rule = json(
+        fixture
+            .get(
+                "admin",
+                "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock",
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(rule["subsonic-response"]["status"], "ok", "{rule}");
+    let hidden = json(
+        fixture
+            .get("member", &format!("/rest/getSong?id={id}"))
+            .await,
+    )
+    .await;
+    assert_eq!(hidden["subsonic-response"]["error"]["code"], 70, "{hidden}");
+
+    let cleared = json(
+        fixture
+            .get(
+                "admin",
+                &format!("/rest/ext/updateTags?id={id}&clear=genre"),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cleared["subsonic-response"]["status"], "ok", "{cleared}");
+    let visible = json(
+        fixture
+            .get("member", &format!("/rest/getSong?id={id}"))
+            .await,
+    )
+    .await;
+    assert_eq!(visible["subsonic-response"]["status"], "ok", "{visible}");
+}
+
+#[tokio::test]
+async fn cleared_genre_is_not_a_valid_source_genre_access_scope() {
+    let fixture = Fixture::new().await;
+    let uploaded = json(
+        fixture
+            .upload("library/clear/access-scope.flac", &flac("a.flac"))
+            .await,
+    )
+    .await;
+    let id = payload(&uploaded, "track")["id"].as_str().unwrap();
+    let cleared = json(
+        fixture
+            .get(
+                "admin",
+                &format!("/rest/ext/updateTags?id={id}&clear=genre"),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(cleared["subsonic-response"]["status"], "ok", "{cleared}");
+
+    let missing = json(
+        fixture
+            .get(
+                "admin",
+                "/rest/ext/setAccessRule?scopeType=genre&scopeId=Rock",
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(
+        missing["subsonic-response"]["error"]["code"], 70,
+        "{missing}"
+    );
+}
+
+#[tokio::test]
 async fn move_and_delete_track_keep_store_and_index_consistent() {
     let fixture = Fixture::new().await;
     let uploaded = json(
@@ -1185,6 +1440,13 @@ async fn extensions_discovery_declares_every_ext_capability() {
     ] {
         assert!(names.contains(&name), "缺少 {name}: {body}");
     }
+    let library_management = payload(&body, "openSubsonicExtensions")
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| value["name"] == "libraryManagement")
+        .unwrap();
+    assert_eq!(library_management["versions"], serde_json::json!([1, 2]));
 }
 
 #[tokio::test]

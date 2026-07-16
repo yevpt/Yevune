@@ -91,7 +91,9 @@ impl<'a> AccessControl<'a> {
         }
         let m = self.principal_match(viewer);
         let effective_genre = format!(
-            "COALESCE((SELECT value FROM tag_overrides o WHERE o.track_id={alias}.id AND o.field='genre'), {alias}.genre)"
+            "CASE WHEN EXISTS(SELECT 1 FROM tag_overrides o WHERE o.track_id={alias}.id AND o.field='genre') \
+             THEN (SELECT value FROM tag_overrides o WHERE o.track_id={alias}.id AND o.field='genre') \
+             ELSE {alias}.genre END"
         );
         // 各层级裁决：命中规则→1(允许)/0(拒绝)，无规则→NULL(向下一层回退)。
         // COALESCE 取最具体的非空裁决；全空则默认开放(1)。
