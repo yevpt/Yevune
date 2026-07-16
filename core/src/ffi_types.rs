@@ -2,7 +2,7 @@
 
 use contract::{
     AccessRule, Album, Artist, Genre, Playlist, PlaylistFolder, Principal, PrincipalType, Role,
-    ScopeType, Track, User,
+    ScopeType, TagField, Track, User,
 };
 
 #[uniffi::remote(Enum)]
@@ -17,6 +17,16 @@ pub enum ScopeType {
 pub enum PrincipalType {
     User,
     Role,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TagField {
+    Album,
+    Artist,
+    Genre,
+    Year,
+    Track,
+    DiscNumber,
 }
 
 #[uniffi::remote(Record)]

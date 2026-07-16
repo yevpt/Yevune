@@ -1,9 +1,10 @@
 //! 管理员曲库写操作。
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
-use contract::Track;
+use contract::{TagField, Track};
 use serde::Deserialize;
 
 use crate::auth::AuthenticatedSession;
@@ -20,6 +21,7 @@ pub struct TagUpdate {
     pub year: Option<u32>,
     pub track: Option<u32>,
     pub disc_number: Option<u32>,
+    pub clear_fields: Vec<TagField>,
 }
 
 /// 上传时传给服务端的曲库目标信息。
@@ -53,33 +55,68 @@ pub(crate) async fn update_tags(
     id: String,
     update: TagUpdate,
 ) -> Result<()> {
+    let parameters = tag_parameters(id, update)?;
+    http.get_empty_with_params(auth, "ext/updateTags", &parameters)
+        .await
+}
+
+fn tag_parameters(id: String, update: TagUpdate) -> Result<Vec<(String, String)>> {
     let mut parameters = vec![("id".to_owned(), id)];
-    for (name, value) in [
-        ("title", update.title),
-        ("album", update.album),
-        ("artist", update.artist),
-        ("genre", update.genre),
+    let mut set_fields = HashSet::new();
+    for (field, name, value) in [
+        (None, "title", update.title),
+        (Some(TagField::Album), "album", update.album),
+        (Some(TagField::Artist), "artist", update.artist),
+        (Some(TagField::Genre), "genre", update.genre),
     ] {
         if let Some(value) = value {
+            if let Some(field) = field {
+                set_fields.insert(field);
+            }
             parameters.push((name.to_owned(), value));
         }
     }
-    for (name, value) in [
-        ("year", update.year),
-        ("track", update.track),
-        ("discNumber", update.disc_number),
+    for (field, name, value, maximum) in [
+        (TagField::Year, "year", update.year, 9_999),
+        (TagField::Track, "track", update.track, 999),
+        (TagField::DiscNumber, "discNumber", update.disc_number, 999),
     ] {
         if let Some(value) = value {
+            if !(1..=maximum).contains(&value) {
+                return Err(CoreError::InvalidRequest {
+                    message: format!("{name} 超出允许范围"),
+                });
+            }
+            set_fields.insert(field);
             parameters.push((name.to_owned(), value.to_string()));
         }
+    }
+    let mut cleared = HashSet::new();
+    for field in update.clear_fields {
+        if !cleared.insert(field) || set_fields.contains(&field) {
+            return Err(CoreError::InvalidRequest {
+                message: "同一标签字段不能同时设置和清空".to_owned(),
+            });
+        }
+        parameters.push(("clear".to_owned(), tag_field_name(field).to_owned()));
     }
     if parameters.len() == 1 {
         return Err(CoreError::InvalidRequest {
             message: "至少需要修改一个标签字段".to_owned(),
         });
     }
-    http.get_empty_with_params(auth, "ext/updateTags", &parameters)
-        .await
+    Ok(parameters)
+}
+
+fn tag_field_name(field: TagField) -> &'static str {
+    match field {
+        TagField::Album => "album",
+        TagField::Artist => "artist",
+        TagField::Genre => "genre",
+        TagField::Year => "year",
+        TagField::Track => "track",
+        TagField::DiscNumber => "discNumber",
+    }
 }
 
 pub(crate) async fn delete_track(
@@ -200,5 +237,80 @@ fn file_error(error: std::io::Error) -> CoreError {
 fn network_error(error: reqwest::Error) -> CoreError {
     CoreError::Network {
         message: error.without_url().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use contract::TagField;
+
+    use super::{tag_parameters, TagUpdate};
+
+    fn empty_update() -> TagUpdate {
+        TagUpdate {
+            title: None,
+            album: None,
+            artist: None,
+            genre: None,
+            year: None,
+            track: None,
+            disc_number: None,
+            clear_fields: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_setting_and_clearing_the_same_field() {
+        let update = TagUpdate {
+            genre: Some("Jazz".into()),
+            clear_fields: vec![TagField::Genre],
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_clear_fields() {
+        let update = TagUpdate {
+            clear_fields: vec![TagField::Year, TagField::Year],
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
+    }
+
+    #[test]
+    fn rejects_year_below_supported_range() {
+        let update = TagUpdate {
+            year: Some(0),
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
+    }
+
+    #[test]
+    fn rejects_year_above_supported_range() {
+        let update = TagUpdate {
+            year: Some(10_000),
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
+    }
+
+    #[test]
+    fn rejects_track_below_supported_range() {
+        let update = TagUpdate {
+            track: Some(0),
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
+    }
+
+    #[test]
+    fn rejects_disc_number_above_supported_range() {
+        let update = TagUpdate {
+            disc_number: Some(1_000),
+            ..empty_update()
+        };
+        assert!(tag_parameters("tr-1".into(), update).is_err());
     }
 }

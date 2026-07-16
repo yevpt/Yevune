@@ -17,7 +17,7 @@ pub mod stream;
 pub mod user;
 
 pub use access::{AccessRule, Principal, PrincipalType, ScopeType};
-pub use media::{Album, Artist, Genre, Track};
+pub use media::{Album, Artist, Genre, TagField, Track};
 pub use playlist::{Playlist, PlaylistFolder};
 pub use response::{ResponseStatus, SubsonicBody, SubsonicError, SubsonicResponse};
 pub use stream::StreamRequest;

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use contract::TagField;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -46,6 +47,7 @@ async fn update_tags_sends_only_requested_override_fields() {
                 year: Some(2024),
                 track: None,
                 disc_number: None,
+                clear_fields: vec![TagField::Genre, TagField::DiscNumber],
             },
         )
         .await
@@ -58,5 +60,7 @@ async fn update_tags_sends_only_requested_override_fields() {
     assert!(update.contains("title=New+Title"));
     assert!(update.contains("artist=New+Artist"));
     assert!(update.contains("year=2024"));
+    assert!(update.contains("clear=genre"));
+    assert!(update.contains("clear=discNumber"));
     assert!(!update.contains("genre="));
 }

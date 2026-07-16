@@ -58,6 +58,18 @@ pub struct Album {
     pub created: Option<String>,
 }
 
+/// 可由管理员显式清空的音频标签字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum TagField {
+    Album,
+    Artist,
+    Genre,
+    Year,
+    Track,
+    DiscNumber,
+}
+
 /// 曲目，对齐 OpenSubsonic `Child`(song) + 设计文档 §6 `tracks` 列。
 ///
 /// 面向客户端视图：不含 `object_key`/`etag`/`content_hash` 等对象存储内部字段。
@@ -100,4 +112,21 @@ pub struct Track {
     pub created: Option<String>,
     /// Garage 原始对象键（`library/...`），OpenSubsonic `path`；客户端整理/移动时的当前定位。
     pub path: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TagField;
+
+    #[test]
+    fn tag_field_uses_stable_camel_case_names() {
+        assert_eq!(
+            serde_json::to_string(&TagField::Album).unwrap(),
+            "\"album\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TagField::DiscNumber).unwrap(),
+            "\"discNumber\""
+        );
+    }
 }
