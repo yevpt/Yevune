@@ -98,6 +98,31 @@ final class MediaViewModelTests: XCTestCase {
         XCTAssertNil(model.operationMessage)
     }
 
+    func testDeferredManagementSuccessAfterAlbumSwitchDoesNotRequestOldAlbum() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let gate = DeferredSuccessGate()
+        await resolveInitial(model, client: client, albumID: "a")
+
+        let deferredSuccess = Task {
+            await gate.wait()
+            await model.refreshAfterBatch(album: album("a"), message: "标签已更新")
+        }
+
+        let loadB = Task { await model.load(album: album("b")) }
+        await client.waitForAlbumCalls(2)
+        await client.resolveAlbumCall(1, with: detail("b"))
+        await loadB.value
+        await gate.open()
+        await deferredSuccess.value
+        let albumCallCount = await client.albumCallCount()
+
+        XCTAssertEqual(albumCallCount, 2)
+        XCTAssertEqual(model.currentAlbumID, "b")
+        XCTAssertEqual(model.detail?.album.id, "b")
+        XCTAssertNil(model.operationMessage)
+    }
+
     func testDeleteFinishingAfterAlbumSwitchDoesNotRefreshOldAlbum() async {
         let client = SuspendedAlbumClient()
         let model = MediaViewModel(client: client)
@@ -309,6 +334,22 @@ private enum TestFailure: LocalizedError {
     case rejected
 
     var errorDescription: String? { "request rejected" }
+}
+
+private actor DeferredSuccessGate {
+    private var opened = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !opened else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        opened = true
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private actor SuspendedAlbumClient: MusicClientProviding {

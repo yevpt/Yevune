@@ -4,6 +4,7 @@ struct MoveTrackView: View {
     @ObservedObject var model: MoveTrackViewModel
     let onSuccess: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var lifecycle = EditorSheetLifecycle()
 
     init(model: MoveTrackViewModel, onSuccess: @escaping (String) -> Void = { _ in }) {
         self.model = model
@@ -41,19 +42,36 @@ struct MoveTrackView: View {
             .navigationTitle("移动曲目")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button("取消") {
+                        if !isSubmitting { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("移动") { Task { await model.submit() } }
+                    Button("移动") { submit() }
                         .disabled(!model.canSubmit)
                 }
             }
         }
         .frame(minWidth: 520, minHeight: 330)
-        .onChange(of: model.didMove) { _, didMove in
-            guard didMove else { return }
-            onSuccess("曲目已移动")
-            dismiss()
+        .interactiveDismissDisabled(isSubmitting)
+    }
+
+    private var isSubmitting: Bool {
+        lifecycle.isSubmitting || model.isSubmitting
+    }
+
+    private func submit() {
+        Task {
+            await lifecycle.submit(
+                operation: {
+                    await model.submit()
+                    return model.didMove
+                },
+                onSuccess: {
+                    onSuccess("曲目已移动")
+                    dismiss()
+                }
+            )
         }
     }
 }

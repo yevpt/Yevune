@@ -69,6 +69,7 @@ struct MediaDetailView: View {
     private var adminSurface: some View {
         detailSurface(isAdmin: true)
             .fileImporter(isPresented: $importing, allowedContentTypes: [.image]) { result in
+                guard !batch.isRunning else { return }
                 guard case let .success(url) = result else { return }
                 Task { await model.replaceCover(album: album, path: url.path) }
             }
@@ -111,6 +112,9 @@ struct MediaDetailView: View {
                     onDone: { showingBatchResults = false }
                 )
                 .frame(minWidth: 500, minHeight: 360)
+                .interactiveDismissDisabled(
+                    !AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: batch.isRunning)
+                )
             }
             .confirmationDialog(
                 deletionTitle,
@@ -174,14 +178,18 @@ struct MediaDetailView: View {
                 coverRevision: model.coverRevision,
                 availableWidth: availableWidth,
                 isAdmin: true,
+                managementEnabled: managementEnabled,
                 onPlay: { playAlbum(detail.tracks, startingAt: 0) },
-                onReplaceCover: { importing = true },
-                onManageAlbumAccess: { onManageAccess?(.fromAlbum(album)) },
-                onManageArtistAccess: {
-                    guard let target = AccessScopeTarget.artist(from: album) else { return }
-                    onManageAccess?(target)
+                onReplaceCover: {
+                    guard !batch.isRunning else { return }
+                    importing = true
                 },
-                onEditAlbum: { batchEditorTracks = ordered(detail.tracks) }
+                onManageAlbumAccess: albumAccessAction,
+                onManageArtistAccess: artistAccessAction,
+                onEditAlbum: {
+                    guard !batch.isRunning else { return }
+                    batchEditorTracks = ordered(detail.tracks)
+                }
             )
             .padding(.vertical, 12)
 
@@ -192,21 +200,41 @@ struct MediaDetailView: View {
                 tracks: detail.tracks,
                 availableWidth: availableWidth,
                 isAdmin: true,
+                managementEnabled: managementEnabled,
+                selectionEnabled: selectionEnabled,
                 selection: $selectedTrackIDs,
                 onPlay: playAlbum,
                 onPlayNow: { track in Task { await playback.playNow(track) } },
                 onPlayNext: playback.playNext,
                 onAddToQueue: playback.addToQueue,
                 onAddToPlaylist: { playlistTrackIDs = [$0.id] },
-                onEditTags: { tagEditor = model.makeTagEditor(for: $0) },
-                onMove: { moveEditor = model.makeMoveEditor(for: $0) },
-                onDelete: { pendingDeletion = .single($0) },
-                onManageAccess: { onManageAccess?(.fromTrack($0)) },
+                onEditTags: {
+                    guard !batch.isRunning else { return }
+                    tagEditor = model.makeTagEditor(for: $0)
+                },
+                onMove: {
+                    guard !batch.isRunning else { return }
+                    moveEditor = model.makeMoveEditor(for: $0)
+                },
+                onDelete: {
+                    guard !batch.isRunning else { return }
+                    pendingDeletion = .single($0)
+                },
+                onManageAccess: trackAccessAction,
                 onImportMusic: onImportMusic
             )
 
             if !selectedTrackIDs.isEmpty {
                 adminBatchActionBar(detail: detail)
+            }
+            if showsBatchResultReopen {
+                HStack {
+                    Spacer()
+                    Button("查看批量结果") { showingBatchResults = true }
+                    Spacer()
+                }
+                .padding(8)
+                .background(.bar)
             }
         }
     }
@@ -311,8 +339,7 @@ struct MediaDetailView: View {
     }
 
     private func refreshCurrentAlbum(_ message: String) {
-        guard model.currentAlbumID == album.id else { return }
-        Task { await model.refresh(album: album, successMessage: message) }
+        Task { await model.refreshAfterBatch(album: album, message: message) }
     }
 
     private func runBatch(tracks: [Track], action: TrackBatchAction, message: String) {
@@ -334,6 +361,7 @@ struct MediaDetailView: View {
     }
 
     private func confirmDeletion() {
+        guard !batch.isRunning else { return }
         guard let pendingDeletion else { return }
         self.pendingDeletion = nil
         switch pendingDeletion {
@@ -361,6 +389,46 @@ struct MediaDetailView: View {
         case let .single(track): "“\(track.title)”将从曲库中删除，且无法恢复。"
         case .batch: "这些曲目将从曲库中删除，且无法恢复。"
         case nil: "此操作无法恢复。"
+        }
+    }
+
+    private var showsBatchResultReopen: Bool {
+        AlbumWorkbenchPolicy.showsBatchResultReopen(
+            resultCount: batch.results.count,
+            isSheetPresented: showingBatchResults
+        )
+    }
+
+    private var managementEnabled: Bool {
+        AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: batch.isRunning)
+    }
+
+    private var selectionEnabled: Bool {
+        AlbumWorkbenchPolicy.selectionEnabled(isBatchRunning: batch.isRunning)
+    }
+
+    private var albumAccessAction: (() -> Void)? {
+        guard let onManageAccess else { return nil }
+        return {
+            guard !batch.isRunning else { return }
+            onManageAccess(.fromAlbum(album))
+        }
+    }
+
+    private var artistAccessAction: (() -> Void)? {
+        guard let onManageAccess,
+              let target = AccessScopeTarget.artist(from: album) else { return nil }
+        return {
+            guard !batch.isRunning else { return }
+            onManageAccess(target)
+        }
+    }
+
+    private var trackAccessAction: ((Track) -> Void)? {
+        guard let onManageAccess else { return nil }
+        return { track in
+            guard !batch.isRunning else { return }
+            onManageAccess(.fromTrack(track))
         }
     }
 

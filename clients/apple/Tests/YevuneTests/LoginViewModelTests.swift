@@ -212,7 +212,7 @@ final class LoginViewModelTests: XCTestCase {
 
     func testTagEditorSubmitsAnOverlayUpdate() async {
         let model = TagEditorViewModel(client: FakeMusicClient(), trackID: "tr-1")
-        model.title = "Retitled"
+        model.draft.title = "Retitled"
 
         await model.save()
 

@@ -4,6 +4,7 @@ struct TagEditorView: View {
     @ObservedObject var model: TagEditorViewModel
     let onSuccess: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var lifecycle = EditorSheetLifecycle()
     @State private var confirmingDiscard = false
 
     init(model: TagEditorViewModel, onSuccess: @escaping (String) -> Void = { _ in }) {
@@ -41,12 +42,18 @@ struct TagEditorView: View {
                     Button("取消") { requestDismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存更改") { Task { await model.save() } }
+                    Button("保存更改") { submit() }
                         .disabled(!model.canSave)
                 }
             }
         }
         .frame(minWidth: 480, minHeight: 460)
+        .interactiveDismissDisabled(
+            EditorSheetDismissalPolicy.interactiveDismissDisabled(
+                isDirty: model.isDirty,
+                isSubmitting: isSubmitting
+            )
+        )
         .confirmationDialog(
             "放弃未保存的更改？",
             isPresented: $confirmingDiscard,
@@ -54,11 +61,6 @@ struct TagEditorView: View {
         ) {
             Button("放弃更改", role: .destructive) { dismiss() }
             Button("继续编辑", role: .cancel) {}
-        }
-        .onChange(of: model.didSave) { _, didSave in
-            guard didSave else { return }
-            onSuccess("标签已更新")
-            dismiss()
         }
     }
 
@@ -76,10 +78,35 @@ struct TagEditorView: View {
     }
 
     private func requestDismiss() {
-        if model.isDirty {
-            confirmingDiscard = true
-        } else {
+        switch EditorSheetDismissalPolicy.request(
+            isDirty: model.isDirty,
+            isSubmitting: isSubmitting
+        ) {
+        case .dismiss:
             dismiss()
+        case .confirmDiscard:
+            confirmingDiscard = true
+        case .blocked:
+            break
+        }
+    }
+
+    private var isSubmitting: Bool {
+        lifecycle.isSubmitting || model.isSubmitting
+    }
+
+    private func submit() {
+        Task {
+            await lifecycle.submit(
+                operation: {
+                    await model.save()
+                    return model.didSave
+                },
+                onSuccess: {
+                    onSuccess("标签已更新")
+                    dismiss()
+                }
+            )
         }
     }
 }

@@ -8,12 +8,85 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         let mediaDetailSource = try source("Sources/Yevune/Views/MediaDetailView.swift")
         let libraryViewSource = try source("Sources/Yevune/Views/LibraryView.swift")
         let tagEditorSource = try source("Sources/Yevune/Views/TagEditorView.swift")
+        let tagEditorModelSource = try source("Sources/Yevune/Model/TagEditorViewModel.swift")
+        let moveEditorSource = try source("Sources/Yevune/Views/MoveTrackView.swift")
+        let headerSource = try source("Sources/Yevune/Views/Album/AlbumHeaderView.swift")
+        let trackListSource = try source("Sources/Yevune/Views/Album/AlbumTrackList.swift")
 
         XCTAssertTrue(mediaDetailSource.contains("if isAdmin"))
         XCTAssertFalse(mediaDetailSource.contains("Button(\"替换封面\") { importing = true }"))
         XCTAssertTrue(libraryViewSource.contains("onManageAccess: { accessTarget = $0 }"))
         XCTAssertFalse(tagEditorSource.contains("移动曲目"))
         XCTAssertFalse(tagEditorSource.contains("删除曲目"))
+        XCTAssertTrue(mediaDetailSource.contains("refreshAfterBatch(album: album, message: message)"))
+        XCTAssertFalse(mediaDetailSource.contains("guard model.currentAlbumID == album.id"))
+        XCTAssertTrue(mediaDetailSource.contains("managementEnabled: managementEnabled"))
+        XCTAssertTrue(mediaDetailSource.contains("selectionEnabled: selectionEnabled"))
+        XCTAssertTrue(trackListSource.contains("reconciledSelectionChange"))
+        XCTAssertTrue(tagEditorSource.contains("interactiveDismissDisabled"))
+        XCTAssertTrue(moveEditorSource.contains("interactiveDismissDisabled"))
+        XCTAssertTrue(mediaDetailSource.contains("canDismissBatchResults"))
+        XCTAssertTrue(mediaDetailSource.contains("查看批量结果"))
+        XCTAssertFalse(tagEditorModelSource.contains("moveKey"))
+        XCTAssertFalse(tagEditorModelSource.contains("didMove"))
+        XCTAssertFalse(tagEditorModelSource.contains("didDelete"))
+        XCTAssertFalse(tagEditorModelSource.contains("func move()"))
+        XCTAssertFalse(tagEditorModelSource.contains("func delete()"))
+        XCTAssertFalse(
+            headerSource.contains("if isAdmin, let onReplaceCover, let onEditAlbum, let onManageAlbumAccess")
+        )
+        XCTAssertFalse(
+            trackListSource.contains("let onEditTags,\n                       let onMove,\n                       let onDelete,\n                       let onManageAccess")
+        )
+    }
+
+    func testBatchRunLocksManagementAndSelectionButNotPlayback() {
+        XCTAssertFalse(AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: true))
+        XCTAssertFalse(AlbumWorkbenchPolicy.selectionEnabled(isBatchRunning: true))
+        XCTAssertTrue(AlbumWorkbenchPolicy.playbackEnabled(isBatchRunning: true))
+        XCTAssertTrue(AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: false))
+        XCTAssertTrue(AlbumWorkbenchPolicy.selectionEnabled(isBatchRunning: false))
+    }
+
+    func testDisabledSelectionRestoresCurrentIDsAndRejectsSelectAll() {
+        let current: Set<String> = ["one"]
+        let proposed: Set<String> = ["two"]
+
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.reconciledSelectionChange(
+                current: current,
+                proposed: proposed,
+                isEnabled: false
+            ),
+            current
+        )
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.reconciledSelectionChange(
+                current: current,
+                proposed: proposed,
+                isEnabled: true
+            ),
+            proposed
+        )
+        XCTAssertFalse(AlbumWorkbenchPolicy.handlesSelectAll(selectionEnabled: false))
+        XCTAssertTrue(AlbumWorkbenchPolicy.handlesSelectAll(selectionEnabled: true))
+    }
+
+    func testBatchResultsCannotDismissWhileRunningAndCanReopenAfterCompletion() {
+        XCTAssertFalse(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: true))
+        XCTAssertTrue(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: false))
+        XCTAssertTrue(
+            AlbumWorkbenchPolicy.showsBatchResultReopen(
+                resultCount: 2,
+                isSheetPresented: false
+            )
+        )
+        XCTAssertFalse(
+            AlbumWorkbenchPolicy.showsBatchResultReopen(
+                resultCount: 2,
+                isSheetPresented: true
+            )
+        )
     }
 
     func testCompactInspectorUsesEssentialColumnsBelow620Points() {

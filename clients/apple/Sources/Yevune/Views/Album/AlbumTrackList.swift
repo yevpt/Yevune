@@ -6,6 +6,8 @@ struct AlbumTrackList: View {
     let tracks: [Track]
     let availableWidth: CGFloat
     let isAdmin: Bool
+    let managementEnabled: Bool
+    let selectionEnabled: Bool
     @Binding var selection: Set<String>
     let onPlay: ([Track], Int) -> Void
     let onPlayNow: (Track) -> Void
@@ -23,6 +25,8 @@ struct AlbumTrackList: View {
         tracks: [Track],
         availableWidth: CGFloat,
         isAdmin: Bool,
+        managementEnabled: Bool = true,
+        selectionEnabled: Bool = true,
         selection: Binding<Set<String>>,
         onPlay: @escaping ([Track], Int) -> Void,
         onPlayNow: @escaping (Track) -> Void,
@@ -39,6 +43,8 @@ struct AlbumTrackList: View {
         self.tracks = tracks
         self.availableWidth = availableWidth
         self.isAdmin = isAdmin
+        self.managementEnabled = managementEnabled
+        self.selectionEnabled = selectionEnabled
         _selection = selection
         self.onPlay = onPlay
         self.onPlayNow = onPlayNow
@@ -85,7 +91,7 @@ struct AlbumTrackList: View {
                     }
                 }
             } else {
-                List(selection: $selection) {
+                List(selection: guardedSelection) {
                     ForEach(Array(discGroups.enumerated()), id: \.offset) { _, group in
                         if isMultiDisc {
                             Section("碟 \(group.discNumber)") {
@@ -111,6 +117,9 @@ struct AlbumTrackList: View {
                 .onKeyPress(phases: .down) { keyPress in
                     guard keyPress.key == "a", keyPress.modifiers.contains(.command) else {
                         return .ignored
+                    }
+                    guard AlbumWorkbenchPolicy.handlesSelectAll(selectionEnabled: selectionEnabled) else {
+                        return .handled
                     }
                     selection = Set(tracks.map(\.id))
                     return .handled
@@ -146,17 +155,25 @@ struct AlbumTrackList: View {
                     Divider()
                     Button("加入歌单…") { onAddToPlaylist(track) }
 
-                    if isAdmin,
-                       let onEditTags,
-                       let onMove,
-                       let onDelete,
-                       let onManageAccess {
+                    if isAdmin {
                         Divider()
-                        Button("编辑标签…") { onEditTags(track) }
-                        Button("移动…") { onMove(track) }
-                        Button("设置曲目可见范围…") { onManageAccess(track) }
-                        Divider()
-                        Button("删除", role: .destructive) { onDelete(track) }
+                        if let onEditTags {
+                            Button("编辑标签…") { onEditTags(track) }
+                                .disabled(!managementEnabled)
+                        }
+                        if let onMove {
+                            Button("移动…") { onMove(track) }
+                                .disabled(!managementEnabled)
+                        }
+                        if let onManageAccess {
+                            Button("设置曲目可见范围…") { onManageAccess(track) }
+                                .disabled(!managementEnabled)
+                        }
+                        if let onDelete {
+                            Divider()
+                            Button("删除", role: .destructive) { onDelete(track) }
+                                .disabled(!managementEnabled)
+                        }
                     }
                 }
         }
@@ -226,9 +243,27 @@ struct AlbumTrackList: View {
     }
 
     private func reconcileSelection() {
-        selection = AlbumWorkbenchPolicy.reconciledSelection(
+        let proposed = AlbumWorkbenchPolicy.reconciledSelection(
             selection,
             trackIDs: tracks.map(\.id)
+        )
+        selection = AlbumWorkbenchPolicy.reconciledSelectionChange(
+            current: selection,
+            proposed: proposed,
+            isEnabled: selectionEnabled
+        )
+    }
+
+    private var guardedSelection: Binding<Set<String>> {
+        Binding(
+            get: { selection },
+            set: { proposed in
+                selection = AlbumWorkbenchPolicy.reconciledSelectionChange(
+                    current: selection,
+                    proposed: proposed,
+                    isEnabled: selectionEnabled
+                )
+            }
         )
     }
 

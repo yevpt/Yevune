@@ -57,6 +57,38 @@ enum AlbumWorkbenchPolicy {
         isAdmin ? [.editTags, .replaceCover, .move, .delete, .manageAccess] : []
     }
 
+    static func managementEnabled(isBatchRunning: Bool) -> Bool {
+        !isBatchRunning
+    }
+
+    static func selectionEnabled(isBatchRunning: Bool) -> Bool {
+        !isBatchRunning
+    }
+
+    static func playbackEnabled(isBatchRunning _: Bool) -> Bool {
+        true
+    }
+
+    static func reconciledSelectionChange(
+        current: Set<String>,
+        proposed: Set<String>,
+        isEnabled: Bool
+    ) -> Set<String> {
+        isEnabled ? proposed : current
+    }
+
+    static func handlesSelectAll(selectionEnabled: Bool) -> Bool {
+        selectionEnabled
+    }
+
+    static func canDismissBatchResults(isRunning: Bool) -> Bool {
+        !isRunning
+    }
+
+    static func showsBatchResultReopen(resultCount: Int, isSheetPresented: Bool) -> Bool {
+        resultCount > 0 && !isSheetPresented
+    }
+
     static func gridMetrics(width: CGFloat) -> AlbumWorkbenchGridMetrics {
         let isWide = width >= 620
         return AlbumWorkbenchGridMetrics(

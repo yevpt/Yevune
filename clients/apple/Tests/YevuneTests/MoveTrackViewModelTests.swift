@@ -10,6 +10,10 @@ final class MoveTrackViewModelTests: XCTestCase {
         XCTAssertEqual(model.destination, "library/Artist/Album/01 Song.flac")
         XCTAssertEqual(model.pathError, "请输入不同的目标路径")
         XCTAssertFalse(model.canSubmit)
+        XCTAssertFalse(model.isDirty)
+
+        model.destination = "library/Artist/Album/02 Song.flac"
+        XCTAssertTrue(model.isDirty)
     }
 
     func testRejectsPathOutsideLibraryPrefixWithoutCallingClient() async {

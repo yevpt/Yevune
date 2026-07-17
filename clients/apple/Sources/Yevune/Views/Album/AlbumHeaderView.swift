@@ -8,6 +8,7 @@ struct AlbumHeaderView: View {
     let coverRevision: Int
     let availableWidth: CGFloat
     let isAdmin: Bool
+    let managementEnabled: Bool
     let onPlay: () -> Void
     let onReplaceCover: (() -> Void)?
     let onManageAlbumAccess: (() -> Void)?
@@ -21,6 +22,7 @@ struct AlbumHeaderView: View {
         coverRevision: Int,
         availableWidth: CGFloat,
         isAdmin: Bool,
+        managementEnabled: Bool = true,
         onPlay: @escaping () -> Void,
         onReplaceCover: (() -> Void)? = nil,
         onManageAlbumAccess: (() -> Void)? = nil,
@@ -33,6 +35,7 @@ struct AlbumHeaderView: View {
         self.coverRevision = coverRevision
         self.availableWidth = availableWidth
         self.isAdmin = isAdmin
+        self.managementEnabled = managementEnabled
         self.onPlay = onPlay
         self.onReplaceCover = onReplaceCover
         self.onManageAlbumAccess = onManageAlbumAccess
@@ -76,21 +79,31 @@ struct AlbumHeaderView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    if isAdmin, let onReplaceCover, let onEditAlbum, let onManageAlbumAccess {
-                        Button(action: onReplaceCover) {
-                            Label("替换封面", systemImage: "photo")
-                        }
-                        .buttonStyle(.bordered)
-
-                        Menu {
-                            Button("修改专辑信息…", action: onEditAlbum)
-                            Divider()
-                            Button("专辑可见范围…", action: onManageAlbumAccess)
-                            if album.artistId != nil, let onManageArtistAccess {
-                                Button("艺人可见范围…", action: onManageArtistAccess)
+                    if isAdmin {
+                        if let onReplaceCover {
+                            Button(action: onReplaceCover) {
+                                Label("替换封面", systemImage: "photo")
                             }
-                        } label: {
-                            Label("管理专辑", systemImage: "ellipsis.circle")
+                            .buttonStyle(.bordered)
+                            .disabled(!managementEnabled)
+                        }
+
+                        if onEditAlbum != nil || onManageAlbumAccess != nil || onManageArtistAccess != nil {
+                            Menu {
+                                if let onEditAlbum {
+                                    Button("修改专辑信息…", action: onEditAlbum)
+                                }
+                                if let onManageAlbumAccess {
+                                    Divider()
+                                    Button("专辑可见范围…", action: onManageAlbumAccess)
+                                }
+                                if album.artistId != nil, let onManageArtistAccess {
+                                    Button("艺人可见范围…", action: onManageArtistAccess)
+                                }
+                            } label: {
+                                Label("管理专辑", systemImage: "ellipsis.circle")
+                            }
+                            .disabled(!managementEnabled)
                         }
                     }
                 }

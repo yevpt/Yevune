@@ -174,7 +174,6 @@ final class TagEditorViewModelTests: XCTestCase {
         XCTAssertEqual(model.draft.year, "2024")
         XCTAssertEqual(model.draft.track, "3")
         XCTAssertEqual(model.draft.discNumber, "2")
-        XCTAssertEqual(model.moveKey, "library/Artist/Album/03 Song.flac")
         XCTAssertFalse(model.isDirty)
         XCTAssertTrue(model.validation.isValid)
         XCTAssertFalse(model.canSave)
@@ -252,33 +251,6 @@ final class TagEditorViewModelTests: XCTestCase {
         XCTAssertFalse(model.didSave)
     }
 
-    // Compatibility coverage until Task 8 moves these actions out of TagEditorView.
-    func testCompatibilityDeleteAndMoveRetainSuccessfulBehavior() async {
-        let client = RecordingTrackClient()
-        let model = TagEditorViewModel(client: client, track: trackFixture())
-
-        await model.move()
-        await model.delete()
-
-        XCTAssertEqual(client.moves, [.init(id: "track:1", key: "library/Artist/Album/03 Song.flac")])
-        XCTAssertEqual(client.deletedTrackIDs, ["track:1"])
-        XCTAssertTrue(model.didMove)
-        XCTAssertTrue(model.didDelete)
-    }
-
-    func testCompatibilityDeleteAndMoveRetainSafeErrorPresentation() async {
-        let client = RecordingTrackClient(operationError: CoreError.NotAuthenticated)
-        let model = TagEditorViewModel(client: client, track: trackFixture())
-
-        await model.move()
-        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
-        XCTAssertFalse(model.didMove)
-
-        await model.delete()
-        XCTAssertEqual(model.errorMessage, "权限已变化，请重新登录")
-        XCTAssertFalse(model.didDelete)
-    }
-
     func testBatchTagUpdateContinuesAfterFailuresAndRefreshes() async {
         let client = RecordingTrackClient(failingTrackIDs: ["track:2"])
         let model = MediaViewModel(client: client)
@@ -323,7 +295,6 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
     let suspendUpdates: Bool
     private(set) var tagUpdates: [TagUpdateCall] = []
     private(set) var deletedTrackIDs: [String] = []
-    private(set) var moves: [MoveCall] = []
     private(set) var albumLoads: [String] = []
     private(set) var isUpdateSuspended = false
     private var updateContinuation: CheckedContinuation<Void, Never>?
@@ -367,9 +338,7 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
     }
 
     func moveTrack(id: String, key: String) async throws {
-        moves.append(.init(id: id, key: key))
-        if let operationError { throw operationError }
-        if failingTrackIDs.contains(id) { throw CocoaError(.fileReadUnknown) }
+        throw CocoaError(.featureUnsupported)
     }
 
     func getAlbum(id: String) async throws -> AlbumDetail {
@@ -381,9 +350,4 @@ private final class RecordingTrackClient: MusicClientProviding, @unchecked Senda
 private struct TagUpdateCall: Equatable {
     let id: String
     let update: TagUpdate
-}
-
-private struct MoveCall: Equatable {
-    let id: String
-    let key: String
 }

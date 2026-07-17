@@ -29,6 +29,10 @@ final class MoveTrackViewModel: ObservableObject {
 
     var canSubmit: Bool { pathError == nil && !isSubmitting }
 
+    var isDirty: Bool {
+        destination != originalPath
+    }
+
     func submit() async {
         guard canSubmit else { return }
         let value = destination.trimmingCharacters(in: .whitespacesAndNewlines)
