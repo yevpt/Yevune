@@ -61,8 +61,6 @@ struct BatchActionBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
-        .fixedSize(horizontal: false, vertical: true)
-        .layoutPriority(1)
         .accessibilityElement(children: .contain)
     }
 }

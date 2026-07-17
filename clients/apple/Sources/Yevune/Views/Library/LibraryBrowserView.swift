@@ -58,11 +58,14 @@ struct LibraryBrowserView: View {
                     onShowTasks: onShowTasks
                 )
                 Divider()
-                if presentation.layout == .regular {
-                    regularLayout
-                } else {
-                    compactLayout
+                Group {
+                    if presentation.layout == .regular {
+                        regularLayout
+                    } else {
+                        compactLayout
+                    }
                 }
+                .id(presentation.layout)
             }
         }
         .task {

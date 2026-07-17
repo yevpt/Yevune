@@ -1,7 +1,7 @@
 import Foundation
 import YevuneCoreFFI
 
-enum LibraryLayout: Equatable {
+enum LibraryLayout: Hashable {
     case compact
     case regular
 }

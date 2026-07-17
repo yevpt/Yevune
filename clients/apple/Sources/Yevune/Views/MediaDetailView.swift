@@ -120,20 +120,6 @@ struct MediaDetailView: View {
                     }
                 }
             }
-            .sheet(isPresented: batchResultsIsPresented) {
-                BatchOperationResultView(
-                    results: batch.results,
-                    currentTrackID: batch.currentTrackID,
-                    isRunning: batch.isRunning,
-                    onStop: batch.stop,
-                    onRetryFailed: retryFailedBatch,
-                    onDone: { showingBatchResults = false }
-                )
-                .frame(minWidth: 500, minHeight: 360)
-                .interactiveDismissDisabled(
-                    !AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: batch.isRunning)
-                )
-            }
             .confirmationDialog(
                 deletionTitle,
                 isPresented: deletionIsPresented,
@@ -168,11 +154,18 @@ struct MediaDetailView: View {
                 case let (_, detail?):
                     if isAdmin {
                         adminContent(detail: detail, availableWidth: geometry.size.width)
+                            .safeAreaInset(edge: .bottom, spacing: 0) {
+                                adminBottomAccessory(detail: detail)
+                            }
                     } else {
                         memberContent(detail: detail, availableWidth: geometry.size.width)
+                            .safeAreaInset(edge: .bottom, spacing: 0) {
+                                memberBottomAccessory(detail: detail)
+                            }
                     }
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
 
@@ -181,9 +174,6 @@ struct MediaDetailView: View {
             sharedHeader(detail: detail, availableWidth: availableWidth)
             statusBanners
             memberTrackList(detail: detail, availableWidth: availableWidth)
-            if !selectedTrackIDs.isEmpty {
-                memberBatchActionBar(detail: detail)
-            }
         }
     }
 
@@ -242,18 +232,54 @@ struct MediaDetailView: View {
                 onImportMusic: onImportMusic
             )
 
-            if !selectedTrackIDs.isEmpty {
-                adminBatchActionBar(detail: detail)
+        }
+    }
+
+    @ViewBuilder private func memberBottomAccessory(detail: AlbumDetail) -> some View {
+        if AlbumWorkbenchPolicy.bottomAccessory(
+            isAdmin: false,
+            selectionCount: selectedTrackIDs.count,
+            isBatchResultPresented: false,
+            resultCount: 0,
+            resultAlbumID: nil,
+            currentAlbumID: album.id
+        ) == .selectionActions {
+            memberBatchActionBar(detail: detail)
+        }
+    }
+
+    @ViewBuilder private func adminBottomAccessory(detail: AlbumDetail) -> some View {
+        switch AlbumWorkbenchPolicy.bottomAccessory(
+            isAdmin: true,
+            selectionCount: selectedTrackIDs.count,
+            isBatchResultPresented: showingBatchResults,
+            resultCount: batch.results.count,
+            resultAlbumID: batch.resultAlbumID,
+            currentAlbumID: album.id
+        ) {
+        case .selectionActions:
+            adminBatchActionBar(detail: detail)
+        case .batchResults:
+            BatchOperationResultView(
+                results: batch.results,
+                currentTrackID: batch.currentTrackID,
+                isRunning: batch.isRunning,
+                onStop: batch.stop,
+                onRetryFailed: retryFailedBatch,
+                onDone: { showingBatchResults = false }
+            )
+            .frame(maxWidth: .infinity, maxHeight: 320)
+            .background(.bar)
+        case .batchResultReopen:
+            HStack {
+                Spacer()
+                Button("查看批量结果") { showingBatchResults = true }
+                Spacer()
             }
-            if showsBatchResultReopen {
-                HStack {
-                    Spacer()
-                    Button("查看批量结果") { showingBatchResults = true }
-                    Spacer()
-                }
-                .padding(8)
-                .background(.bar)
-            }
+            .padding(8)
+            .background(.bar)
+        case nil:
+            EmptyView()
         }
     }
 
@@ -410,15 +436,6 @@ struct MediaDetailView: View {
         }
     }
 
-    private var showsBatchResultReopen: Bool {
-        AlbumWorkbenchPolicy.showsBatchResultReopen(
-            resultCount: batch.results.count,
-            isSheetPresented: showingBatchResults,
-            resultAlbumID: batch.resultAlbumID,
-            currentAlbumID: album.id
-        )
-    }
-
     private var managementEnabled: Bool {
         AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: batch.isRunning)
     }
@@ -478,26 +495,6 @@ struct MediaDetailView: View {
     }
     private var batchEditorIsPresented: Binding<Bool> {
         Binding(get: { batchEditorTracks != nil }, set: { if !$0 { batchEditorTracks = nil } })
-    }
-    private var batchResultsIsPresented: Binding<Bool> {
-        Binding(
-            get: {
-                AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
-                    isRequested: showingBatchResults,
-                    resultCount: batch.results.count,
-                    resultAlbumID: batch.resultAlbumID,
-                    currentAlbumID: album.id
-                )
-            },
-            set: { requested in
-                showingBatchResults = AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
-                    isRequested: requested,
-                    resultCount: batch.results.count,
-                    resultAlbumID: batch.resultAlbumID,
-                    currentAlbumID: album.id
-                )
-            }
-        )
     }
     private var deletionIsPresented: Binding<Bool> {
         Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })

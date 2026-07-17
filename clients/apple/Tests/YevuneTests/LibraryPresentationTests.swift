@@ -3,6 +3,16 @@ import XCTest
 import YevuneCoreFFI
 
 final class LibraryPresentationTests: XCTestCase {
+    func testLayoutReplacementChangesSubtreeIdentityWithoutOwningNavigationState() throws {
+        let source = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/LibraryBrowserView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains(".id(presentation.layout)"))
+        XCTAssertTrue(source.contains("@State private var navigation = LibraryNavigationState()"))
+    }
+
     func testCompactPresentationFitsMinimumWindow() {
         let presentation = LibraryPresentation(width: 920, isAdmin: false)
 
@@ -324,6 +334,13 @@ final class LibraryPresentationTests: XCTestCase {
 
         XCTAssertEqual(member, .empty("曲库尚无音乐，请联系管理员添加"))
     }
+}
+
+private var packageRoot: URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
 }
 
 private func presentationAlbum(_ id: String) -> Album {

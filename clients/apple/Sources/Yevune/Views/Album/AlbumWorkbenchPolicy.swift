@@ -18,6 +18,12 @@ enum AlbumManagementAction: Equatable {
     case manageAccess
 }
 
+enum AlbumWorkbenchBottomAccessory: Equatable {
+    case selectionActions
+    case batchResults
+    case batchResultReopen
+}
+
 struct AlbumWorkbenchGridMetrics: Equatable {
     let outerHorizontalInset: CGFloat
     let horizontalSpacing: CGFloat
@@ -89,31 +95,22 @@ enum AlbumWorkbenchPolicy {
         selectionEnabled
     }
 
-    static func canDismissBatchResults(isRunning: Bool) -> Bool {
-        !isRunning
-    }
-
-    static func showsBatchResultReopen(
-        resultCount: Int,
-        isSheetPresented: Bool,
-        resultAlbumID: String?,
-        currentAlbumID: String
-    ) -> Bool {
-        reconciledBatchResultPresentation(
-            isRequested: !isSheetPresented,
-            resultCount: resultCount,
-            resultAlbumID: resultAlbumID,
-            currentAlbumID: currentAlbumID
-        )
-    }
-
-    static func reconciledBatchResultPresentation(
-        isRequested: Bool,
+    static func bottomAccessory(
+        isAdmin: Bool,
+        selectionCount: Int,
+        isBatchResultPresented: Bool,
         resultCount: Int,
         resultAlbumID: String?,
         currentAlbumID: String
-    ) -> Bool {
-        isRequested && resultCount > 0 && resultAlbumID == currentAlbumID
+    ) -> AlbumWorkbenchBottomAccessory? {
+        guard isAdmin else {
+            return selectionCount > 0 ? .selectionActions : nil
+        }
+
+        let hasCurrentResults = resultCount > 0 && resultAlbumID == currentAlbumID
+        if isBatchResultPresented, hasCurrentResults { return .batchResults }
+        if selectionCount > 0 { return .selectionActions }
+        return hasCurrentResults ? .batchResultReopen : nil
     }
 
     static func gridMetrics(width: CGFloat) -> AlbumWorkbenchGridMetrics {

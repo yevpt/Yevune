@@ -25,7 +25,10 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertTrue(trackListSource.contains("reconciledSelectionChange"))
         XCTAssertTrue(tagEditorSource.contains("interactiveDismissDisabled"))
         XCTAssertTrue(moveEditorSource.contains("interactiveDismissDisabled"))
-        XCTAssertTrue(mediaDetailSource.contains("canDismissBatchResults"))
+        XCTAssertFalse(mediaDetailSource.contains(".sheet(isPresented: batchResultsIsPresented)"))
+        XCTAssertFalse(mediaDetailSource.contains("batchResultsIsPresented"))
+        XCTAssertTrue(mediaDetailSource.contains("BatchOperationResultView("))
+        XCTAssertTrue(mediaDetailSource.contains(".safeAreaInset(edge: .bottom"))
         XCTAssertTrue(mediaDetailSource.contains("查看批量结果"))
         XCTAssertFalse(tagEditorModelSource.contains("moveKey"))
         XCTAssertFalse(tagEditorModelSource.contains("didMove"))
@@ -40,11 +43,15 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         )
     }
 
-    func testBatchActionBarResistsVerticalCompressionAbovePlayer() throws {
-        let source = try source("Sources/Yevune/Views/Album/BatchActionBar.swift")
+    func testDetailOwnerBoundsGeometryAndChildBarHasNoCompressionWorkarounds() throws {
+        let detailSource = try source("Sources/Yevune/Views/MediaDetailView.swift")
+        let actionBarSource = try source("Sources/Yevune/Views/Album/BatchActionBar.swift")
 
-        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
-        XCTAssertTrue(source.contains(".layoutPriority(1)"))
+        XCTAssertTrue(
+            detailSource.contains(".frame(width: geometry.size.width, height: geometry.size.height)")
+        )
+        XCTAssertFalse(actionBarSource.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertFalse(actionBarSource.contains(".layoutPriority(1)"))
     }
 
     func testBatchRunLocksManagementAndSelectionButNotPlayback() {
@@ -53,6 +60,89 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertTrue(AlbumWorkbenchPolicy.playbackEnabled(isBatchRunning: true))
         XCTAssertTrue(AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: false))
         XCTAssertTrue(AlbumWorkbenchPolicy.selectionEnabled(isBatchRunning: false))
+    }
+
+    func testAdminBottomAccessoryPrioritizesVisibleResultThenSelectionThenReopen() {
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 3,
+                isBatchResultPresented: true,
+                resultCount: 3,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            ),
+            .batchResults
+        )
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 3,
+                isBatchResultPresented: false,
+                resultCount: 3,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            ),
+            .selectionActions
+        )
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 0,
+                isBatchResultPresented: false,
+                resultCount: 3,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            ),
+            .batchResultReopen
+        )
+    }
+
+    func testMemberBottomAccessoryOnlyConstructsSelectionActions() {
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: false,
+                selectionCount: 2,
+                isBatchResultPresented: true,
+                resultCount: 2,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            ),
+            .selectionActions
+        )
+        XCTAssertNil(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: false,
+                selectionCount: 0,
+                isBatchResultPresented: true,
+                resultCount: 2,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            )
+        )
+    }
+
+    func testBottomAccessoryRejectsEmptyAndForeignAlbumResults() {
+        XCTAssertNil(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 0,
+                isBatchResultPresented: true,
+                resultCount: 0,
+                resultAlbumID: nil,
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertNil(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 0,
+                isBatchResultPresented: true,
+                resultCount: 2,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-b"
+            )
+        )
     }
 
     func testDisabledSelectionRestoresCurrentIDsAndRejectsSelectAll() {
@@ -96,81 +186,6 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isEnabled: false
             ),
             refreshed
-        )
-    }
-
-    func testBatchResultsCannotDismissWhileRunningAndCanReopenAfterCompletion() {
-        XCTAssertFalse(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: true))
-        XCTAssertTrue(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: false))
-        XCTAssertTrue(
-            AlbumWorkbenchPolicy.showsBatchResultReopen(
-                resultCount: 2,
-                isSheetPresented: false,
-                resultAlbumID: "album-a",
-                currentAlbumID: "album-a"
-            )
-        )
-        XCTAssertFalse(
-            AlbumWorkbenchPolicy.showsBatchResultReopen(
-                resultCount: 2,
-                isSheetPresented: true,
-                resultAlbumID: "album-a",
-                currentAlbumID: "album-a"
-            )
-        )
-    }
-
-    func testOldAlbumBatchResultsCannotReopenInCurrentAlbum() {
-        XCTAssertFalse(
-            AlbumWorkbenchPolicy.showsBatchResultReopen(
-                resultCount: 2,
-                isSheetPresented: false,
-                resultAlbumID: "album-a",
-                currentAlbumID: "album-b"
-            )
-        )
-        XCTAssertTrue(
-            AlbumWorkbenchPolicy.showsBatchResultReopen(
-                resultCount: 2,
-                isSheetPresented: false,
-                resultAlbumID: "album-b",
-                currentAlbumID: "album-b"
-            )
-        )
-        XCTAssertFalse(
-            AlbumWorkbenchPolicy.showsBatchResultReopen(
-                resultCount: 0,
-                isSheetPresented: false,
-                resultAlbumID: nil,
-                currentAlbumID: "album-b"
-            )
-        )
-    }
-
-    func testBatchResultPresentationRejectsOldAndEmptyResultState() {
-        XCTAssertFalse(
-            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
-                isRequested: true,
-                resultCount: 2,
-                resultAlbumID: "album-a",
-                currentAlbumID: "album-b"
-            )
-        )
-        XCTAssertFalse(
-            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
-                isRequested: true,
-                resultCount: 0,
-                resultAlbumID: nil,
-                currentAlbumID: "album-b"
-            )
-        )
-        XCTAssertTrue(
-            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
-                isRequested: true,
-                resultCount: 2,
-                resultAlbumID: "album-b",
-                currentAlbumID: "album-b"
-            )
         )
     }
 

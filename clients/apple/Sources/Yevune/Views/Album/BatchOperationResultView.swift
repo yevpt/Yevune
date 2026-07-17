@@ -55,28 +55,31 @@ struct BatchOperationResultView: View {
 
             if !failedResults.isEmpty || !skippedResults.isEmpty {
                 Divider()
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(failedResults) { result in
-                        if case let .failed(message) = result.state {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(result.track.title)
-                                    Text(message)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(failedResults) { result in
+                            if case let .failed(message) = result.state {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(result.track.title)
+                                        Text(message)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "exclamationmark.circle")
+                                        .foregroundStyle(.red)
                                 }
-                            } icon: {
-                                Image(systemName: "exclamationmark.circle")
-                                    .foregroundStyle(.red)
                             }
                         }
-                    }
 
-                    ForEach(skippedResults) { result in
-                        Label("\(result.track.title)：已跳过", systemImage: "forward.end")
-                            .foregroundStyle(.secondary)
+                        ForEach(skippedResults) { result in
+                            Label("\(result.track.title)：已跳过", systemImage: "forward.end")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .frame(maxHeight: 180)
             }
 
             if !isRunning, !results.isEmpty {
