@@ -31,6 +31,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertTrue(mediaDetailSource.contains(".safeAreaInset(edge: .bottom"))
         XCTAssertTrue(mediaDetailSource.contains("@ObservedObject private var batch"))
         XCTAssertFalse(mediaDetailSource.contains("@StateObject private var batch"))
+        XCTAssertTrue(mediaDetailSource.contains("isRunning: batch.isRunning"))
         XCTAssertTrue(mediaDetailSource.contains("查看批量结果"))
         XCTAssertFalse(tagEditorModelSource.contains("moveKey"))
         XCTAssertFalse(tagEditorModelSource.contains("didMove"))
@@ -70,6 +71,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: true,
                 selectionCount: 3,
                 isBatchResultPresented: true,
+                isRunning: false,
                 resultCount: 3,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-a"
@@ -81,6 +83,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: true,
                 selectionCount: 3,
                 isBatchResultPresented: false,
+                isRunning: false,
                 resultCount: 3,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-a"
@@ -92,11 +95,55 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: true,
                 selectionCount: 0,
                 isBatchResultPresented: false,
+                isRunning: false,
                 resultCount: 3,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-a"
             ),
             .batchResultReopen
+        )
+    }
+
+    func testRunningCurrentAlbumResultsStayVisibleAfterDetailReconstruction() {
+        for selectionCount in [0, 3] {
+            XCTAssertEqual(
+                AlbumWorkbenchPolicy.bottomAccessory(
+                    isAdmin: true,
+                    selectionCount: selectionCount,
+                    isBatchResultPresented: false,
+                    isRunning: true,
+                    resultCount: 3,
+                    resultAlbumID: "album-a",
+                    currentAlbumID: "album-a"
+                ),
+                .batchResults
+            )
+        }
+    }
+
+    func testRunningForeignAlbumResultsDoNotReplaceCurrentAlbumAccessory() {
+        XCTAssertNil(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 0,
+                isBatchResultPresented: false,
+                isRunning: true,
+                resultCount: 3,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.bottomAccessory(
+                isAdmin: true,
+                selectionCount: 2,
+                isBatchResultPresented: false,
+                isRunning: true,
+                resultCount: 3,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-b"
+            ),
+            .selectionActions
         )
     }
 
@@ -106,6 +153,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: false,
                 selectionCount: 2,
                 isBatchResultPresented: true,
+                isRunning: false,
                 resultCount: 2,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-a"
@@ -117,6 +165,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: false,
                 selectionCount: 0,
                 isBatchResultPresented: true,
+                isRunning: false,
                 resultCount: 2,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-a"
@@ -130,6 +179,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: true,
                 selectionCount: 0,
                 isBatchResultPresented: true,
+                isRunning: false,
                 resultCount: 0,
                 resultAlbumID: nil,
                 currentAlbumID: "album-b"
@@ -140,6 +190,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 isAdmin: true,
                 selectionCount: 0,
                 isBatchResultPresented: true,
+                isRunning: false,
                 resultCount: 2,
                 resultAlbumID: "album-a",
                 currentAlbumID: "album-b"

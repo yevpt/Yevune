@@ -99,6 +99,7 @@ enum AlbumWorkbenchPolicy {
         isAdmin: Bool,
         selectionCount: Int,
         isBatchResultPresented: Bool,
+        isRunning: Bool,
         resultCount: Int,
         resultAlbumID: String?,
         currentAlbumID: String
@@ -108,7 +109,7 @@ enum AlbumWorkbenchPolicy {
         }
 
         let hasCurrentResults = resultCount > 0 && resultAlbumID == currentAlbumID
-        if isBatchResultPresented, hasCurrentResults { return .batchResults }
+        if hasCurrentResults, isRunning || isBatchResultPresented { return .batchResults }
         if selectionCount > 0 { return .selectionActions }
         return hasCurrentResults ? .batchResultReopen : nil
     }

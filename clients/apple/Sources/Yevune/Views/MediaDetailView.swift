@@ -240,6 +240,7 @@ struct MediaDetailView: View {
             isAdmin: false,
             selectionCount: selectedTrackIDs.count,
             isBatchResultPresented: false,
+            isRunning: false,
             resultCount: 0,
             resultAlbumID: nil,
             currentAlbumID: album.id
@@ -253,6 +254,7 @@ struct MediaDetailView: View {
             isAdmin: true,
             selectionCount: selectedTrackIDs.count,
             isBatchResultPresented: showingBatchResults,
+            isRunning: batch.isRunning,
             resultCount: batch.results.count,
             resultAlbumID: batch.resultAlbumID,
             currentAlbumID: album.id
