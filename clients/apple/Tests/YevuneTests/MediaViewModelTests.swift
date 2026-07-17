@@ -98,6 +98,30 @@ final class MediaViewModelTests: XCTestCase {
         XCTAssertNil(model.operationMessage)
     }
 
+    func testDeleteFinishingAfterAlbumSwitchDoesNotRefreshOldAlbum() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        await resolveInitial(model, client: client, albumID: "a")
+
+        let deletion = Task { await model.deleteTrack(id: "track-a", album: album("a")) }
+        await client.waitForDeleteCalls(1)
+
+        let loadB = Task { await model.load(album: album("b")) }
+        await client.waitForAlbumCalls(2)
+        await client.resolveAlbumCall(1, with: detail("b"))
+        await loadB.value
+
+        await client.resolveDeleteCall(0)
+        let didRefresh = await deletion.value
+        let albumCallCount = await client.albumCallCount()
+
+        XCTAssertFalse(didRefresh)
+        XCTAssertEqual(albumCallCount, 2)
+        XCTAssertEqual(model.currentAlbumID, "b")
+        XCTAssertEqual(model.detail?.album.id, "b")
+        XCTAssertNil(model.operationMessage)
+    }
+
     func testMakeBatchControllerCreatesAlbumUnboundController() {
         let model = MediaViewModel(client: SuspendedAlbumClient())
 
@@ -297,6 +321,8 @@ private actor SuspendedAlbumClient: MusicClientProviding {
     private var coverCalls: [CheckedContinuation<String, Error>?] = []
     private var albumWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var coverWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var deleteCalls: [CheckedContinuation<Void, Error>?] = []
+    private var deleteWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var coverReplacement: CoverReplacement?
 
     func getAlbum(id: String) async throws -> AlbumDetail {
@@ -327,6 +353,11 @@ private actor SuspendedAlbumClient: MusicClientProviding {
         await withCheckedContinuation { coverWaiters.append((count, $0)) }
     }
 
+    func waitForDeleteCalls(_ count: Int) async {
+        guard deleteCalls.count < count else { return }
+        await withCheckedContinuation { deleteWaiters.append((count, $0)) }
+    }
+
     func resolveAlbumCall(_ index: Int, with value: AlbumDetail) {
         albumCalls[index]?.resume(returning: value)
         albumCalls[index] = nil
@@ -347,6 +378,11 @@ private actor SuspendedAlbumClient: MusicClientProviding {
         coverCalls[index] = nil
     }
 
+    func resolveDeleteCall(_ index: Int) {
+        deleteCalls[index]?.resume(returning: ())
+        deleteCalls[index] = nil
+    }
+
     func recordedCoverReplacement() -> CoverReplacement? { coverReplacement }
     func albumCallCount() -> Int { albumCalls.count }
 
@@ -357,6 +393,9 @@ private actor SuspendedAlbumClient: MusicClientProviding {
         let readyCovers = coverWaiters.filter { $0.0 <= coverCalls.count }
         coverWaiters.removeAll { $0.0 <= coverCalls.count }
         readyCovers.forEach { $0.1.resume() }
+        let readyDeletes = deleteWaiters.filter { $0.0 <= deleteCalls.count }
+        deleteWaiters.removeAll { $0.0 <= deleteCalls.count }
+        readyDeletes.forEach { $0.1.resume() }
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
@@ -369,7 +408,12 @@ private actor SuspendedAlbumClient: MusicClientProviding {
         throw CocoaError(.featureUnsupported)
     }
     func updateTags(id: String, update: TagUpdate) async throws {}
-    func deleteTrack(id: String) async throws {}
+    func deleteTrack(id: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            deleteCalls.append(continuation)
+            resumeSatisfiedWaiters()
+        }
+    }
     func moveTrack(id: String, key: String) async throws {}
     func startScan() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }
     func scanStatus() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }

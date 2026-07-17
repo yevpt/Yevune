@@ -11,6 +11,7 @@ struct LibraryBrowserView: View {
     let onImportMusic: () -> Void
     let onScanLibrary: () -> Void
     let onShowTasks: () -> Void
+    let onManageAccess: (AccessScopeTarget) -> Void
 
     @StateObject private var media: MediaViewModel
     @StateObject private var playlists: PlaylistViewModel
@@ -26,7 +27,8 @@ struct LibraryBrowserView: View {
         session: SessionValue,
         onImportMusic: @escaping () -> Void = {},
         onScanLibrary: @escaping () -> Void = {},
-        onShowTasks: @escaping () -> Void = {}
+        onShowTasks: @escaping () -> Void = {},
+        onManageAccess: @escaping (AccessScopeTarget) -> Void = { _ in }
     ) {
         self.browse = browse
         self.search = search
@@ -37,6 +39,7 @@ struct LibraryBrowserView: View {
         self.onImportMusic = onImportMusic
         self.onScanLibrary = onScanLibrary
         self.onShowTasks = onShowTasks
+        self.onManageAccess = onManageAccess
         _media = StateObject(wrappedValue: MediaViewModel(client: client))
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: client))
     }
@@ -219,7 +222,15 @@ struct LibraryBrowserView: View {
             )
         case .album(let id):
             if let album = album(id: id) {
-                MediaDetailView(album: album, model: media, playlists: playlists, playback: playback)
+                MediaDetailView(
+                    album: album,
+                    model: media,
+                    playlists: playlists,
+                    playback: playback,
+                    isAdmin: session.admin,
+                    onImportMusic: onImportMusic,
+                    onManageAccess: session.admin ? onManageAccess : nil
+                )
                     .navigationTitle("返回曲库，继续播放")
                     .toolbar { Button("返回曲库，继续播放", action: returnToLibrary) }
             } else {

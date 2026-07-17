@@ -42,7 +42,6 @@ final class TagEditorViewModel: ObservableObject {
         }
     }
 
-    // Temporary bindings retained only so the pre-Task-8 view keeps compiling.
     var title: String {
         get { draft.title }
         set { draft.title = newValue }
@@ -78,7 +77,7 @@ final class TagEditorViewModel: ObservableObject {
         set { draft.discNumber = newValue }
     }
 
-    // Move/delete remain a minimal compatibility shim until Task 8 removes their UI.
+    // Kept temporarily for callers predating the independent Task 8 management flows.
     @Published var moveKey = ""
     @Published private(set) var didDelete = false
     @Published private(set) var didMove = false
@@ -104,4 +103,5 @@ final class TagEditorViewModel: ObservableObject {
             errorMessage = LibraryOperationErrorPresentation.message(error)
         }
     }
+
 }

@@ -7,8 +7,28 @@ struct BatchActionBar: View {
     let onPlay: () -> Void
     let onAddToPlaylist: () -> Void
     let onClearSelection: () -> Void
-    let onEditTags: () -> Void
-    let onDelete: () -> Void
+    let onEditTags: (() -> Void)?
+    let onDelete: (() -> Void)?
+
+    init(
+        selectionCount: Int,
+        isAdmin: Bool,
+        isRunning: Bool,
+        onPlay: @escaping () -> Void,
+        onAddToPlaylist: @escaping () -> Void,
+        onClearSelection: @escaping () -> Void,
+        onEditTags: (() -> Void)? = nil,
+        onDelete: (() -> Void)? = nil
+    ) {
+        self.selectionCount = selectionCount
+        self.isAdmin = isAdmin
+        self.isRunning = isRunning
+        self.onPlay = onPlay
+        self.onAddToPlaylist = onAddToPlaylist
+        self.onClearSelection = onClearSelection
+        self.onEditTags = onEditTags
+        self.onDelete = onDelete
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -23,7 +43,7 @@ struct BatchActionBar: View {
             Button("加入歌单", action: onAddToPlaylist)
                 .disabled(isRunning)
 
-            if isAdmin {
+            if isAdmin, let onEditTags, let onDelete {
                 Button("修改标签", action: onEditTags)
                     .disabled(isRunning)
 

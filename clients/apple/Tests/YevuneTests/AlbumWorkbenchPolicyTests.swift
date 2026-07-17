@@ -4,6 +4,18 @@ import YevuneCoreFFI
 
 @MainActor
 final class AlbumWorkbenchPolicyTests: XCTestCase {
+    func testRootIntegrationStructurallyGuardsManagementSurfaces() throws {
+        let mediaDetailSource = try source("Sources/Yevune/Views/MediaDetailView.swift")
+        let libraryViewSource = try source("Sources/Yevune/Views/LibraryView.swift")
+        let tagEditorSource = try source("Sources/Yevune/Views/TagEditorView.swift")
+
+        XCTAssertTrue(mediaDetailSource.contains("if isAdmin"))
+        XCTAssertFalse(mediaDetailSource.contains("Button(\"替换封面\") { importing = true }"))
+        XCTAssertTrue(libraryViewSource.contains("onManageAccess: { accessTarget = $0 }"))
+        XCTAssertFalse(tagEditorSource.contains("移动曲目"))
+        XCTAssertFalse(tagEditorSource.contains("删除曲目"))
+    }
+
     func testCompactInspectorUsesEssentialColumnsBelow620Points() {
         XCTAssertEqual(
             AlbumWorkbenchPolicy.columns(width: 480),
@@ -190,6 +202,17 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
             AlbumWorkbenchPolicy.emptyMessage(isAdmin: true),
             "此专辑暂无曲目，可通过曲库导入添加音乐。"
         )
+    }
+
+    private func source(_ relativePath: String) throws -> String {
+        try String(contentsOf: packageRoot.appending(path: relativePath), encoding: .utf8)
+    }
+
+    private var packageRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }
 

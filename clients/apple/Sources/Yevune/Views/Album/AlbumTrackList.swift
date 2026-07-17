@@ -12,10 +12,45 @@ struct AlbumTrackList: View {
     let onPlayNext: (Track) -> Void
     let onAddToQueue: (Track) -> Void
     let onAddToPlaylist: (Track) -> Void
-    let onEditTags: (Track) -> Void
-    let onMove: (Track) -> Void
-    let onDelete: (Track) -> Void
-    let onManageAccess: (Track) -> Void
+    let onEditTags: ((Track) -> Void)?
+    let onMove: ((Track) -> Void)?
+    let onDelete: ((Track) -> Void)?
+    let onManageAccess: ((Track) -> Void)?
+    let onImportMusic: (() -> Void)?
+
+    init(
+        album: Album,
+        tracks: [Track],
+        availableWidth: CGFloat,
+        isAdmin: Bool,
+        selection: Binding<Set<String>>,
+        onPlay: @escaping ([Track], Int) -> Void,
+        onPlayNow: @escaping (Track) -> Void,
+        onPlayNext: @escaping (Track) -> Void,
+        onAddToQueue: @escaping (Track) -> Void,
+        onAddToPlaylist: @escaping (Track) -> Void,
+        onEditTags: ((Track) -> Void)? = nil,
+        onMove: ((Track) -> Void)? = nil,
+        onDelete: ((Track) -> Void)? = nil,
+        onManageAccess: ((Track) -> Void)? = nil,
+        onImportMusic: (() -> Void)? = nil
+    ) {
+        self.album = album
+        self.tracks = tracks
+        self.availableWidth = availableWidth
+        self.isAdmin = isAdmin
+        _selection = selection
+        self.onPlay = onPlay
+        self.onPlayNow = onPlayNow
+        self.onPlayNext = onPlayNext
+        self.onAddToQueue = onAddToQueue
+        self.onAddToPlaylist = onAddToPlaylist
+        self.onEditTags = onEditTags
+        self.onMove = onMove
+        self.onDelete = onDelete
+        self.onManageAccess = onManageAccess
+        self.onImportMusic = onImportMusic
+    }
 
     private var columns: [AlbumWorkbenchColumn] {
         AlbumWorkbenchPolicy.columns(width: availableWidth)
@@ -44,6 +79,10 @@ struct AlbumTrackList: View {
                     Label("没有曲目", systemImage: "music.note.list")
                 } description: {
                     Text(AlbumWorkbenchPolicy.emptyMessage(isAdmin: isAdmin))
+                } actions: {
+                    if isAdmin, let onImportMusic {
+                        Button("导入音乐", action: onImportMusic)
+                    }
                 }
             } else {
                 List(selection: $selection) {
@@ -107,7 +146,11 @@ struct AlbumTrackList: View {
                     Divider()
                     Button("加入歌单…") { onAddToPlaylist(track) }
 
-                    if isAdmin {
+                    if isAdmin,
+                       let onEditTags,
+                       let onMove,
+                       let onDelete,
+                       let onManageAccess {
                         Divider()
                         Button("编辑标签…") { onEditTags(track) }
                         Button("移动…") { onMove(track) }

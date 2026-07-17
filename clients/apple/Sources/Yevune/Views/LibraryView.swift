@@ -105,6 +105,8 @@ struct LibraryView: View {
                 .onChange(of: playback.queueEntries.count) { _, queueCount in
                     dismissFocusForEmptyQueue(queueCount)
                 }
+            } else if session.admin {
+                adminLibraryWorkspace
             } else {
                 libraryWorkspace
             }
@@ -118,6 +120,27 @@ struct LibraryView: View {
                 _ = await playlistLoad
             }
         }
+    }
+
+    private var adminLibraryWorkspace: some View {
+        libraryWorkspace
+            .fileImporter(
+                isPresented: $importing,
+                allowedContentTypes: [.audio],
+                allowsMultipleSelection: true
+            ) { result in
+                if case let .success(urls) = result {
+                    Task { await workflow.importFiles(urls) }
+                }
+            }
+            .modifier(
+                LibraryImportDropModifier(enabled: true, isTargeted: $isDropTargeted) { urls in
+                    Task { await workflow.importFiles(urls) }
+                }
+            )
+            .sheet(isPresented: accessTargetIsPresented) {
+                accessManagementSheet
+            }
     }
 
     private var libraryWorkspace: some View {
@@ -161,11 +184,13 @@ struct LibraryView: View {
             detailContent
         }
         .toolbar {
-            ForEach(
-                Array(LibraryViewPolicy.managementActions(isAdmin: session.admin).enumerated()),
-                id: \.offset
-            ) { _, action in
-                managementButton(action)
+            if session.admin {
+                ForEach(
+                    Array(LibraryViewPolicy.managementActions(isAdmin: true).enumerated()),
+                    id: \.offset
+                ) { _, action in
+                    managementButton(action)
+                }
             }
             Menu {
                 Button("退出登录", role: .destructive, action: onLogout)
@@ -173,21 +198,9 @@ struct LibraryView: View {
                 Label(session.user, systemImage: "person.crop.circle")
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            if case let .success(urls) = result { Task { await workflow.importFiles(urls) } }
-        }
-        .modifier(
-            LibraryImportDropModifier(
-                enabled: LibraryViewPolicy.acceptsFileDrops(isAdmin: session.admin),
-                isTargeted: $isDropTargeted
-            ) { urls in
-                Task { await workflow.importFiles(urls) }
-            }
-        )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                if LibraryViewPolicy.managementActions(isAdmin: session.admin).contains(.showTasks),
-                   workflow.isDrawerPresented {
+                if session.admin, workflow.isDrawerPresented {
                     TaskDrawerView(model: workflow)
                         .frame(maxHeight: 300)
                 }
@@ -244,35 +257,36 @@ struct LibraryView: View {
             }
             Button("取消", role: .cancel) { deleteTarget = nil }
         }
-        .sheet(isPresented: accessTargetIsPresented) {
-            if let target = accessTarget {
-                switch AccessManagementPolicy.editorPresentation(
-                    hasLoadedSuccessfully: access.hasLoadedSuccessfully,
-                    isLoading: access.isLoading,
-                    errorMessage: access.errorMessage
-                ) {
-                case .editor:
-                    AccessRuleEditorView(target: target, model: access) {
-                        accessTarget = nil
-                    }
-                    .id(access.rule(for: target).map(AccessRuleEditorIdentity.init))
-                case .loading:
-                    ProgressView("正在加载可见范围…")
-                        .padding(32)
-                case .unavailable(let message):
-                    VStack(spacing: 16) {
-                        ContentUnavailableView {
-                            Label("无法编辑可见范围", systemImage: "wifi.exclamationmark")
-                        } description: {
-                            Text(message)
-                        }
-                        Button("重新加载") {
-                            Task { await access.load() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(32)
+    }
+
+    @ViewBuilder private var accessManagementSheet: some View {
+        if let target = accessTarget {
+            switch AccessManagementPolicy.editorPresentation(
+                hasLoadedSuccessfully: access.hasLoadedSuccessfully,
+                isLoading: access.isLoading,
+                errorMessage: access.errorMessage
+            ) {
+            case .editor:
+                AccessRuleEditorView(target: target, model: access) {
+                    accessTarget = nil
                 }
+                .id(access.rule(for: target).map(AccessRuleEditorIdentity.init))
+            case .loading:
+                ProgressView("正在加载可见范围…")
+                    .padding(32)
+            case .unavailable(let message):
+                VStack(spacing: 16) {
+                    ContentUnavailableView {
+                        Label("无法编辑可见范围", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(message)
+                    }
+                    Button("重新加载") {
+                        Task { await access.load() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(32)
             }
         }
     }
@@ -303,17 +317,29 @@ struct LibraryView: View {
                 ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
             }
         case .library, .none:
-            LibraryBrowserView(
-                browse: browse,
-                search: search,
-                artistDetail: artistDetail,
-                client: client,
-                playback: playback,
-                session: session,
-                onImportMusic: { importing = true },
-                onScanLibrary: { Task { await workflow.scanLibrary() } },
-                onShowTasks: { workflow.isDrawerPresented.toggle() }
-            )
+            if session.admin {
+                LibraryBrowserView(
+                    browse: browse,
+                    search: search,
+                    artistDetail: artistDetail,
+                    client: client,
+                    playback: playback,
+                    session: session,
+                    onImportMusic: { importing = true },
+                    onScanLibrary: { Task { await workflow.scanLibrary() } },
+                    onShowTasks: { workflow.isDrawerPresented.toggle() },
+                    onManageAccess: { accessTarget = $0 }
+                )
+            } else {
+                LibraryBrowserView(
+                    browse: browse,
+                    search: search,
+                    artistDetail: artistDetail,
+                    client: client,
+                    playback: playback,
+                    session: session
+                )
+            }
         }
     }
 

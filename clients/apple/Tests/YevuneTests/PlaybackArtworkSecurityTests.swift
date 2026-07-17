@@ -18,7 +18,7 @@ final class PlaybackArtworkSecurityTests: XCTestCase {
     func testEveryAuthenticatedLibraryArtworkSurfaceAvoidsAsyncImage() throws {
         for relativePath in [
             "Sources/Yevune/Views/Library/AlbumCollectionView.swift",
-            "Sources/Yevune/Views/MediaDetailView.swift",
+            "Sources/Yevune/Views/Album/AlbumHeaderView.swift",
         ] {
             let source = try String(contentsOf: packageRoot.appending(path: relativePath), encoding: .utf8)
             XCTAssertTrue(source.contains("AuthenticatedArtworkView"), relativePath)

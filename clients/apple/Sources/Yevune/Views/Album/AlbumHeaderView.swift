@@ -9,10 +9,36 @@ struct AlbumHeaderView: View {
     let availableWidth: CGFloat
     let isAdmin: Bool
     let onPlay: () -> Void
-    let onReplaceCover: () -> Void
-    let onManageAlbumAccess: () -> Void
-    let onManageArtistAccess: () -> Void
-    let onEditAlbum: () -> Void
+    let onReplaceCover: (() -> Void)?
+    let onManageAlbumAccess: (() -> Void)?
+    let onManageArtistAccess: (() -> Void)?
+    let onEditAlbum: (() -> Void)?
+
+    init(
+        album: Album,
+        detail: AlbumDetail?,
+        coverURL: URL?,
+        coverRevision: Int,
+        availableWidth: CGFloat,
+        isAdmin: Bool,
+        onPlay: @escaping () -> Void,
+        onReplaceCover: (() -> Void)? = nil,
+        onManageAlbumAccess: (() -> Void)? = nil,
+        onManageArtistAccess: (() -> Void)? = nil,
+        onEditAlbum: (() -> Void)? = nil
+    ) {
+        self.album = album
+        self.detail = detail
+        self.coverURL = coverURL
+        self.coverRevision = coverRevision
+        self.availableWidth = availableWidth
+        self.isAdmin = isAdmin
+        self.onPlay = onPlay
+        self.onReplaceCover = onReplaceCover
+        self.onManageAlbumAccess = onManageAlbumAccess
+        self.onManageArtistAccess = onManageArtistAccess
+        self.onEditAlbum = onEditAlbum
+    }
 
     private var isWide: Bool { availableWidth >= 620 }
     private var gridMetrics: AlbumWorkbenchGridMetrics {
@@ -50,17 +76,17 @@ struct AlbumHeaderView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    if isAdmin {
+                    if isAdmin, let onReplaceCover, let onEditAlbum, let onManageAlbumAccess {
                         Button(action: onReplaceCover) {
                             Label("替换封面", systemImage: "photo")
                         }
                         .buttonStyle(.bordered)
 
                         Menu {
-                            Button("编辑专辑信息…", action: onEditAlbum)
+                            Button("修改专辑信息…", action: onEditAlbum)
                             Divider()
                             Button("专辑可见范围…", action: onManageAlbumAccess)
-                            if album.artistId != nil {
+                            if album.artistId != nil, let onManageArtistAccess {
                                 Button("艺人可见范围…", action: onManageArtistAccess)
                             }
                         } label: {

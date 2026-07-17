@@ -4,7 +4,7 @@ struct TagEditorView: View {
     @ObservedObject var model: TagEditorViewModel
     let onSuccess: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var confirmingDelete = false
+    @State private var confirmingDiscard = false
 
     init(model: TagEditorViewModel, onSuccess: @escaping (String) -> Void = { _ in }) {
         self.model = model
@@ -12,42 +12,74 @@ struct TagEditorView: View {
     }
 
     var body: some View {
-        Form {
-            TextField("标题", text: $model.title)
-            TextField("专辑", text: $model.album)
-            TextField("艺人", text: $model.artist)
-            TextField("流派", text: $model.genre)
-            TextField("年份", text: $model.year)
-            TextField("曲序", text: $model.track)
-            TextField("碟序", text: $model.discNumber)
-            if let errorMessage = model.errorMessage { Text(errorMessage).foregroundStyle(.red) }
-            Button("保存标签") { Task { await model.save() } }
-            Section("整理") {
-                TextField("新对象键（library/...）", text: $model.moveKey)
-                Button("移动曲目") { Task { await model.move() } }
-                    .disabled(model.moveKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("删除曲目", role: .destructive) { confirmingDelete = true }
+        NavigationStack {
+            Form {
+                Section("歌曲信息") {
+                    field("标题", text: $model.draft.title, error: model.validation.title)
+                    field("专辑", text: $model.draft.album)
+                    field("艺人", text: $model.draft.artist)
+                    field("流派", text: $model.draft.genre)
+                    field("年份", text: $model.draft.year, error: model.validation.year)
+                }
+
+                Section("排序信息") {
+                    field("曲序", text: $model.draft.track, error: model.validation.track)
+                    field("碟序", text: $model.draft.discNumber, error: model.validation.discNumber)
+                }
+
+                if let errorMessage = model.errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("修改标签")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { requestDismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存更改") { Task { await model.save() } }
+                        .disabled(!model.canSave)
+                }
             }
         }
-        .padding()
-        .confirmationDialog("确定删除这首曲目吗？", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("删除", role: .destructive) { Task { await model.delete() } }
-        } message: {
-            Text("此操作无法撤销。")
+        .frame(minWidth: 480, minHeight: 460)
+        .confirmationDialog(
+            "放弃未保存的更改？",
+            isPresented: $confirmingDiscard,
+            titleVisibility: .visible
+        ) {
+            Button("放弃更改", role: .destructive) { dismiss() }
+            Button("继续编辑", role: .cancel) {}
         }
         .onChange(of: model.didSave) { _, didSave in
-            if didSave { complete("标签已保存") }
-        }
-        .onChange(of: model.didMove) { _, didMove in
-            if didMove { complete("曲目已移动") }
-        }
-        .onChange(of: model.didDelete) { _, didDelete in
-            if didDelete { complete("曲目已删除") }
+            guard didSave else { return }
+            onSuccess("标签已更新")
+            dismiss()
         }
     }
 
-    private func complete(_ message: String) {
-        onSuccess(message)
-        dismiss()
+    @ViewBuilder
+    private func field(_ title: String, text: Binding<String>, error: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(title, text: text)
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("\(title)错误：\(error)")
+            }
+        }
+    }
+
+    private func requestDismiss() {
+        if model.isDirty {
+            confirmingDiscard = true
+        } else {
+            dismiss()
+        }
     }
 }

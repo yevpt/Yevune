@@ -40,6 +40,10 @@ final class MediaViewModel: ObservableObject {
         TagEditorViewModel(client: client, track: track)
     }
 
+    func makeMoveEditor(for track: Track) -> MoveTrackViewModel {
+        MoveTrackViewModel(client: client, track: track)
+    }
+
     func makeBatchController() -> TrackBatchOperationController {
         TrackBatchOperationController(client: client)
     }
@@ -128,6 +132,26 @@ final class MediaViewModel: ObservableObject {
             guard isCurrent(replacementGeneration, albumID: album.id) else { return }
             operationError = LibraryOperationErrorPresentation.message(error)
             synchronizeLegacyError()
+        }
+    }
+
+    @discardableResult
+    func deleteTrack(id: String, album: Album) async -> Bool {
+        guard currentAlbumID == album.id else { return false }
+        operationError = nil
+        operationMessage = nil
+        synchronizeLegacyError()
+
+        do {
+            try await client.deleteTrack(id: id)
+            guard currentAlbumID == album.id else { return false }
+            await refresh(album: album, successMessage: "曲目已删除")
+            return currentAlbumID == album.id && refreshError == nil
+        } catch {
+            guard currentAlbumID == album.id else { return false }
+            operationError = LibraryOperationErrorPresentation.message(error)
+            synchronizeLegacyError()
+            return false
         }
     }
 
