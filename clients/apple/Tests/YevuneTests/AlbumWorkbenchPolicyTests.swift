@@ -40,6 +40,12 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         )
     }
 
+    func testBatchActionBarResistsVerticalCompressionAbovePlayer() throws {
+        let source = try source("Sources/Yevune/Views/Album/BatchActionBar.swift")
+
+        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+    }
+
     func testBatchRunLocksManagementAndSelectionButNotPlayback() {
         XCTAssertFalse(AlbumWorkbenchPolicy.managementEnabled(isBatchRunning: true))
         XCTAssertFalse(AlbumWorkbenchPolicy.selectionEnabled(isBatchRunning: true))
