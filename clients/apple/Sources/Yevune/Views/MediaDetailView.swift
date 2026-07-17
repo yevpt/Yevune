@@ -11,7 +11,7 @@ struct MediaDetailView: View {
     let onImportMusic: () -> Void
     let onManageAccess: ((AccessScopeTarget) -> Void)?
 
-    @StateObject private var batch: TrackBatchOperationController
+    @ObservedObject private var batch: TrackBatchOperationController
     @State private var selectedTrackIDs: Set<String> = []
     @State private var playlistTrackIDs: [String]?
     @State private var importing = false
@@ -37,7 +37,7 @@ struct MediaDetailView: View {
         self.isAdmin = isAdmin
         self.onImportMusic = onImportMusic
         self.onManageAccess = onManageAccess
-        _batch = StateObject(wrappedValue: model.makeBatchController())
+        batch = model.makeBatchController()
     }
 
     var body: some View {

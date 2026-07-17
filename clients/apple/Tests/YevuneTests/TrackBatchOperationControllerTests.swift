@@ -5,6 +5,36 @@ import XCTest
 
 @MainActor
 final class TrackBatchOperationControllerTests: XCTestCase {
+    func testMediaModelKeepsBatchControllerAcrossDetailReconstruction() async {
+        let client = SuspendedBatchClient()
+        let media = MediaViewModel(client: client)
+        let firstConsumer = media.makeBatchController()
+        firstConsumer.reset(for: "album-a")
+        let run = Task {
+            await firstConsumer.run(tracks: batchTracks(3), action: .delete, onFinished: {})
+        }
+
+        await client.waitForCalls(1)
+        let reconstructedConsumer = media.makeBatchController()
+
+        XCTAssertTrue(firstConsumer === reconstructedConsumer)
+        XCTAssertTrue(reconstructedConsumer.isRunning)
+        XCTAssertEqual(reconstructedConsumer.currentTrackID, "track:1")
+        XCTAssertEqual(reconstructedConsumer.results.map(\.state), [.pending, .pending, .pending])
+
+        reconstructedConsumer.stop()
+        let stoppedThroughReconstructedConsumer = firstConsumer.stopRequested
+        if !stoppedThroughReconstructedConsumer {
+            firstConsumer.stop()
+        }
+        XCTAssertTrue(stoppedThroughReconstructedConsumer)
+        await client.resolveCall(0)
+        await run.value
+
+        XCTAssertEqual(reconstructedConsumer.results.map(\.state), [.succeeded, .skipped, .skipped])
+        XCTAssertFalse(reconstructedConsumer.isRunning)
+    }
+
     func testUpdatesRunOneAtATimeAndRefreshExactlyOnce() async {
         let client = SuspendedBatchClient()
         let refresh = BatchRefreshRecorder()

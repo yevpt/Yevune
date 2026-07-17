@@ -29,6 +29,8 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertFalse(mediaDetailSource.contains("batchResultsIsPresented"))
         XCTAssertTrue(mediaDetailSource.contains("BatchOperationResultView("))
         XCTAssertTrue(mediaDetailSource.contains(".safeAreaInset(edge: .bottom"))
+        XCTAssertTrue(mediaDetailSource.contains("@ObservedObject private var batch"))
+        XCTAssertFalse(mediaDetailSource.contains("@StateObject private var batch"))
         XCTAssertTrue(mediaDetailSource.contains("查看批量结果"))
         XCTAssertFalse(tagEditorModelSource.contains("moveKey"))
         XCTAssertFalse(tagEditorModelSource.contains("didMove"))

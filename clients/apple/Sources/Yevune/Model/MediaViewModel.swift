@@ -23,6 +23,7 @@ final class MediaViewModel: ObservableObject {
     @Published private(set) var operationError: String?
 
     private let client: any MusicClientProviding
+    private lazy var batchController = TrackBatchOperationController(client: client)
     private var generation = 0
     private var detailTask: Task<AlbumDetail, Error>?
     private var coverTask: Task<URL?, Error>?
@@ -45,7 +46,7 @@ final class MediaViewModel: ObservableObject {
     }
 
     func makeBatchController() -> TrackBatchOperationController {
-        TrackBatchOperationController(client: client)
+        batchController
     }
 
     func refresh(album: Album, successMessage: String) async {
