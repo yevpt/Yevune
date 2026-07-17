@@ -243,14 +243,10 @@ struct AlbumTrackList: View {
     }
 
     private func reconcileSelection() {
-        let proposed = AlbumWorkbenchPolicy.reconciledSelection(
+        selection = AlbumWorkbenchPolicy.reconciledSelectionAfterServerRefresh(
             selection,
-            trackIDs: tracks.map(\.id)
-        )
-        selection = AlbumWorkbenchPolicy.reconciledSelectionChange(
-            current: selection,
-            proposed: proposed,
-            isEnabled: selectionEnabled
+            trackIDs: tracks.map(\.id),
+            isUserSelectionEnabled: selectionEnabled
         )
     }
 

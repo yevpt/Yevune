@@ -72,19 +72,97 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertTrue(AlbumWorkbenchPolicy.handlesSelectAll(selectionEnabled: true))
     }
 
+    func testServerRefreshRemovesUnavailableSelectionWhileUserMutationRemainsLocked() {
+        let selected: Set<String> = ["kept", "deleted"]
+
+        let refreshed = AlbumWorkbenchPolicy.reconciledSelectionAfterServerRefresh(
+            selected,
+            trackIDs: ["kept"],
+            isUserSelectionEnabled: false
+        )
+
+        XCTAssertEqual(refreshed, ["kept"])
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.reconciledSelectionChange(
+                current: refreshed,
+                proposed: ["replacement"],
+                isEnabled: false
+            ),
+            refreshed
+        )
+    }
+
     func testBatchResultsCannotDismissWhileRunningAndCanReopenAfterCompletion() {
         XCTAssertFalse(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: true))
         XCTAssertTrue(AlbumWorkbenchPolicy.canDismissBatchResults(isRunning: false))
         XCTAssertTrue(
             AlbumWorkbenchPolicy.showsBatchResultReopen(
                 resultCount: 2,
-                isSheetPresented: false
+                isSheetPresented: false,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
             )
         )
         XCTAssertFalse(
             AlbumWorkbenchPolicy.showsBatchResultReopen(
                 resultCount: 2,
-                isSheetPresented: true
+                isSheetPresented: true,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-a"
+            )
+        )
+    }
+
+    func testOldAlbumBatchResultsCannotReopenInCurrentAlbum() {
+        XCTAssertFalse(
+            AlbumWorkbenchPolicy.showsBatchResultReopen(
+                resultCount: 2,
+                isSheetPresented: false,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertTrue(
+            AlbumWorkbenchPolicy.showsBatchResultReopen(
+                resultCount: 2,
+                isSheetPresented: false,
+                resultAlbumID: "album-b",
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertFalse(
+            AlbumWorkbenchPolicy.showsBatchResultReopen(
+                resultCount: 0,
+                isSheetPresented: false,
+                resultAlbumID: nil,
+                currentAlbumID: "album-b"
+            )
+        )
+    }
+
+    func testBatchResultPresentationRejectsOldAndEmptyResultState() {
+        XCTAssertFalse(
+            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
+                isRequested: true,
+                resultCount: 2,
+                resultAlbumID: "album-a",
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertFalse(
+            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
+                isRequested: true,
+                resultCount: 0,
+                resultAlbumID: nil,
+                currentAlbumID: "album-b"
+            )
+        )
+        XCTAssertTrue(
+            AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
+                isRequested: true,
+                resultCount: 2,
+                resultAlbumID: "album-b",
+                currentAlbumID: "album-b"
             )
         )
     }

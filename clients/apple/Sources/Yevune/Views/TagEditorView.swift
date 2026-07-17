@@ -2,12 +2,12 @@ import SwiftUI
 
 struct TagEditorView: View {
     @ObservedObject var model: TagEditorViewModel
-    let onSuccess: (String) -> Void
+    let onSuccess: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     @StateObject private var lifecycle = EditorSheetLifecycle()
     @State private var confirmingDiscard = false
 
-    init(model: TagEditorViewModel, onSuccess: @escaping (String) -> Void = { _ in }) {
+    init(model: TagEditorViewModel, onSuccess: @escaping (String) -> Bool = { _ in true }) {
         self.model = model
         self.onSuccess = onSuccess
     }
@@ -103,8 +103,7 @@ struct TagEditorView: View {
                     return model.didSave
                 },
                 onSuccess: {
-                    onSuccess("标签已更新")
-                    dismiss()
+                    if onSuccess("标签已更新") { dismiss() }
                 }
             )
         }

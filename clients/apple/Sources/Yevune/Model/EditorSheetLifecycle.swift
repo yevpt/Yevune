@@ -17,6 +17,41 @@ enum EditorSheetDismissalPolicy {
     }
 }
 
+enum AlbumEditorCompletionPolicy {
+    static func accepts<Editor: AnyObject>(
+        completedEditor: Editor,
+        completedAlbumID: String,
+        currentEditor: Editor?,
+        currentAlbumID: String?
+    ) -> Bool {
+        guard completedAlbumID == currentAlbumID, let currentEditor else { return false }
+        return completedEditor === currentEditor
+    }
+}
+
+struct AlbumEditorCompletionCoordinator<Editor: AnyObject> {
+    let editor: Editor
+    let albumID: String
+
+    func accepts(currentEditor: Editor?, currentAlbumID: String?) -> Bool {
+        AlbumEditorCompletionPolicy.accepts(
+            completedEditor: editor,
+            completedAlbumID: albumID,
+            currentEditor: currentEditor,
+            currentAlbumID: currentAlbumID
+        )
+    }
+
+    @discardableResult
+    func consume(currentEditor: inout Editor?, currentAlbumID: String?) -> Bool {
+        guard accepts(currentEditor: currentEditor, currentAlbumID: currentAlbumID) else {
+            return false
+        }
+        currentEditor = nil
+        return true
+    }
+}
+
 @MainActor
 final class EditorSheetLifecycle: ObservableObject {
     @Published private(set) var isSubmitting = false

@@ -77,6 +77,14 @@ enum AlbumWorkbenchPolicy {
         isEnabled ? proposed : current
     }
 
+    static func reconciledSelectionAfterServerRefresh(
+        _ selection: Set<String>,
+        trackIDs: [String],
+        isUserSelectionEnabled _: Bool
+    ) -> Set<String> {
+        reconciledSelection(selection, trackIDs: trackIDs)
+    }
+
     static func handlesSelectAll(selectionEnabled: Bool) -> Bool {
         selectionEnabled
     }
@@ -85,8 +93,27 @@ enum AlbumWorkbenchPolicy {
         !isRunning
     }
 
-    static func showsBatchResultReopen(resultCount: Int, isSheetPresented: Bool) -> Bool {
-        resultCount > 0 && !isSheetPresented
+    static func showsBatchResultReopen(
+        resultCount: Int,
+        isSheetPresented: Bool,
+        resultAlbumID: String?,
+        currentAlbumID: String
+    ) -> Bool {
+        reconciledBatchResultPresentation(
+            isRequested: !isSheetPresented,
+            resultCount: resultCount,
+            resultAlbumID: resultAlbumID,
+            currentAlbumID: currentAlbumID
+        )
+    }
+
+    static func reconciledBatchResultPresentation(
+        isRequested: Bool,
+        resultCount: Int,
+        resultAlbumID: String?,
+        currentAlbumID: String
+    ) -> Bool {
+        isRequested && resultCount > 0 && resultAlbumID == currentAlbumID
     }
 
     static func gridMetrics(width: CGFloat) -> AlbumWorkbenchGridMetrics {

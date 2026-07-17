@@ -22,6 +22,7 @@ struct TrackBatchItemResult: Identifiable, Equatable {
 @MainActor
 final class TrackBatchOperationController: ObservableObject {
     @Published private(set) var albumID: String?
+    @Published private(set) var resultAlbumID: String?
     @Published private(set) var action: TrackBatchAction?
     @Published private(set) var results: [TrackBatchItemResult] = []
     @Published private(set) var currentTrackID: String?
@@ -98,6 +99,7 @@ final class TrackBatchOperationController: ObservableObject {
         let runGeneration = generation
         let runAlbumID = albumID
         self.action = action
+        resultAlbumID = runAlbumID
         results = tracks.map { TrackBatchItemResult(track: $0, state: .pending) }
         currentTrackID = nil
         isRunning = true
@@ -172,6 +174,7 @@ final class TrackBatchOperationController: ObservableObject {
 
     private func clearRunState() {
         action = nil
+        resultAlbumID = nil
         results = []
         currentTrackID = nil
         stopRequested = false

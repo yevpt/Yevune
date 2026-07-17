@@ -2,11 +2,11 @@ import SwiftUI
 
 struct MoveTrackView: View {
     @ObservedObject var model: MoveTrackViewModel
-    let onSuccess: (String) -> Void
+    let onSuccess: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     @StateObject private var lifecycle = EditorSheetLifecycle()
 
-    init(model: MoveTrackViewModel, onSuccess: @escaping (String) -> Void = { _ in }) {
+    init(model: MoveTrackViewModel, onSuccess: @escaping (String) -> Bool = { _ in true }) {
         self.model = model
         self.onSuccess = onSuccess
     }
@@ -68,8 +68,7 @@ struct MoveTrackView: View {
                     return model.didMove
                 },
                 onSuccess: {
-                    onSuccess("曲目已移动")
-                    dismiss()
+                    if onSuccess("曲目已移动") { dismiss() }
                 }
             )
         }

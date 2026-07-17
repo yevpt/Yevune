@@ -75,17 +75,35 @@ struct MediaDetailView: View {
             }
             .sheet(isPresented: tagSheetIsPresented) {
                 if let tagEditor {
+                    let completedAlbum = album
+                    let completion = AlbumEditorCompletionCoordinator(
+                        editor: tagEditor,
+                        albumID: completedAlbum.id
+                    )
                     TagEditorView(model: tagEditor) { message in
-                        self.tagEditor = nil
-                        refreshCurrentAlbum(message)
+                        let accepted = completion.consume(
+                            currentEditor: &self.tagEditor,
+                            currentAlbumID: model.currentAlbumID
+                        )
+                        refresh(completedAlbum: completedAlbum, message: message)
+                        return accepted
                     }
                 }
             }
             .sheet(isPresented: moveSheetIsPresented) {
                 if let moveEditor {
+                    let completedAlbum = album
+                    let completion = AlbumEditorCompletionCoordinator(
+                        editor: moveEditor,
+                        albumID: completedAlbum.id
+                    )
                     MoveTrackView(model: moveEditor) { message in
-                        self.moveEditor = nil
-                        refreshCurrentAlbum(message)
+                        let accepted = completion.consume(
+                            currentEditor: &self.moveEditor,
+                            currentAlbumID: model.currentAlbumID
+                        )
+                        refresh(completedAlbum: completedAlbum, message: message)
+                        return accepted
                     }
                 }
             }
@@ -102,7 +120,7 @@ struct MediaDetailView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingBatchResults) {
+            .sheet(isPresented: batchResultsIsPresented) {
                 BatchOperationResultView(
                     results: batch.results,
                     currentTrackID: batch.currentTrackID,
@@ -338,8 +356,8 @@ struct MediaDetailView: View {
         ordered(detail.tracks).filter { selectedTrackIDs.contains($0.id) }
     }
 
-    private func refreshCurrentAlbum(_ message: String) {
-        Task { await model.refreshAfterBatch(album: album, message: message) }
+    private func refresh(completedAlbum: Album, message: String) {
+        Task { await model.refreshAfterBatch(album: completedAlbum, message: message) }
     }
 
     private func runBatch(tracks: [Track], action: TrackBatchAction, message: String) {
@@ -395,7 +413,9 @@ struct MediaDetailView: View {
     private var showsBatchResultReopen: Bool {
         AlbumWorkbenchPolicy.showsBatchResultReopen(
             resultCount: batch.results.count,
-            isSheetPresented: showingBatchResults
+            isSheetPresented: showingBatchResults,
+            resultAlbumID: batch.resultAlbumID,
+            currentAlbumID: album.id
         )
     }
 
@@ -458,6 +478,26 @@ struct MediaDetailView: View {
     }
     private var batchEditorIsPresented: Binding<Bool> {
         Binding(get: { batchEditorTracks != nil }, set: { if !$0 { batchEditorTracks = nil } })
+    }
+    private var batchResultsIsPresented: Binding<Bool> {
+        Binding(
+            get: {
+                AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
+                    isRequested: showingBatchResults,
+                    resultCount: batch.results.count,
+                    resultAlbumID: batch.resultAlbumID,
+                    currentAlbumID: album.id
+                )
+            },
+            set: { requested in
+                showingBatchResults = AlbumWorkbenchPolicy.reconciledBatchResultPresentation(
+                    isRequested: requested,
+                    resultCount: batch.results.count,
+                    resultAlbumID: batch.resultAlbumID,
+                    currentAlbumID: album.id
+                )
+            }
+        )
     }
     private var deletionIsPresented: Binding<Bool> {
         Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })

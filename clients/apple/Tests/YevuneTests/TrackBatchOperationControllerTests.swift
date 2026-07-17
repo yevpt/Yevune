@@ -173,9 +173,11 @@ final class TrackBatchOperationControllerTests: XCTestCase {
 
         await client.waitForCalls(1)
         XCTAssertEqual(model.results.map(\.state), [.pending, .pending])
+        XCTAssertEqual(model.resultAlbumID, "album-a")
         model.reset(for: "album-b")
 
         XCTAssertEqual(model.albumID, "album-b")
+        XCTAssertEqual(model.resultAlbumID, "album-a")
         XCTAssertEqual(
             model.results.map(\.state), [.pending, .pending],
             "album A results remain visible until its in-flight request finishes"
@@ -188,6 +190,7 @@ final class TrackBatchOperationControllerTests: XCTestCase {
         let refreshedAlbums = await refresh.albums()
         XCTAssertEqual(callCount, 1)
         XCTAssertTrue(model.results.isEmpty)
+        XCTAssertNil(model.resultAlbumID)
         XCTAssertNil(model.currentTrackID)
         XCTAssertFalse(model.isRunning)
         XCTAssertEqual(refreshedAlbums, ["album-a"])
