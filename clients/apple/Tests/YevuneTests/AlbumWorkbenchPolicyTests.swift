@@ -44,6 +44,7 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         let source = try source("Sources/Yevune/Views/Album/BatchActionBar.swift")
 
         XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertTrue(source.contains(".layoutPriority(1)"))
     }
 
     func testBatchRunLocksManagementAndSelectionButNotPlayback() {
