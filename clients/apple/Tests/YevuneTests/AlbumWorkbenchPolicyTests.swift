@@ -26,6 +26,21 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         )
     }
 
+    func testHeaderMetadataAndTrackTitleShareCalculatedGridAlignment() {
+        let compact = AlbumWorkbenchPolicy.gridMetrics(width: 480)
+        let wide = AlbumWorkbenchPolicy.gridMetrics(width: 720)
+
+        XCTAssertEqual(
+            compact.titleLeadingOffset,
+            compact.playButtonWidth
+                + compact.horizontalSpacing
+                + compact.trackNumberWidth
+                + compact.horizontalSpacing
+        )
+        XCTAssertEqual(compact.titleLeadingOffset, 86)
+        XCTAssertEqual(wide, compact)
+    }
+
     func testMembersNeverReceiveManagementActions() {
         XCTAssertEqual(AlbumWorkbenchPolicy.managementActions(isAdmin: false), [])
         XCTAssertEqual(
@@ -99,6 +114,37 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         )
     }
 
+    func testMissingDiscNormalizesToDiscOneWithoutCreatingAnotherSection() {
+        let explicit = track(id: "explicit", discNumber: 1, trackNumber: 2)
+        let missing = track(id: "missing", discNumber: nil, trackNumber: 3)
+        let tracks = [explicit, missing]
+
+        XCTAssertEqual(AlbumWorkbenchPolicy.normalizedDiscNumber(missing), 1)
+        XCTAssertFalse(AlbumWorkbenchPolicy.isMultiDisc(tracks))
+        XCTAssertEqual(AlbumWorkbenchPolicy.discGroups(tracks).map(\.discNumber), [1])
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.discGroups(tracks).map { $0.tracks.map(\.id) },
+            [["explicit", "missing"]]
+        )
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.trackNumber(missing, isMultiDisc: false),
+            "03"
+        )
+    }
+
+    func testMissingAndSecondDiscUseNormalizedDiscForGroupingAndNumbering() {
+        let missing = track(id: "missing", discNumber: nil, trackNumber: 3)
+        let second = track(id: "second", discNumber: 2, trackNumber: 1)
+        let tracks = [missing, second]
+
+        XCTAssertTrue(AlbumWorkbenchPolicy.isMultiDisc(tracks))
+        XCTAssertEqual(AlbumWorkbenchPolicy.discGroups(tracks).map(\.discNumber), [1, 2])
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.trackNumber(missing, isMultiDisc: true),
+            "1·03"
+        )
+    }
+
     func testSelectionRefreshKeepsOnlyLoadedTrackIDs() {
         XCTAssertEqual(
             AlbumWorkbenchPolicy.reconciledSelection(
@@ -106,6 +152,26 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
                 tracks: [track(id: "kept"), track(id: "new")]
             ),
             ["kept"]
+        )
+    }
+
+    func testInitialAppearanceDropsSelectionThatWasNeverLoaded() {
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.reconciledSelection(
+                ["loaded", "stale"],
+                trackIDs: ["loaded"]
+            ),
+            ["loaded"]
+        )
+    }
+
+    func testRefreshToEmptyTracksClearsSelection() {
+        XCTAssertEqual(
+            AlbumWorkbenchPolicy.reconciledSelection(
+                ["last-track"],
+                trackIDs: []
+            ),
+            []
         )
     }
 

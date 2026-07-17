@@ -26,7 +26,7 @@ The failure was caused by the missing policy, not by a fixture or assertion erro
 
 ## GREEN
 
-After the minimum policy implementation, the filtered run passed all 11 cases. Coverage includes:
+After the minimum policy implementation and review fixes, the filtered run passed all 16 cases. Coverage includes:
 
 - exact 620pt compact/wide boundary;
 - member/admin management actions;
@@ -34,6 +34,26 @@ After the minimum policy implementation, the filtered run passed all 11 cases. C
 - `1·03` multi-disc numbering;
 - refreshed-selection intersection;
 - distinct member/admin empty-state copy.
+
+## Review Fix RED / GREEN
+
+Review-fix base HEAD: `ca499b66e63fb1d05ddd4351fbdaa64620398769`.
+The review-fix HEAD is the ordinary append commit containing this report; its exact content-addressed SHA is included in the task handoff after commit creation.
+
+### Shared header/track alignment
+
+- RED: `AlbumWorkbenchPolicy.gridMetrics(width:)` did not exist.
+- GREEN: compact and wide tests calculate the track-title leading offset from shared play width, horizontal spacing, and track-number width. `AlbumHeaderView` and `AlbumTrackList` both consume those metrics, so the record metadata and track title share the same leading alignment without visual-only magic numbers.
+
+### Stable selection reconciliation
+
+- RED: the ID-level reconciliation API did not exist, exposing that selection reconciliation was coupled to the non-empty `List` branch.
+- GREEN: tests cover initial stale selection and a refresh to zero IDs. A stable `Group` around both list and empty states now reconciles on first appearance and every track-ID change.
+
+### Missing disc normalization
+
+- RED: normalized disc, multi-disc detection, and grouping APIs did not exist.
+- GREEN: missing disc numbers normalize to disc 1. Detection, sorted grouping, section labels, and `D·NN` numbering all consume this policy. Disc 1 plus nil produces one disc-1 group; nil plus disc 2 produces disc groups 1 and 2.
 
 ## Components
 
@@ -47,10 +67,10 @@ After the minimum policy implementation, the filtered run passed all 11 cases. C
 
 ```text
 swift test --package-path clients/apple --filter AlbumWorkbenchPolicyTests
-11 tests, 0 failures
+16 tests, 0 failures
 
 swift test --package-path clients/apple
-270 tests, 0 failures
+275 tests, 0 failures
 
 swift build --package-path clients/apple
 Build complete
@@ -66,6 +86,9 @@ clean
 - Playback/queue and playlist actions remain available to members.
 - Track play controls expose `播放 <title>` labels; Return and Command-A are supported; artwork and metadata have semantic labels.
 - Result progress animation is removed when Reduce Motion is enabled.
+- Header metadata and track rows consume one calculated grid metric source in compact and wide layouts.
+- Selection reconciliation is attached to a stable wrapper, including initial appearance and transitions to the empty state.
+- Missing disc numbers cannot create an unlabeled extra group because they normalize to disc 1 before detection, grouping, and numbering.
 
 ## ⚠️ Notes
 

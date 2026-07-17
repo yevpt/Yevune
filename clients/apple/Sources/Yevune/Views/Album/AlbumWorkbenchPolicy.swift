@@ -18,6 +18,21 @@ enum AlbumManagementAction: Equatable {
     case manageAccess
 }
 
+struct AlbumWorkbenchGridMetrics: Equatable {
+    let horizontalSpacing: CGFloat
+    let playButtonWidth: CGFloat
+    let trackNumberWidth: CGFloat
+
+    var titleLeadingOffset: CGFloat {
+        playButtonWidth + horizontalSpacing + trackNumberWidth + horizontalSpacing
+    }
+}
+
+struct AlbumDiscGroup: Equatable {
+    let discNumber: UInt32
+    let tracks: [Track]
+}
+
 enum AlbumWorkbenchPolicy {
     static func columns(width: CGFloat) -> [AlbumWorkbenchColumn] {
         width >= 620
@@ -27,6 +42,14 @@ enum AlbumWorkbenchPolicy {
 
     static func managementActions(isAdmin: Bool) -> [AlbumManagementAction] {
         isAdmin ? [.editTags, .replaceCover, .move, .delete, .manageAccess] : []
+    }
+
+    static func gridMetrics(width: CGFloat) -> AlbumWorkbenchGridMetrics {
+        AlbumWorkbenchGridMetrics(
+            horizontalSpacing: 12,
+            playButtonWidth: 18,
+            trackNumberWidth: columns(width: width).contains(.trackNumber) ? 44 : 0
+        )
     }
 
     static func metadata(album: Album, tracks: [Track]) -> String {
@@ -50,12 +73,30 @@ enum AlbumWorkbenchPolicy {
         guard let number = track.track else { return "—" }
         let paddedTrack = String(format: "%02u", number)
         guard isMultiDisc else { return paddedTrack }
-        guard let discNumber = track.discNumber else { return paddedTrack }
-        return "\(discNumber)·\(paddedTrack)"
+        return "\(normalizedDiscNumber(track))·\(paddedTrack)"
+    }
+
+    static func normalizedDiscNumber(_ track: Track) -> UInt32 {
+        track.discNumber ?? 1
+    }
+
+    static func isMultiDisc(_ tracks: [Track]) -> Bool {
+        Set(tracks.map(normalizedDiscNumber)).count > 1
+    }
+
+    static func discGroups(_ tracks: [Track]) -> [AlbumDiscGroup] {
+        let groups = Dictionary(grouping: tracks, by: normalizedDiscNumber)
+        return groups.keys.sorted().map { discNumber in
+            AlbumDiscGroup(discNumber: discNumber, tracks: groups[discNumber] ?? [])
+        }
     }
 
     static func reconciledSelection(_ selection: Set<String>, tracks: [Track]) -> Set<String> {
-        selection.intersection(tracks.map(\.id))
+        reconciledSelection(selection, trackIDs: tracks.map(\.id))
+    }
+
+    static func reconciledSelection(_ selection: Set<String>, trackIDs: [String]) -> Set<String> {
+        selection.intersection(trackIDs)
     }
 
     static func emptyMessage(isAdmin: Bool) -> String {
