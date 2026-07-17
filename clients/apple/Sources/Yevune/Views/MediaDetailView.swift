@@ -188,6 +188,9 @@ struct MediaDetailView: View {
                 isAdmin: true,
                 managementEnabled: managementEnabled,
                 onPlay: { playAlbum(detail.tracks, startingAt: 0) },
+                onArtworkLoad: { revision, outcome in
+                    model.artworkDidFinish(albumID: album.id, revision: revision, outcome: outcome)
+                },
                 onReplaceCover: {
                     guard !batch.isRunning else { return }
                     importing = true
@@ -293,7 +296,10 @@ struct MediaDetailView: View {
             coverRevision: model.coverRevision,
             availableWidth: availableWidth,
             isAdmin: false,
-            onPlay: { playAlbum(detail.tracks, startingAt: 0) }
+            onPlay: { playAlbum(detail.tracks, startingAt: 0) },
+            onArtworkLoad: { revision, outcome in
+                model.artworkDidFinish(albumID: album.id, revision: revision, outcome: outcome)
+            }
         )
         .padding(.vertical, 12)
     }
@@ -323,7 +329,13 @@ struct MediaDetailView: View {
                     Image(systemName: "exclamationmark.triangle")
                     Text(message).lineLimit(2)
                     Spacer()
-                    Button("重试") { Task { await model.load(album: album) } }
+                    Button("重试") {
+                        if model.coverError != nil && model.coverURL != nil {
+                            model.retryArtwork(album: album)
+                        } else {
+                            Task { await model.load(album: album) }
+                        }
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

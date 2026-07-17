@@ -1,6 +1,59 @@
 import AppKit
 import SwiftUI
 
+struct AuthenticatedArtworkRequest: Equatable {
+    let url: URL?
+    let revision: Int
+}
+
+enum AuthenticatedArtworkLoadOutcome: Equatable {
+    case loaded
+    case failed
+    case superseded
+}
+
+enum AuthenticatedArtworkLoadState: Equatable {
+    case idle
+    case loading(AuthenticatedArtworkRequest)
+    case loaded(AuthenticatedArtworkRequest)
+    case failed(AuthenticatedArtworkRequest)
+}
+
+@MainActor
+final class AuthenticatedArtworkLoaderModel: ObservableObject {
+    @Published private(set) var image: NSImage?
+    @Published private(set) var state: AuthenticatedArtworkLoadState = .idle
+
+    private let loader: any PlaybackArtworkLoading
+    private var generation = 0
+
+    init(loader: any PlaybackArtworkLoading) {
+        self.loader = loader
+    }
+
+    func load(_ request: AuthenticatedArtworkRequest) async -> AuthenticatedArtworkLoadOutcome {
+        generation += 1
+        let requestGeneration = generation
+        image = nil
+        state = .loading(request)
+
+        guard let url = request.url else {
+            state = .failed(request)
+            return .failed
+        }
+        let loaded = await loader.load(url: url)
+        guard !Task.isCancelled, requestGeneration == generation else { return .superseded }
+        guard let loaded else {
+            state = .failed(request)
+            return .failed
+        }
+
+        image = loaded
+        state = .loaded(request)
+        return .loaded
+    }
+}
+
 /// Renders already-decoded artwork without giving an authenticated URL to
 /// SwiftUI's shared image-loading stack.
 struct DecodedArtworkView<Placeholder: View>: View {
@@ -19,21 +72,36 @@ struct DecodedArtworkView<Placeholder: View>: View {
 }
 
 /// Loads authenticated cover URLs through the same ephemeral, cache-free
-/// loader used by playback metadata. Late results are gated by SwiftUI's task
-/// identity and cancellation.
+/// loader used by playback metadata. URL plus revision identifies each load;
+/// generation and cancellation prevent late results from replacing newer art.
 struct AuthenticatedArtworkView<Placeholder: View>: View {
     let url: URL?
+    let revision: Int
+    let onLoad: (Int, AuthenticatedArtworkLoadOutcome) -> Void
     @ViewBuilder let placeholder: () -> Placeholder
-    @State private var image: NSImage?
+    @StateObject private var model: AuthenticatedArtworkLoaderModel
+
+    init(
+        url: URL?,
+        revision: Int = 0,
+        onLoad: @escaping (Int, AuthenticatedArtworkLoadOutcome) -> Void = { _, _ in },
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.url = url
+        self.revision = revision
+        self.onLoad = onLoad
+        self.placeholder = placeholder
+        _model = StateObject(
+            wrappedValue: AuthenticatedArtworkLoaderModel(loader: URLSessionPlaybackArtworkLoader())
+        )
+    }
 
     var body: some View {
-        DecodedArtworkView(image: image, placeholder: placeholder)
-            .task(id: url) {
-                image = nil
-                guard let url else { return }
-                let loaded = await URLSessionPlaybackArtworkLoader().load(url: url)
-                guard !Task.isCancelled else { return }
-                image = loaded
+        let request = AuthenticatedArtworkRequest(url: url, revision: revision)
+        DecodedArtworkView(image: model.image, placeholder: placeholder)
+            .task(id: request) {
+                let outcome = await model.load(request)
+                onLoad(revision, outcome)
             }
     }
 }

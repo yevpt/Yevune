@@ -220,7 +220,7 @@ final class MediaViewModelTests: XCTestCase {
         await refresh.value
     }
 
-    func testReplaceCoverPublishesSuccessOnlyAfterReloadedCoverResolves() async {
+    func testReplaceCoverWaitsForPublishedArtworkBeforeSuccess() async {
         let client = SuspendedAlbumClient()
         let model = MediaViewModel(client: client)
         let original = album("a", coverArt: "old-cover")
@@ -229,23 +229,79 @@ final class MediaViewModelTests: XCTestCase {
         let replacement = Task { await model.replaceCover(album: original, path: "/tmp/new.jpg") }
         await client.waitForAlbumCalls(2)
         await client.waitForCoverCalls(2)
-        await client.resolveAlbumCall(1, with: detail("a", coverArt: "new-cover"))
-        await client.waitForCoverCalls(3)
-        await waitUntil { model.detail?.album.coverArt == "new-cover" }
+        await client.resolveAlbumCall(1, with: detail("a", coverArt: "old-cover"))
+        await client.resolveCoverCall(1, with: "https://example.test/old")
+        await replacement.value
 
         XCTAssertNil(model.operationMessage)
-        XCTAssertEqual(model.coverRevision, 0)
+        XCTAssertEqual(model.coverRevision, 1)
+        XCTAssertEqual(model.coverURL?.absoluteString, "https://example.test/old")
 
-        await client.resolveCoverCall(1, with: "https://example.test/stale")
-        await client.resolveCoverCall(2, with: "https://example.test/new")
-        await replacement.value
+        model.artworkDidFinish(albumID: "a", revision: 1, outcome: .loaded)
 
         let recordedReplacement = await client.recordedCoverReplacement()
         XCTAssertEqual(recordedReplacement, .init(albumID: "a", path: "/tmp/new.jpg"))
-        XCTAssertEqual(model.coverURL?.absoluteString, "https://example.test/new")
-        XCTAssertEqual(model.coverRevision, 1)
         XCTAssertEqual(model.operationMessage, "封面已更新")
         XCTAssertNil(model.operationError)
+    }
+
+    func testArtworkCompletionIgnoresOldRevisionAndOldAlbum() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let original = album("a", coverArt: "cover")
+        await resolveInitial(model, client: client, album: original, coverURL: "https://example.test/cover")
+        await resolveReplacement(model, client: client, album: original)
+
+        model.artworkDidFinish(albumID: "a", revision: 0, outcome: .loaded)
+        model.artworkDidFinish(albumID: "b", revision: 1, outcome: .loaded)
+        model.artworkDidFinish(albumID: "a", revision: 0, outcome: .failed)
+        model.artworkDidFinish(albumID: "b", revision: 1, outcome: .failed)
+
+        XCTAssertNil(model.operationMessage)
+        XCTAssertNil(model.operationError)
+        XCTAssertNil(model.coverError)
+    }
+
+    func testFailedCallbackWithoutPendingArtworkDoesNotPublishAnError() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        await resolveInitial(model, client: client, albumID: "a")
+
+        model.artworkDidFinish(albumID: "a", revision: 0, outcome: .failed)
+
+        XCTAssertNil(model.coverURL)
+        XCTAssertNil(model.coverError)
+        XCTAssertNil(model.operationMessage)
+    }
+
+    func testArtworkFailurePublishesSafeErrorWithoutSuccess() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let original = album("a", coverArt: "cover")
+        await resolveInitial(model, client: client, album: original, coverURL: "https://example.test/cover?token=secret")
+        await resolveReplacement(model, client: client, album: original)
+
+        model.artworkDidFinish(albumID: "a", revision: 1, outcome: .failed)
+
+        XCTAssertNil(model.operationMessage)
+        XCTAssertEqual(model.coverError, "无法显示新封面，请重试")
+        XCTAssertFalse(model.coverError?.contains("secret") == true)
+    }
+
+    func testRetryingFailedArtworkChangesRevisionForSameURL() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let original = album("a", coverArt: "cover")
+        await resolveInitial(model, client: client, album: original, coverURL: "https://example.test/cover")
+        await resolveReplacement(model, client: client, album: original)
+        model.artworkDidFinish(albumID: "a", revision: 1, outcome: .failed)
+
+        model.retryArtwork(album: original)
+
+        XCTAssertEqual(model.coverRevision, 2)
+        XCTAssertEqual(model.coverURL?.absoluteString, "https://example.test/cover")
+        XCTAssertNil(model.coverError)
+        XCTAssertNil(model.operationMessage)
     }
 
     func testPermissionErrorsUseReauthenticationMessage() {
@@ -297,6 +353,20 @@ private func resolveInitial(
     await client.resolveAlbumCall(0, with: AlbumDetail(album: album, tracks: []))
     await client.resolveCoverCall(0, with: coverURL)
     await load.value
+}
+
+@MainActor
+private func resolveReplacement(
+    _ model: MediaViewModel,
+    client: SuspendedAlbumClient,
+    album: Album
+) async {
+    let replacement = Task { await model.replaceCover(album: album, path: "/tmp/new.jpg") }
+    await client.waitForAlbumCalls(2)
+    await client.waitForCoverCalls(2)
+    await client.resolveAlbumCall(1, with: AlbumDetail(album: album, tracks: []))
+    await client.resolveCoverCall(1, with: "https://example.test/cover")
+    await replacement.value
 }
 
 @MainActor

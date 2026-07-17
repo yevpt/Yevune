@@ -10,6 +10,7 @@ struct AlbumHeaderView: View {
     let isAdmin: Bool
     let managementEnabled: Bool
     let onPlay: () -> Void
+    let onArtworkLoad: ((Int, AuthenticatedArtworkLoadOutcome) -> Void)?
     let onReplaceCover: (() -> Void)?
     let onManageAlbumAccess: (() -> Void)?
     let onManageArtistAccess: (() -> Void)?
@@ -24,6 +25,7 @@ struct AlbumHeaderView: View {
         isAdmin: Bool,
         managementEnabled: Bool = true,
         onPlay: @escaping () -> Void,
+        onArtworkLoad: ((Int, AuthenticatedArtworkLoadOutcome) -> Void)? = nil,
         onReplaceCover: (() -> Void)? = nil,
         onManageAlbumAccess: (() -> Void)? = nil,
         onManageArtistAccess: (() -> Void)? = nil,
@@ -37,6 +39,7 @@ struct AlbumHeaderView: View {
         self.isAdmin = isAdmin
         self.managementEnabled = managementEnabled
         self.onPlay = onPlay
+        self.onArtworkLoad = onArtworkLoad
         self.onReplaceCover = onReplaceCover
         self.onManageAlbumAccess = onManageAlbumAccess
         self.onManageArtistAccess = onManageArtistAccess
@@ -53,10 +56,13 @@ struct AlbumHeaderView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: gridMetrics.headerSpacing) {
-            AuthenticatedArtworkView(url: coverURL) {
+            AuthenticatedArtworkView(
+                url: coverURL,
+                revision: coverRevision,
+                onLoad: { revision, outcome in onArtworkLoad?(revision, outcome) }
+            ) {
                 Rectangle().fill(.quaternary)
             }
-            .id(coverRevision)
             .frame(width: gridMetrics.artworkSize, height: gridMetrics.artworkSize)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityLabel("\(album.name) 的封面")

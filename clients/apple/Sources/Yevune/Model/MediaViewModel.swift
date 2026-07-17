@@ -28,6 +28,7 @@ final class MediaViewModel: ObservableObject {
     private var detailTask: Task<AlbumDetail, Error>?
     private var coverTask: Task<URL?, Error>?
     private var coverURLCoverID: String?
+    private var pendingArtworkPublication: (albumID: String, revision: Int)?
 
     init(client: any MusicClientProviding) {
         self.client = client
@@ -128,12 +129,45 @@ final class MediaViewModel: ObservableObject {
                   coverURL != nil else { return }
 
             coverRevision += 1
-            operationMessage = "封面已更新"
+            pendingArtworkPublication = (album.id, coverRevision)
         } catch {
             guard isCurrent(replacementGeneration, albumID: album.id) else { return }
             operationError = LibraryOperationErrorPresentation.message(error)
             synchronizeLegacyError()
         }
+    }
+
+    func artworkDidFinish(
+        albumID: String,
+        revision: Int,
+        outcome: AuthenticatedArtworkLoadOutcome
+    ) {
+        guard currentAlbumID == albumID,
+              coverRevision == revision,
+              pendingArtworkPublication?.albumID == albumID,
+              pendingArtworkPublication?.revision == revision else { return }
+
+        switch outcome {
+        case .loaded:
+            pendingArtworkPublication = nil
+            operationMessage = "封面已更新"
+        case .failed:
+            pendingArtworkPublication = nil
+            coverError = "无法显示新封面，请重试"
+            operationMessage = nil
+            synchronizeLegacyError()
+        case .superseded:
+            break
+        }
+    }
+
+    func retryArtwork(album: Album) {
+        guard currentAlbumID == album.id, coverURL != nil else { return }
+        coverRevision += 1
+        pendingArtworkPublication = (album.id, coverRevision)
+        coverError = nil
+        operationMessage = nil
+        synchronizeLegacyError()
     }
 
     @discardableResult
@@ -167,6 +201,7 @@ final class MediaViewModel: ObservableObject {
         let requestGeneration = generation
         detailTask?.cancel()
         coverTask?.cancel()
+        pendingArtworkPublication = nil
 
         let retainedContent = currentAlbumID == album.id && detail != nil
         if currentAlbumID != album.id {
