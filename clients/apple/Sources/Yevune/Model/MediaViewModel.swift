@@ -114,6 +114,8 @@ final class MediaViewModel: ObservableObject {
         guard currentAlbumID == album.id else { return }
         operationError = nil
         operationMessage = nil
+        coverError = nil
+        pendingArtworkPublication = nil
         synchronizeLegacyError()
 
         do {

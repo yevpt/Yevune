@@ -48,6 +48,26 @@ final class AuthenticatedArtworkLoaderTests: XCTestCase {
         XCTAssertNil(model.image)
         XCTAssertEqual(model.state, .failed(request))
     }
+
+    func testCancelledLoadReturnsSupersededWithoutPublishingImage() async {
+        let loader = SuspendedArtworkLoader()
+        let model = AuthenticatedArtworkLoaderModel(loader: loader)
+        let request = AuthenticatedArtworkRequest(
+            url: URL(string: "https://example.test/cover"),
+            revision: 4
+        )
+        let image = NSImage(size: NSSize(width: 30, height: 30))
+
+        let load = Task { await model.load(request) }
+        await loader.waitForCalls(1)
+        load.cancel()
+        loader.resolveCall(0, with: image)
+        let outcome = await load.value
+
+        XCTAssertEqual(outcome, .superseded)
+        XCTAssertNil(model.image)
+        XCTAssertNotEqual(model.state, .loaded(request))
+    }
 }
 
 @MainActor

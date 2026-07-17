@@ -304,6 +304,34 @@ final class MediaViewModelTests: XCTestCase {
         XCTAssertNil(model.operationMessage)
     }
 
+    func testNewReplacementClearsOldArtworkErrorAndShowsItsOwnWriteFailure() async {
+        let client = SuspendedAlbumClient()
+        let model = MediaViewModel(client: client)
+        let original = album("a", coverArt: "cover")
+        await resolveInitial(model, client: client, album: original, coverURL: "https://example.test/cover")
+        await resolveReplacement(model, client: client, album: original)
+        model.artworkDidFinish(albumID: "a", revision: 1, outcome: .failed)
+        XCTAssertNotNil(model.coverError)
+        await client.suspendNextCoverReplacement()
+
+        let replacement = Task {
+            await model.replaceCover(album: original, path: "/tmp/second.jpg")
+        }
+        await client.waitForSuspendedCoverReplacement()
+
+        XCTAssertNil(model.coverError)
+        XCTAssertNil(model.errorMessage)
+        model.artworkDidFinish(albumID: "a", revision: 1, outcome: .loaded)
+        XCTAssertNil(model.operationMessage, "the previous pending artwork must be invalidated")
+
+        await client.rejectSuspendedCoverReplacement()
+        await replacement.value
+
+        XCTAssertEqual(model.operationError, TestFailure.rejected.localizedDescription)
+        XCTAssertEqual(model.errorMessage, TestFailure.rejected.localizedDescription)
+        XCTAssertNil(model.operationMessage)
+    }
+
     func testPermissionErrorsUseReauthenticationMessage() {
         XCTAssertEqual(
             LibraryOperationErrorPresentation.message(CoreError.NotAuthenticated),
@@ -435,6 +463,9 @@ private actor SuspendedAlbumClient: MusicClientProviding {
     private var deleteCalls: [CheckedContinuation<Void, Error>?] = []
     private var deleteWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var coverReplacement: CoverReplacement?
+    private var shouldSuspendNextCoverReplacement = false
+    private var suspendedCoverReplacement: CheckedContinuation<Void, Error>?
+    private var coverReplacementWaiters: [CheckedContinuation<Void, Never>] = []
 
     func getAlbum(id: String) async throws -> AlbumDetail {
         try await withCheckedThrowingContinuation { continuation in
@@ -451,7 +482,29 @@ private actor SuspendedAlbumClient: MusicClientProviding {
     }
 
     func setCoverArt(albumID: String, localPath: String) async throws {
+        if shouldSuspendNextCoverReplacement {
+            shouldSuspendNextCoverReplacement = false
+            try await withCheckedThrowingContinuation { continuation in
+                suspendedCoverReplacement = continuation
+                coverReplacementWaiters.forEach { $0.resume() }
+                coverReplacementWaiters.removeAll()
+            }
+        }
         coverReplacement = .init(albumID: albumID, path: localPath)
+    }
+
+    func suspendNextCoverReplacement() {
+        shouldSuspendNextCoverReplacement = true
+    }
+
+    func waitForSuspendedCoverReplacement() async {
+        guard suspendedCoverReplacement == nil else { return }
+        await withCheckedContinuation { coverReplacementWaiters.append($0) }
+    }
+
+    func rejectSuspendedCoverReplacement() {
+        suspendedCoverReplacement?.resume(throwing: TestFailure.rejected)
+        suspendedCoverReplacement = nil
     }
 
     func waitForAlbumCalls(_ count: Int) async {
