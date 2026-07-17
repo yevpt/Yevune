@@ -19,12 +19,25 @@ enum AlbumManagementAction: Equatable {
 }
 
 struct AlbumWorkbenchGridMetrics: Equatable {
+    let outerHorizontalInset: CGFloat
     let horizontalSpacing: CGFloat
     let playButtonWidth: CGFloat
     let trackNumberWidth: CGFloat
+    let artworkSize: CGFloat
+    let headerSpacing: CGFloat
 
     var titleLeadingOffset: CGFloat {
         playButtonWidth + horizontalSpacing + trackNumberWidth + horizontalSpacing
+    }
+
+    var trackGridLeadingEdge: CGFloat { outerHorizontalInset }
+
+    var metadataLeadingEdge: CGFloat {
+        outerHorizontalInset + artworkSize + headerSpacing
+    }
+
+    func contentTrailingEdge(width: CGFloat) -> CGFloat {
+        width - outerHorizontalInset
     }
 }
 
@@ -45,10 +58,14 @@ enum AlbumWorkbenchPolicy {
     }
 
     static func gridMetrics(width: CGFloat) -> AlbumWorkbenchGridMetrics {
-        AlbumWorkbenchGridMetrics(
+        let isWide = width >= 620
+        return AlbumWorkbenchGridMetrics(
+            outerHorizontalInset: 12,
             horizontalSpacing: 12,
             playButtonWidth: 18,
-            trackNumberWidth: columns(width: width).contains(.trackNumber) ? 44 : 0
+            trackNumberWidth: columns(width: width).contains(.trackNumber) ? 44 : 0,
+            artworkSize: isWide ? 200 : 144,
+            headerSpacing: isWide ? 24 : 16
         )
     }
 

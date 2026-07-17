@@ -59,6 +59,8 @@ struct AlbumTrackList: View {
                         }
                     }
                 }
+                .listStyle(.plain)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
                 .focusable()
                 .onKeyPress(.return) {
                     guard let selected = orderedTracks.first(where: { selection.contains($0.id) }) else {
@@ -85,6 +87,14 @@ struct AlbumTrackList: View {
         ForEach(rows, id: \.id) { track in
             trackRow(track)
                 .tag(track.id)
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 0,
+                        leading: gridMetrics.outerHorizontalInset,
+                        bottom: 0,
+                        trailing: gridMetrics.outerHorizontalInset
+                    )
+                )
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { play(track) }
                 .contextMenu {

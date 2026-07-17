@@ -26,19 +26,25 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         )
     }
 
-    func testHeaderMetadataAndTrackTitleShareCalculatedGridAlignment() {
+    func testHeaderAndTrackRowsShareOuterFrameWhileMetadataStaysBesideArtwork() {
         let compact = AlbumWorkbenchPolicy.gridMetrics(width: 480)
         let wide = AlbumWorkbenchPolicy.gridMetrics(width: 720)
 
-        XCTAssertEqual(
-            compact.titleLeadingOffset,
-            compact.playButtonWidth
-                + compact.horizontalSpacing
-                + compact.trackNumberWidth
-                + compact.horizontalSpacing
-        )
-        XCTAssertEqual(compact.titleLeadingOffset, 86)
-        XCTAssertEqual(wide, compact)
+        XCTAssertEqual(compact.outerHorizontalInset, 12)
+        XCTAssertEqual(compact.trackGridLeadingEdge, compact.outerHorizontalInset)
+        XCTAssertEqual(compact.contentTrailingEdge(width: 480), 468)
+        XCTAssertEqual(compact.artworkSize, 144)
+        XCTAssertEqual(compact.headerSpacing, 16)
+        XCTAssertEqual(compact.metadataLeadingEdge, 172)
+
+        XCTAssertEqual(wide.outerHorizontalInset, compact.outerHorizontalInset)
+        XCTAssertEqual(wide.trackGridLeadingEdge, wide.outerHorizontalInset)
+        XCTAssertEqual(wide.contentTrailingEdge(width: 720), 708)
+        XCTAssertEqual(wide.artworkSize, 200)
+        XCTAssertEqual(wide.headerSpacing, 24)
+        XCTAssertEqual(wide.metadataLeadingEdge, 236)
+        XCTAssertGreaterThan(compact.metadataLeadingEdge, compact.outerHorizontalInset + compact.artworkSize)
+        XCTAssertGreaterThan(wide.metadataLeadingEdge, wide.outerHorizontalInset + wide.artworkSize)
     }
 
     func testMembersNeverReceiveManagementActions() {
