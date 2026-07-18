@@ -76,6 +76,7 @@ struct MediaAnnotationMenuActions: View {
     let target: MediaAnnotationTarget
     let starred: String?
     let rating: UInt8?
+    var onStarredChanged: (Bool) -> Void = { _ in }
 
     private var snapshot: MediaAnnotationSnapshot {
         annotations.snapshot(
@@ -88,10 +89,12 @@ struct MediaAnnotationMenuActions: View {
     var body: some View {
         Button {
             Task {
-                await annotations.setStarred(
+                let starred = !snapshot.isStarred
+                let succeeded = await annotations.setStarred(
                     target: target,
-                    starred: !snapshot.isStarred
+                    starred: starred
                 )
+                if succeeded { onStarredChanged(starred) }
             }
         } label: {
             Label(

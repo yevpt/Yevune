@@ -8,6 +8,7 @@ struct ArtistCollectionView: View {
     let isAdmin: Bool
     let onHighlight: (Artist) -> Void
     let onOpen: (Artist) -> Void
+    var onStarredChanged: (Artist, Bool) -> Void = { _, _ in }
 
     private var sections: [(String, [Artist])] {
         Dictionary(grouping: artists, by: LibraryViewPolicy.artistSectionTitle)
@@ -35,7 +36,8 @@ struct ArtistCollectionView: View {
                                     client: client,
                                     isHighlighted: highlightedArtistID == artist.id,
                                     onHighlight: onHighlight,
-                                    onOpen: onOpen
+                                    onOpen: onOpen,
+                                    onStarredChanged: onStarredChanged
                                 )
                             }
                         } header: {
@@ -61,13 +63,18 @@ private struct ArtistCollectionRow: View {
     let isHighlighted: Bool
     let onHighlight: (Artist) -> Void
     let onOpen: (Artist) -> Void
+    let onStarredChanged: (Artist, Bool) -> Void
     @State private var coverURL: URL?
+
+    private var initial: String {
+        artist.name.first.map { String($0).uppercased() } ?? "?"
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             AuthenticatedArtworkView(url: coverURL) {
                 Circle().fill(.quaternary).overlay {
-                    Text(String(artist.name.prefix(1)).uppercased())
+                    Text(initial)
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
@@ -110,7 +117,8 @@ private struct ArtistCollectionRow: View {
             MediaAnnotationMenuActions(
                 target: .artist(artist.id),
                 starred: artist.starred,
-                rating: artist.userRating
+                rating: artist.userRating,
+                onStarredChanged: { onStarredChanged(artist, $0) }
             )
         }
         .task(id: artist.coverArt) {

@@ -21,6 +21,14 @@ protocol MediaAnnotationProviding: Sendable {
     func getArtist(id: String) async throws -> ArtistDetail
 }
 
+protocol FavoriteLibraryProviding: Sendable {
+    func getStarred() async throws -> StarredCollection
+}
+
+extension FavoriteLibraryProviding {
+    func getStarred() async throws -> StarredCollection { throw CocoaError(.featureUnsupported) }
+}
+
 extension MediaAnnotationProviding {
     func setStarred(id: String, itemType: AnnotationItemType, starred: Bool) async throws { throw CocoaError(.featureUnsupported) }
     func setRating(id: String, rating: UInt8?) async throws { throw CocoaError(.featureUnsupported) }
@@ -29,7 +37,7 @@ extension MediaAnnotationProviding {
     func getArtist(id: String) async throws -> ArtistDetail { throw CocoaError(.featureUnsupported) }
 }
 
-protocol MusicClientProviding: MediaAnnotationProviding {
+protocol MusicClientProviding: MediaAnnotationProviding, FavoriteLibraryProviding {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func logout() async
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]

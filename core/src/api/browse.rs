@@ -99,6 +99,14 @@ pub struct SearchResult {
     pub tracks: Vec<Track>,
 }
 
+/// 当前用户收藏的艺人、专辑和歌曲。
+#[derive(Clone, uniffi::Record)]
+pub struct StarredCollection {
+    pub artists: Vec<Artist>,
+    pub albums: Vec<Album>,
+    pub tracks: Vec<Track>,
+}
+
 /// `search3` 三类结果的独立分页请求。
 #[derive(Clone, uniffi::Record)]
 pub struct SearchPageRequest {
@@ -207,6 +215,18 @@ pub(crate) async fn list_artists(
         .into_iter()
         .flat_map(|index| index.artist)
         .collect())
+}
+
+pub(crate) async fn get_starred(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+) -> Result<StarredCollection> {
+    let payload: StarredResponse = http.get_json(auth, "getStarred2", &[]).await?;
+    Ok(StarredCollection {
+        artists: payload.starred2.artist,
+        albums: payload.starred2.album,
+        tracks: payload.starred2.song,
+    })
 }
 
 pub(crate) async fn search(
@@ -338,6 +358,21 @@ struct GenresPayload {
 struct GenresList {
     #[serde(default)]
     genre: Vec<Genre>,
+}
+
+#[derive(Deserialize)]
+struct StarredResponse {
+    starred2: StarredBody,
+}
+
+#[derive(Deserialize)]
+struct StarredBody {
+    #[serde(default)]
+    artist: Vec<Artist>,
+    #[serde(default)]
+    album: Vec<Album>,
+    #[serde(default)]
+    song: Vec<Track>,
 }
 
 #[derive(Deserialize)]

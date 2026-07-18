@@ -11,6 +11,7 @@ mod http;
 pub use api::annotation::AnnotationItemType;
 pub use api::browse::{
     AlbumDetail, AlbumFilter, AlbumSort, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
+    StarredCollection,
 };
 pub use api::manage::{TagUpdate, UploadMetadata, UploadProgress};
 pub use api::scan::{DetailedScanResult, ScanAction, ScanChange, ScanStatus};

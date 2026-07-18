@@ -8,6 +8,7 @@ struct ArtistDetailView: View {
     let isAdmin: Bool
     let onSelectAlbum: (Album) -> Void
     let onReturn: () -> Void
+    var returnTitle = "返回曲库，继续播放"
 
     var body: some View {
         Group {
@@ -51,12 +52,15 @@ struct ArtistDetailView: View {
                 } actions: {
                     Button("重试") { model.load(artistID: artistID) }
                 }
+            } else {
+                ProgressView("正在加载艺人…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task(id: artistID) { model.load(artistID: artistID) }
-        .navigationTitle("返回曲库，继续播放")
+        .navigationTitle(returnTitle)
         .toolbar {
-            Button("返回曲库，继续播放", action: onReturn)
+            Button(returnTitle, action: onReturn)
         }
     }
 }

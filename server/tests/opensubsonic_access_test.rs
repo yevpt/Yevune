@@ -176,6 +176,32 @@ async fn get_album_歌曲列表按可见性过滤() {
 }
 
 #[tokio::test]
+async fn get_starred2_does_not_restore_media_hidden_by_access_control() {
+    let ctx = common::ctx().await;
+    let f = seed(&ctx).await;
+    for (kind, id) in [
+        ("track", f.secret_track),
+        ("album", f.album2),
+        ("artist", f.artist2),
+    ] {
+        ctx.index.annotations().star(f.bob, kind, id).await.unwrap();
+    }
+    ctx.index
+        .annotations()
+        .star(f.bob, "track", f.open_track)
+        .await
+        .unwrap();
+
+    let (_, body) = ctx
+        .get_json("/rest/getStarred2?f=json", Some(&ctx.bearer(f.bob)))
+        .await;
+    let starred = &body["subsonic-response"]["starred2"];
+    assert_eq!(ids(&starred["song"]), vec![tr(f.open_track)]);
+    assert!(ids(&starred["album"]).is_empty());
+    assert!(ids(&starred["artist"]).is_empty());
+}
+
+#[tokio::test]
 async fn get_artists_隐藏无可见曲目的艺人() {
     let ctx = common::ctx().await;
     let f = seed(&ctx).await;

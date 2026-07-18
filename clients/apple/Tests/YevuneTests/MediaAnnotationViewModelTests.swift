@@ -56,7 +56,7 @@ final class MediaAnnotationViewModelTests: XCTestCase {
         XCTAssertEqual(writeCount, 1)
 
         await client.resumeWrites()
-        await first.value
+        _ = await first.value
         XCTAssertEqual(model.snapshot(for: target)?.isStarred, true)
     }
 

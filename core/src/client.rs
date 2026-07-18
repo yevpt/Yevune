@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use crate::api::annotation::{self, AnnotationItemType};
 use crate::api::browse::{
     self, AlbumDetail, AlbumFilter, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
+    StarredCollection,
 };
 use crate::api::lyrics;
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
@@ -253,6 +254,11 @@ impl MusicClient {
     /// 读取所有可见流派。
     pub async fn list_genres(&self) -> Result<Vec<contract::Genre>> {
         browse::list_genres(&self.http, &self.authenticated_session().await?).await
+    }
+
+    /// 读取当前用户收藏的艺人、专辑与歌曲。
+    pub async fn get_starred(&self) -> Result<StarredCollection> {
+        browse::get_starred(&self.http, &self.authenticated_session().await?).await
     }
 
     /// 读取专辑及其曲目。

@@ -211,6 +211,38 @@ final class LibraryPresentationTests: XCTestCase {
         XCTAssertFalse(searchSource.contains("/rest/setRating"))
     }
 
+    func testFavoritesHaveAFirstClassSidebarAndReusePlaybackDetailsAndPlaylistActions() throws {
+        let rootSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/LibraryView.swift"),
+            encoding: .utf8
+        )
+        let favoriteSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/FavoriteLibraryView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(rootSource.contains("Label(\"收藏\", systemImage: \"heart\")"))
+        XCTAssertTrue(rootSource.contains("case .favorites:"))
+        XCTAssertTrue(favoriteSource.contains("Picker(\"收藏类型\""))
+        XCTAssertTrue(favoriteSource.contains("PlaybackTrackActions("))
+        XCTAssertTrue(favoriteSource.contains("PlaylistPickerSheet("))
+        XCTAssertTrue(favoriteSource.contains("MediaDetailView("))
+        XCTAssertTrue(favoriteSource.contains("ArtistDetailView("))
+        XCTAssertTrue(favoriteSource.contains("returnTitle: \"返回收藏，继续播放\""))
+        XCTAssertFalse(favoriteSource.contains("接下来播放"))
+        XCTAssertFalse(favoriteSource.contains("/rest/getStarred2"))
+    }
+
+    func testArtistDetailKeepsAFirstFrameMountedSoItsLoadTaskCanStart() throws {
+        let source = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/ArtistDetailView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("else {\n                ProgressView(\"正在加载艺人…\")"))
+        XCTAssertTrue(source.contains(".task(id: artistID)"))
+    }
+
     func testSearchOnlyAlbumSnapshotSurvivesNewQueryPending() {
         var navigation = LibraryNavigationState()
         navigation.openAlbum(presentationAlbum("search-only"))

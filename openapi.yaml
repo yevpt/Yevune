@@ -163,6 +163,12 @@ paths:
       responses:
         '200':
           description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
+  /rest/getStarred2:
+    get:
+      summary: 当前用户收藏
+      responses:
+        '200':
+          description: subsonic-response 信封（XML 默认，`f=json` 返回 JSON）
   /rest/getUser:
     get:
       summary: 取用户

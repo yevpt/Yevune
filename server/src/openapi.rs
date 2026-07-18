@@ -49,6 +49,7 @@ const ENDPOINTS: &[(&str, &str)] = &[
     ("/rest/getAlbumList2", "专辑列表"),
     ("/rest/getGenres", "流派列表"),
     ("/rest/getIndexes", "艺人索引"),
+    ("/rest/getStarred2", "当前用户收藏"),
     ("/rest/search3", "全文搜索（FTS5）"),
     ("/rest/getPlaylists", "当前用户歌单（扁平）"),
     ("/rest/getPlaylist", "取单歌单及展开曲目"),

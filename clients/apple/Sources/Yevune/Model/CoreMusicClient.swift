@@ -24,6 +24,10 @@ actor CoreMusicClient: MusicClientProviding {
         try await client.listGenres()
     }
 
+    func getStarred() async throws -> StarredCollection {
+        try await client.getStarred()
+    }
+
     func search(query: String) async throws -> SearchResult {
         try await client.search(query: query)
     }

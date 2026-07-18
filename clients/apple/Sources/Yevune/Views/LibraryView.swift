@@ -26,6 +26,7 @@ func playbackTime(_ seconds: TimeInterval) -> String {
 
 enum SidebarSelection: Hashable {
     case library
+    case favorites
     case playlist(String)
     case adminUsers
     case adminRoles
@@ -60,6 +61,7 @@ struct LibraryView: View {
     @StateObject private var access: AccessControlViewModel
     @StateObject private var lyrics: LyricsViewModel
     @StateObject private var annotations: MediaAnnotationViewModel
+    @StateObject private var favorites: FavoriteLibraryViewModel
     @State private var accessTarget: AccessScopeTarget?
     @State private var importing = false
     @State private var isDropTargeted = false
@@ -97,6 +99,7 @@ struct LibraryView: View {
         _access = StateObject(wrappedValue: AccessControlViewModel(client: client))
         _lyrics = StateObject(wrappedValue: LyricsViewModel(client: client))
         _annotations = StateObject(wrappedValue: MediaAnnotationViewModel(client: client))
+        _favorites = StateObject(wrappedValue: FavoriteLibraryViewModel(client: client))
     }
 
     var body: some View {
@@ -154,6 +157,7 @@ struct LibraryView: View {
                 List(selection: $selection) {
                     Section("资料库") {
                         Label("曲库", systemImage: "square.stack").tag(SidebarSelection.library)
+                        Label("收藏", systemImage: "heart").tag(SidebarSelection.favorites)
                     }
                     Section("歌单") {
                         PlaylistTreeOutline(
@@ -337,6 +341,17 @@ struct LibraryView: View {
             } else {
                 ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
             }
+        case .favorites:
+            FavoriteLibraryView(
+                model: favorites,
+                artistDetail: artistDetail,
+                playback: playback,
+                playlists: playlists,
+                client: client,
+                isAdmin: session.admin,
+                onImportMusic: session.admin ? { importing = true } : {},
+                onManageAccess: session.admin ? { accessTarget = $0 } : { _ in }
+            )
         case .library, .none:
             if session.admin {
                 LibraryBrowserView(

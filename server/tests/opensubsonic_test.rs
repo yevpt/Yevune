@@ -582,6 +582,94 @@ async fn media_reads_include_only_the_authenticated_users_annotations() {
 }
 
 #[tokio::test]
+async fn get_starred2_returns_the_current_users_three_media_kinds() {
+    let fixture = Fixture::new().await;
+    for path in [
+        format!("/rest/star?id=tr-{}&f=json", fixture.track_id),
+        format!("/rest/star?albumId=al-{}&f=json", fixture.album_id),
+        format!("/rest/star?artistId=ar-{}&f=json", fixture.artist_id),
+        format!("/rest/setRating?id=tr-{}&rating=5&f=json", fixture.track_id),
+    ] {
+        let body = json_body(fixture.get(&fixture.uri(&path)).await).await;
+        assert_eq!(body["subsonic-response"]["status"], "ok", "{path}: {body}");
+    }
+    let newer_track_id = fixture
+        .index
+        .media()
+        .upsert_track(&NewTrack {
+            title: "Newer Favorite".into(),
+            album_id: Some(fixture.album_id),
+            artist_id: Some(fixture.artist_id),
+            duration: Some(120),
+            object_key: "library/newer.flac".into(),
+            ..NewTrack::default()
+        })
+        .await
+        .unwrap();
+    fixture
+        .index
+        .annotations()
+        .star(fixture.admin_id, "track", newer_track_id)
+        .await
+        .unwrap();
+    for (track_id, starred_at) in [
+        (fixture.track_id, "2026-07-18 12:00:00"),
+        (newer_track_id, "2026-07-18 13:00:00"),
+    ] {
+        sqlx::query(
+            "UPDATE annotations SET starred_at = ? \
+             WHERE user_id = ? AND item_type = 'track' AND item_id = ?",
+        )
+        .bind(starred_at)
+        .bind(fixture.admin_id)
+        .bind(track_id)
+        .execute(fixture.index.pool())
+        .await
+        .unwrap();
+    }
+
+    let body = json_body(
+        fixture
+            .get(&fixture.uri("/rest/getStarred2.view?f=json"))
+            .await,
+    )
+    .await;
+    let starred = &body["subsonic-response"]["starred2"];
+    assert_eq!(
+        starred["artist"][0]["id"],
+        format!("ar-{}", fixture.artist_id)
+    );
+    assert_eq!(
+        starred["album"][0]["id"],
+        format!("al-{}", fixture.album_id)
+    );
+    assert_eq!(starred["song"][0]["id"], format!("tr-{newer_track_id}"));
+    assert_eq!(starred["song"][1]["id"], format!("tr-{}", fixture.track_id));
+    assert!(starred["artist"][0]["starred"].as_str().is_some());
+    assert!(starred["album"][0]["starred"].as_str().is_some());
+    assert_eq!(starred["song"][1]["userRating"], 5);
+
+    let xml = text_body(fixture.get(&fixture.uri("/rest/getStarred2.view")).await).await;
+    assert!(xml.contains("<starred2>"), "{xml}");
+    assert!(xml.contains("<song "), "{xml}");
+    assert!(
+        xml.contains(&format!("id=\"tr-{}\"", fixture.track_id)),
+        "{xml}"
+    );
+
+    let member = json_body(
+        fixture
+            .get("/rest/getStarred2?u=member&p=secret&v=1.16.1&c=test&f=json")
+            .await,
+    )
+    .await;
+    let member_starred = &member["subsonic-response"]["starred2"];
+    assert_eq!(member_starred["artist"].as_array().unwrap().len(), 0);
+    assert_eq!(member_starred["album"].as_array().unwrap().len(), 0);
+    assert_eq!(member_starred["song"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn media_endpoints_return_binary_without_protocol_envelope() {
     let fixture = Fixture::new().await;
     let cases = [

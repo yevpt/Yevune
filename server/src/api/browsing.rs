@@ -51,7 +51,53 @@ pub fn router() -> Router<AppState> {
     for path in ["/rest/getIndexes", "/rest/getIndexes.view"] {
         router = router.route(path, get(get_indexes));
     }
+    for path in ["/rest/getStarred2", "/rest/getStarred2.view"] {
+        router = router.route(path, get(get_starred2));
+    }
     router
+}
+
+async fn get_starred2(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    ApiUser(user): ApiUser,
+) -> Response {
+    let format = Format::from_uri(&uri);
+    let viewer = match state.viewer(user.id).await {
+        Ok(viewer) => viewer,
+        Err(error) => {
+            tracing::error!(%error, "getStarred2 解析访问者失败");
+            return response::internal(format);
+        }
+    };
+    let media = state.index.media();
+    let (mut artists, mut albums, mut tracks) = match tokio::try_join!(
+        media.list_starred_artists_visible(&viewer),
+        media.list_starred_albums_visible(&viewer),
+        media.list_starred_tracks_visible(&viewer),
+    ) {
+        Ok(values) => values,
+        Err(error) => {
+            tracing::error!(%error, "getStarred2 查询失败");
+            return response::internal(format);
+        }
+    };
+    if let Err(error) = tokio::try_join!(
+        super::annotation::annotate_artists(&state, user.id, &mut artists),
+        super::annotation::annotate_albums(&state, user.id, &mut albums),
+        super::annotation::annotate_tracks(&state, user.id, &mut tracks),
+    ) {
+        tracing::error!(%error, "getStarred2 标注查询失败");
+        return response::internal(format);
+    }
+    response::ok(
+        format,
+        serde_json::json!({"starred2": {
+            "artist": artists.iter().map(response::artist_value).collect::<Vec<_>>(),
+            "album": albums.iter().map(response::album_value).collect::<Vec<_>>(),
+            "song": tracks.iter().map(response::track_value).collect::<Vec<_>>(),
+        }}),
+    )
 }
 
 async fn get_artists(

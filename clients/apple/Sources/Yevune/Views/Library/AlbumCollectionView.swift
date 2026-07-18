@@ -13,6 +13,7 @@ struct AlbumCollectionView: View {
     let onHighlight: (Album) -> Void
     let onOpen: (Album) -> Void
     let onLoadNextPage: () async -> Void
+    var onStarredChanged: (Album, Bool) -> Void = { _, _ in }
 
     var body: some View {
         Group {
@@ -32,7 +33,8 @@ struct AlbumCollectionView: View {
                                 client: client,
                                 isHighlighted: highlightedAlbumID == album.id,
                                 onHighlight: onHighlight,
-                                onOpen: onOpen
+                                onOpen: onOpen,
+                                onStarredChanged: onStarredChanged
                             )
                                 .onAppear { loadIfLast(album) }
                         }
@@ -68,7 +70,8 @@ struct AlbumCollectionView: View {
                         MediaAnnotationMenuActions(
                             target: .album(album.id),
                             starred: album.starred,
-                            rating: album.userRating
+                            rating: album.userRating,
+                            onStarredChanged: { onStarredChanged(album, $0) }
                         )
                     }
                     .onAppear { loadIfLast(album) }
@@ -103,6 +106,7 @@ private struct AlbumCollectionCell: View {
     let isHighlighted: Bool
     let onHighlight: (Album) -> Void
     let onOpen: (Album) -> Void
+    let onStarredChanged: (Album, Bool) -> Void
     @State private var coverURL: URL?
 
     var body: some View {
@@ -151,7 +155,8 @@ private struct AlbumCollectionCell: View {
             MediaAnnotationMenuActions(
                 target: .album(album.id),
                 starred: album.starred,
-                rating: album.userRating
+                rating: album.userRating,
+                onStarredChanged: { onStarredChanged(album, $0) }
             )
         }
         .task(id: album.coverArt) {

@@ -927,6 +927,57 @@ impl<'a> MediaRepo<'a> {
         Ok(rows.into_iter().map(Artist::from).collect())
     }
 
+    /// 按收藏时间倒序列举当前用户可见的收藏曲目。
+    pub async fn list_starred_tracks_visible(&self, viewer: &Viewer) -> Result<Vec<Track>> {
+        let pred = self.visibility(viewer, "t");
+        let rows: Vec<TrackRow> = sqlx::query_as(&format!(
+            "{TRACK_SELECT} JOIN annotations n ON n.item_type = 'track' AND n.item_id = t.id \
+             WHERE n.user_id = ? AND n.starred_at IS NOT NULL AND ({pred}) \
+             ORDER BY n.starred_at DESC, t.id DESC"
+        ))
+        .bind(viewer.user_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Track::from).collect())
+    }
+
+    /// 按收藏时间倒序列举当前用户可见的收藏专辑。
+    pub async fn list_starred_albums_visible(&self, viewer: &Viewer) -> Result<Vec<Album>> {
+        let pred = self.visibility(viewer, "t");
+        let rows: Vec<AlbumRow> = sqlx::query_as(&format!(
+            "{} JOIN annotations n ON n.item_type = 'album' AND n.item_id = a.id \
+             WHERE n.user_id = ? AND n.starred_at IS NOT NULL \
+             GROUP BY a.id HAVING {} ORDER BY MAX(n.starred_at) DESC, a.id DESC",
+            album_select_visible(&pred),
+            ALBUM_VISIBLE_HAVING
+        ))
+        .bind(viewer.user_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Album::from).collect())
+    }
+
+    /// 按收藏时间倒序列举当前用户可见的收藏艺人。
+    pub async fn list_starred_artists_visible(&self, viewer: &Viewer) -> Result<Vec<Artist>> {
+        let pred = self.visibility(viewer, "tv");
+        let rows: Vec<ArtistRow> = sqlx::query_as(&format!(
+            "SELECT ar.id, ar.name, ar.sort_name, ar.mbid, ar.cover_key, \
+                    (SELECT COUNT(*) FROM albums al WHERE al.artist_id = ar.id \
+                       AND EXISTS(SELECT 1 FROM tracks tv WHERE tv.album_id = al.id AND ({pred}))) \
+                    AS album_count \
+             FROM artists ar \
+             JOIN annotations n ON n.item_type = 'artist' AND n.item_id = ar.id \
+             WHERE n.user_id = ? AND n.starred_at IS NOT NULL \
+               AND (EXISTS(SELECT 1 FROM tracks tv WHERE tv.artist_id = ar.id AND ({pred})) \
+                    OR NOT EXISTS(SELECT 1 FROM tracks tt WHERE tt.artist_id = ar.id)) \
+             ORDER BY n.starred_at DESC, ar.id DESC"
+        ))
+        .bind(viewer.user_id)
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Artist::from).collect())
+    }
+
     /// 按主键取艺人 DTO，仅当其含至少一条 `viewer` 可见曲目。
     pub async fn get_artist_visible(&self, viewer: &Viewer, id: i64) -> Result<Option<Artist>> {
         let pred = self.visibility(viewer, "tv");

@@ -81,7 +81,8 @@ final class MediaAnnotationViewModel: ObservableObject {
         errors[target] = nil
     }
 
-    func setStarred(target: MediaAnnotationTarget, starred: Bool) async {
+    @discardableResult
+    func setStarred(target: MediaAnnotationTarget, starred: Bool) async -> Bool {
         await mutate(target) {
             try await self.client.setStarred(
                 id: target.id,
@@ -91,7 +92,8 @@ final class MediaAnnotationViewModel: ObservableObject {
         }
     }
 
-    func setRating(target: MediaAnnotationTarget, rating: UInt8?) async {
+    @discardableResult
+    func setRating(target: MediaAnnotationTarget, rating: UInt8?) async -> Bool {
         await mutate(target) {
             try await self.client.setRating(id: target.id, rating: rating)
         }
@@ -112,15 +114,17 @@ final class MediaAnnotationViewModel: ObservableObject {
     private func mutate(
         _ target: MediaAnnotationTarget,
         operation: () async throws -> Void
-    ) async {
-        guard mutatingTargets.insert(target).inserted else { return }
+    ) async -> Bool {
+        guard mutatingTargets.insert(target).inserted else { return false }
         errors[target] = nil
         defer { mutatingTargets.remove(target) }
         do {
             try await operation()
             snapshots[target] = try await refreshedSnapshot(for: target)
+            return true
         } catch {
             errors[target] = LibraryOperationErrorPresentation.message(error)
+            return false
         }
     }
 
