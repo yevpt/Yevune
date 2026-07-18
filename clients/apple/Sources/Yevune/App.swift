@@ -76,6 +76,7 @@ struct YevuneApp: App {
         _playback = StateObject(wrappedValue: PlaybackController(
             resolver: MusicClientMediaResolver(client: client),
             engine: AVQueuePlaybackEngine(),
+            reporter: MusicClientPlaybackReporter(client: client),
             systemMedia: SystemMediaCoordinator(),
             artworkLoader: URLSessionPlaybackArtworkLoader()
         ))

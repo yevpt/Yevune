@@ -65,6 +65,9 @@ actor CoreMusicClient: MusicClientProviding {
     func setRating(id: String, rating: UInt8?) async throws {
         try await client.setRating(id: id, rating: rating)
     }
+    func scrobble(id: String, submission: Bool) async throws {
+        try await client.scrobble(id: id, submission: submission)
+    }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { try await client.scanPrefix(prefix: prefix) }
 
     func playlistTree() async throws -> PlaylistTree { try await client.playlistTree() }

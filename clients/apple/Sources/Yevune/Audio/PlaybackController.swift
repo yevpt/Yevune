@@ -26,6 +26,7 @@ final class PlaybackController: ObservableObject {
 
     private let resolver: any PlaybackMediaResolving
     private let engine: any PlaybackEngine
+    private let reporter: any PlaybackReporting
     private let systemMedia: any SystemMediaCoordinating
     private let artworkLoader: any PlaybackArtworkLoading
     private let shuffle: ([QueueEntry]) -> [QueueEntry]
@@ -36,6 +37,9 @@ final class PlaybackController: ObservableObject {
     private var isReplayPending = false
     private var pendingTransition: Task<Void, Never>?
     private var pendingArtwork: Task<Void, Never>?
+    private var pendingReports: [UUID: Task<Void, Never>] = [:]
+    private var pendingReportTail: Task<Void, Never>?
+    private var historySession: PlaybackHistorySession?
     private var systemArtwork: NSImage?
     private var systemMediaNeedsRegistration = true
     private var systemMediaGeneration = 0
@@ -45,12 +49,14 @@ final class PlaybackController: ObservableObject {
     init(
         resolver: any PlaybackMediaResolving,
         engine: any PlaybackEngine,
+        reporter: (any PlaybackReporting)? = nil,
         systemMedia: (any SystemMediaCoordinating)? = nil,
         artworkLoader: (any PlaybackArtworkLoading)? = nil,
         shuffle: @escaping ([QueueEntry]) -> [QueueEntry] = { $0.shuffled() }
     ) {
         self.resolver = resolver
         self.engine = engine
+        self.reporter = reporter ?? NoopPlaybackReporter()
         self.systemMedia = systemMedia ?? NoopSystemMediaCoordinator()
         self.artworkLoader = artworkLoader ?? NoopPlaybackArtworkLoader()
         self.shuffle = shuffle
@@ -202,6 +208,10 @@ final class PlaybackController: ObservableObject {
         pendingTransition = nil
         pendingArtwork?.cancel()
         pendingArtwork = nil
+        pendingReports.values.forEach { $0.cancel() }
+        pendingReports.removeAll()
+        pendingReportTail = nil
+        historySession = nil
         beginMediaTransition(stopEngine: false)
         engine.stop()
         queue = PlaybackQueue()
@@ -222,8 +232,19 @@ final class PlaybackController: ObservableObject {
         await artwork?.value
     }
 
+    func waitForPendingReportsForTesting() async {
+        let reports = Array(pendingReports.values)
+        for report in reports {
+            await report.value
+        }
+    }
+
     @discardableResult
-    private func load(_ entry: QueueEntry, stopEngine: Bool = true) async -> LoadOutcome {
+    private func load(
+        _ entry: QueueEntry,
+        stopEngine: Bool = true,
+        startsPlaybackInstance: Bool = true
+    ) async -> LoadOutcome {
         let generation = beginMediaTransition(stopEngine: stopEngine)
         do {
             let media = try await resolver.resolve(track: entry.track)
@@ -234,6 +255,10 @@ final class PlaybackController: ObservableObject {
             hasActiveMediaSession = true
             installEngineObserver(expectedGeneration: generation)
             engine.load(url: media.streamURL, autoplay: true)
+            if startsPlaybackInstance || historySession?.trackID != entry.track.id {
+                historySession = PlaybackHistorySession(trackID: entry.track.id)
+                schedulePlaybackReport(trackID: entry.track.id, submission: false)
+            }
             publishSystemMetadata()
             loadArtwork(from: media.coverURL, for: entry.id, generation: generation)
             return .loaded
@@ -296,9 +321,11 @@ final class PlaybackController: ObservableObject {
             guard !isAtNaturalEnd else { return }
             self.elapsed = elapsed
             self.duration = duration
+            observePlaybackHistory(elapsed: elapsed, duration: duration)
             publishSystemMetadata()
         case .ended:
             guard !isAtNaturalEnd else { return }
+            submitPlaybackHistoryAfterNaturalEnd()
             let generation = loadGeneration
             pendingTransition = Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -369,7 +396,7 @@ final class PlaybackController: ObservableObject {
         guard expectedGeneration == loadGeneration, queue.current?.id == entry.id else { return }
         if retryCounts[entry.id, default: 0] == 0 {
             retryCounts[entry.id] = 1
-            switch await load(entry, stopEngine: false) {
+            switch await load(entry, stopEngine: false, startsPlaybackInstance: false) {
             case .loaded, .superseded:
                 return
             case .resolutionFailed:
@@ -439,6 +466,42 @@ final class PlaybackController: ObservableObject {
     private func safePlaybackErrorMessage() -> String {
         guard let title = currentTrack?.title, !title.isEmpty else { return "播放失败" }
         return "无法播放「\(title)」"
+    }
+
+    private func observePlaybackHistory(elapsed: TimeInterval, duration: TimeInterval) {
+        guard var historySession else { return }
+        let shouldSubmit = historySession.observe(
+            elapsed: elapsed,
+            duration: duration,
+            state: engineState
+        )
+        self.historySession = historySession
+        if shouldSubmit {
+            schedulePlaybackReport(trackID: historySession.trackID, submission: true)
+        }
+    }
+
+    private func submitPlaybackHistoryAfterNaturalEnd() {
+        guard var historySession else { return }
+        let shouldSubmit = historySession.finishNaturally()
+        self.historySession = historySession
+        if shouldSubmit {
+            schedulePlaybackReport(trackID: historySession.trackID, submission: true)
+        }
+    }
+
+    private func schedulePlaybackReport(trackID: String, submission: Bool) {
+        let taskID = UUID()
+        let previous = pendingReportTail
+        let task = Task { @MainActor [weak self, reporter] in
+            await previous?.value
+            if !Task.isCancelled {
+                try? await reporter.reportPlayback(trackID: trackID, submission: submission)
+            }
+            self?.pendingReports[taskID] = nil
+        }
+        pendingReports[taskID] = task
+        pendingReportTail = task
     }
 
     private func registerSystemMediaHandlers() {

@@ -59,3 +59,20 @@ pub(crate) async fn set_rating(
     )
     .await
 }
+
+pub(crate) async fn scrobble(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    submission: bool,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "scrobble",
+        &[
+            ("id".to_owned(), id),
+            ("submission".to_owned(), submission.to_string()),
+        ],
+    )
+    .await
+}

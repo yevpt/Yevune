@@ -28,14 +28,18 @@ async fn server_for_requests(
                 .unwrap()
                 .to_owned();
             observed.lock().await.push(line.clone());
-            let payload = if line.contains("/rest/getUser?") {
-                ",\"user\":{\"username\":\"member\",\"adminRole\":false}"
+            let body = if line.contains("/rest/scrobble?") && line.contains("id=denied") {
+                "{\"subsonic-response\":{\"status\":\"failed\",\"version\":\"1.16.1\",\"openSubsonic\":true,\"error\":{\"code\":70,\"message\":\"not found\"}}}".to_owned()
             } else {
-                ""
+                let payload = if line.contains("/rest/getUser?") {
+                    ",\"user\":{\"username\":\"member\",\"adminRole\":false}"
+                } else {
+                    ""
+                };
+                format!(
+                    "{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"openSubsonic\":true{payload}}}}}"
+                )
             };
-            let body = format!(
-                "{{\"subsonic-response\":{{\"status\":\"ok\",\"version\":\"1.16.1\",\"openSubsonic\":true{payload}}}}}"
-            );
             let response = format!(
                 "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                 body.len()
@@ -86,6 +90,50 @@ async fn annotation_writes_use_standard_endpoints_and_entity_parameters() {
     assert!(requests[5].contains("id=tr-1"));
     assert!(requests[5].contains("rating=5"));
     assert!(requests[6].contains("rating=0"));
+}
+
+#[tokio::test]
+async fn scrobble_reports_playback_start_and_completed_submission() {
+    let (address, requests, server) = server_for_requests(4).await;
+    let client = MusicClient::new();
+    client
+        .login(
+            format!("http://{address}"),
+            "member".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap();
+
+    client.scrobble("tr-1".into(), false).await.unwrap();
+    client.scrobble("tr-1".into(), true).await.unwrap();
+    server.await.unwrap();
+
+    let requests = requests.lock().await;
+    assert!(requests[2].contains("/rest/scrobble?"));
+    assert!(requests[2].contains("id=tr-1"));
+    assert!(requests[2].contains("submission=false"));
+    assert!(requests[3].contains("/rest/scrobble?"));
+    assert!(requests[3].contains("id=tr-1"));
+    assert!(requests[3].contains("submission=true"));
+}
+
+#[tokio::test]
+async fn scrobble_propagates_the_standard_error_envelope() {
+    let (address, _requests, server) = server_for_requests(3).await;
+    let client = MusicClient::new();
+    client
+        .login(
+            format!("http://{address}"),
+            "member".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap();
+
+    let error = client.scrobble("denied".into(), true).await.unwrap_err();
+    assert!(matches!(error, CoreError::Server { code: 70, .. }));
+    server.await.unwrap();
 }
 
 #[tokio::test]

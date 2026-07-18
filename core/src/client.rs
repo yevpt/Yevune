@@ -112,6 +112,17 @@ impl MusicClient {
         annotation::set_rating(&self.http, &self.authenticated_session().await?, id, rating).await
     }
 
+    /// 上报开始播放或一次有效播放完成，供最近与常播曲库排序使用。
+    pub async fn scrobble(&self, id: String, submission: bool) -> Result<()> {
+        annotation::scrobble(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            submission,
+        )
+        .await
+    }
+
     /// 读取管理员可管理的完整用户列表。
     pub async fn list_users(&self) -> Result<Vec<contract::User>> {
         admin::list_users(&self.http, &self.authenticated_session().await?).await

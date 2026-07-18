@@ -194,6 +194,150 @@ final class PlaybackControllerTests: XCTestCase {
         XCTAssertEqual(controller.duration, 180)
     }
 
+    func testSuccessfulMediaLoadReportsPlaybackStartWithoutBlockingPlayback() async {
+        let reporter = RecordingPlaybackReporter()
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+
+        await controller.playNow(playbackTrack("1"))
+        await controller.waitForPendingReportsForTesting()
+
+        XCTAssertEqual(reporter.events, [.init(trackID: "1", submission: false)])
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1"])
+    }
+
+    func testActualListeningReachingThresholdSubmitsExactlyOnce() async {
+        let reporter = RecordingPlaybackReporter()
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+        await controller.playNow(playbackTrack("1", duration: 120))
+        await controller.waitForPendingReportsForTesting()
+
+        engine.send(.state(.playing))
+        for elapsed in stride(from: 0.0, through: 65.0, by: 5.0) {
+            engine.send(.time(elapsed: elapsed, duration: 120))
+        }
+        await controller.waitForPendingReportsForTesting()
+
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+        await controller.waitForPendingReportsForTesting()
+
+        XCTAssertEqual(
+            reporter.events,
+            [
+                .init(trackID: "1", submission: false),
+                .init(trackID: "1", submission: true),
+            ]
+        )
+    }
+
+    func testPlaybackHistoryThresholdIgnoresShortPreviewsAndCapsLongTracksAtFourMinutes() {
+        XCTAssertNil(PlaybackHistorySession.submissionThreshold(duration: 59))
+        XCTAssertEqual(PlaybackHistorySession.submissionThreshold(duration: 60), 30)
+        XCTAssertEqual(PlaybackHistorySession.submissionThreshold(duration: 1_000), 240)
+    }
+
+    func testMediaURLRetryDoesNotStartASecondPlaybackHistoryInstance() async {
+        let reporter = RecordingPlaybackReporter()
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+        await controller.playNow(playbackTrack("1"))
+        await controller.waitForPendingReportsForTesting()
+
+        engine.send(.failed(message: "expired"))
+        await controller.waitForPendingTransitionForTesting()
+        await controller.waitForPendingReportsForTesting()
+
+        XCTAssertEqual(reporter.events.filter { !$0.submission }.count, 1)
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1", "1"])
+    }
+
+    func testSeekingAcrossThresholdDoesNotCountAsListeningButNaturalEndStillSubmits() async {
+        let reporter = RecordingPlaybackReporter()
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+        await controller.playNow(playbackTrack("1", duration: 120))
+        await controller.waitForPendingReportsForTesting()
+
+        engine.send(.state(.playing))
+        engine.send(.time(elapsed: 0, duration: 120))
+        engine.send(.time(elapsed: 90, duration: 120))
+        await controller.waitForPendingReportsForTesting()
+        XCTAssertEqual(reporter.events.filter(\.submission).count, 0)
+
+        engine.send(.ended)
+        await controller.waitForPendingReportsForTesting()
+        XCTAssertEqual(reporter.events.filter(\.submission).count, 1)
+    }
+
+    func testScrobbleFailureDoesNotBecomePlaybackFailure() async {
+        let reporter = RecordingPlaybackReporter(
+            error: URLError(.networkConnectionLost)
+        )
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+
+        await controller.playNow(playbackTrack("1", duration: 10))
+        await controller.waitForPendingReportsForTesting()
+        engine.send(.ended)
+        await controller.waitForPendingReportsForTesting()
+
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["1"])
+        XCTAssertEqual(reporter.events.map { $0.submission }, [false, true])
+    }
+
+    func testCompletedSubmissionWaitsForTheStartReportWithoutBlockingQueueAdvance() async {
+        let startBegan = expectation(description: "start report began")
+        let reporter = SuspendingStartPlaybackReporter(onStart: { startBegan.fulfill() })
+        let engine = RecordingPlaybackEngine()
+        let controller = PlaybackController(
+            resolver: RecordingMediaResolver(),
+            engine: engine,
+            reporter: reporter
+        )
+        await controller.playNow(playbackTrack("1", duration: 10))
+        await fulfillment(of: [startBegan], timeout: 1)
+
+        engine.send(.ended)
+        await controller.waitForPendingTransitionForTesting()
+        await Task.yield()
+
+        XCTAssertEqual(reporter.events, [.init(trackID: "1", submission: false)])
+        XCTAssertEqual(controller.engineState, .paused)
+
+        reporter.resumeStart()
+        await controller.waitForPendingReportsForTesting()
+        XCTAssertEqual(
+            reporter.events,
+            [
+                .init(trackID: "1", submission: false),
+                .init(trackID: "1", submission: true),
+            ]
+        )
+    }
+
     func testQueueInsertionIntentsPublishEntriesWithoutLoading() async {
         let engine = RecordingPlaybackEngine()
         let controller = PlaybackController(resolver: RecordingMediaResolver(), engine: engine)
@@ -976,6 +1120,51 @@ private final class RecordingPlaybackEngine: PlaybackEngine {
     func setMuted(_ muted: Bool) { mutedValues.append(muted) }
     func stop() { stopCalls += 1 }
     func send(_ event: PlaybackEngineEvent) { onEvent?(event) }
+}
+
+private struct PlaybackReportEvent: Equatable {
+    let trackID: String
+    let submission: Bool
+}
+
+@MainActor
+private final class RecordingPlaybackReporter: PlaybackReporting {
+    private(set) var events: [PlaybackReportEvent] = []
+    private let error: Error?
+
+    init(error: Error? = nil) {
+        self.error = error
+    }
+
+    func reportPlayback(trackID: String, submission: Bool) async throws {
+        events.append(.init(trackID: trackID, submission: submission))
+        if let error { throw error }
+    }
+}
+
+@MainActor
+private final class SuspendingStartPlaybackReporter: PlaybackReporting {
+    private(set) var events: [PlaybackReportEvent] = []
+    private let onStart: () -> Void
+    private var startContinuation: CheckedContinuation<Void, Never>?
+
+    init(onStart: @escaping () -> Void) {
+        self.onStart = onStart
+    }
+
+    func reportPlayback(trackID: String, submission: Bool) async throws {
+        events.append(.init(trackID: trackID, submission: submission))
+        guard !submission else { return }
+        onStart()
+        await withCheckedContinuation { continuation in
+            startContinuation = continuation
+        }
+    }
+
+    func resumeStart() {
+        startContinuation?.resume()
+        startContinuation = nil
+    }
 }
 
 @MainActor

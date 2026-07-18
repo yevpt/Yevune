@@ -42,3 +42,11 @@ final class MusicClientMediaResolver: PlaybackMediaResolving {
         return ResolvedPlaybackMedia(streamURL: streamURL, coverURL: coverURL)
     }
 }
+
+struct MusicClientPlaybackReporter: PlaybackReporting {
+    let client: any PlaybackHistoryProviding
+
+    func reportPlayback(trackID: String, submission: Bool) async throws {
+        try await client.scrobble(id: trackID, submission: submission)
+    }
+}

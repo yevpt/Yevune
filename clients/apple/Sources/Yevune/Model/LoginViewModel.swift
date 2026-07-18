@@ -25,6 +25,10 @@ protocol FavoriteLibraryProviding: Sendable {
     func getStarred() async throws -> StarredCollection
 }
 
+protocol PlaybackHistoryProviding: Sendable {
+    func scrobble(id: String, submission: Bool) async throws
+}
+
 extension FavoriteLibraryProviding {
     func getStarred() async throws -> StarredCollection { throw CocoaError(.featureUnsupported) }
 }
@@ -37,7 +41,7 @@ extension MediaAnnotationProviding {
     func getArtist(id: String) async throws -> ArtistDetail { throw CocoaError(.featureUnsupported) }
 }
 
-protocol MusicClientProviding: MediaAnnotationProviding, FavoriteLibraryProviding {
+protocol MusicClientProviding: MediaAnnotationProviding, FavoriteLibraryProviding, PlaybackHistoryProviding {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func logout() async
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
@@ -88,6 +92,7 @@ protocol MusicClientProviding: MediaAnnotationProviding, FavoriteLibraryProvidin
 }
 
 extension MusicClientProviding {
+    func scrobble(id: String, submission: Bool) async throws { throw CocoaError(.featureUnsupported) }
     func searchPage(request: SearchPageRequest) async throws -> SearchPage { throw CocoaError(.featureUnsupported) }
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] { throw CocoaError(.featureUnsupported) }
     func listGenres() async throws -> [Genre] { throw CocoaError(.featureUnsupported) }
