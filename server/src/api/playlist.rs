@@ -114,7 +114,11 @@ async fn create_playlist(
         }
         return playlist_detail(&state, format, &user, id).await;
     }
-    let Some(name) = params.name.filter(|name| !name.is_empty()) else {
+    let Some(name) = params
+        .name
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+    else {
         return response::parameter_error(format, "Required parameter 'name' is missing");
     };
     let id = match state
@@ -157,7 +161,11 @@ async fn update_playlist(
     let Some(playlist) = owned_playlist(&state, user.id, id, format).await else {
         return response::not_found(format);
     };
-    let name = params.name.as_deref().unwrap_or(&playlist.name);
+    let submitted_name = params.name.as_deref().map(str::trim);
+    if submitted_name == Some("") {
+        return response::parameter_error(format, "Playlist name must not be blank");
+    }
+    let name = submitted_name.unwrap_or(&playlist.name);
     let comment = params.comment.as_deref().or(playlist.comment.as_deref());
     if !add_ids.is_empty() || !remove_indices.is_empty() {
         let mut tracks = match state.index.playlists().track_ids(id).await {

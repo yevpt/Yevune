@@ -6,6 +6,7 @@ struct LibraryBrowserView: View {
     @ObservedObject var search: LibrarySearchViewModel
     @ObservedObject var artistDetail: ArtistDetailViewModel
     @ObservedObject var playback: PlaybackController
+    @ObservedObject var playlists: PlaylistViewModel
     let client: any MusicClientProviding
     let session: SessionValue
     let onImportMusic: () -> Void
@@ -14,7 +15,6 @@ struct LibraryBrowserView: View {
     let onManageAccess: (AccessScopeTarget) -> Void
 
     @StateObject private var media: MediaViewModel
-    @StateObject private var playlists: PlaylistViewModel
     @State private var navigation = LibraryNavigationState()
     @State private var collectionStyle = LibraryCollectionStyle.grid
 
@@ -24,6 +24,7 @@ struct LibraryBrowserView: View {
         artistDetail: ArtistDetailViewModel,
         client: any MusicClientProviding,
         playback: PlaybackController,
+        playlists: PlaylistViewModel,
         session: SessionValue,
         onImportMusic: @escaping () -> Void = {},
         onScanLibrary: @escaping () -> Void = {},
@@ -35,13 +36,13 @@ struct LibraryBrowserView: View {
         self.artistDetail = artistDetail
         self.client = client
         self.playback = playback
+        self.playlists = playlists
         self.session = session
         self.onImportMusic = onImportMusic
         self.onScanLibrary = onScanLibrary
         self.onShowTasks = onShowTasks
         self.onManageAccess = onManageAccess
         _media = StateObject(wrappedValue: MediaViewModel(client: client))
-        _playlists = StateObject(wrappedValue: PlaylistViewModel(client: client))
     }
 
     var body: some View {
@@ -69,9 +70,7 @@ struct LibraryBrowserView: View {
             }
         }
         .task {
-            async let browseLoad: Void = browse.reload()
-            async let playlistLoad: Void = playlists.loadTree()
-            _ = await (browseLoad, playlistLoad)
+            await browse.reload()
         }
         .onExitCommand(perform: handleEscape)
         .onChange(of: search.phase) { _, _ in reconcileSearchNavigation() }

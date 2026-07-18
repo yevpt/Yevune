@@ -30,6 +30,34 @@ final class PlaylistViewModelTests: XCTestCase {
         XCTAssertEqual(model.detail?.tracks.first?.title, "Song")
     }
 
+    func testLatePlaylistSuccessCannotOverwriteNewSelection() async {
+        let client = SuspendedPlaylistClient()
+        let model = PlaylistViewModel(client: client)
+
+        let first = Task { await model.openPlaylist(id: "playlist:first") }
+        await client.waitForCallCount(1)
+        let second = Task { await model.openPlaylist(id: "playlist:second") }
+        await client.waitForCallCount(2)
+
+        await client.resolveCall(1, with: playlistDetailFixture(id: "playlist:second", name: "Second"))
+        await second.value
+        await client.resolveCall(0, with: playlistDetailFixture(id: "playlist:first", name: "First"))
+        await first.value
+
+        XCTAssertEqual(model.detail?.playlist.id, "playlist:second")
+        XCTAssertFalse(model.isLoadingDetail)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testFailedOpenStopsLoadingAndPublishesError() async {
+        let model = PlaylistViewModel(client: ThrowingPlaylistClient())
+
+        await model.openPlaylist(id: "playlist:missing")
+
+        XCTAssertFalse(model.isLoadingDetail)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     func testCreatePlaylistCallsClientThenReloadsTree() async {
         let fake = FakePlaylistClient()
         let model = PlaylistViewModel(client: fake)
@@ -88,6 +116,98 @@ final class PlaylistViewModelTests: XCTestCase {
 
         XCTAssertNotNil(model.errorMessage)
     }
+
+    func testSaveMetadataUsesSingleRequestAndRefreshesSharedTreeAndDetail() async {
+        let detail = PlaylistDetail(
+            playlist: playlistFixture(id: "playlist:5", name: "Mix", folderID: nil),
+            tracks: [trackFixture(id: "track:1", title: "One")]
+        )
+        let fake = FakePlaylistClient(detail: detail)
+        let model = PlaylistViewModel(client: fake)
+        await model.openPlaylist(id: "playlist:5")
+
+        let saved = await model.saveMetadata(
+            playlistID: "playlist:5",
+            name: "Road Trip",
+            comment: "Night drive"
+        )
+
+        XCTAssertTrue(saved)
+        XCTAssertTrue(fake.calls.contains("metadata:playlist:5:Road Trip:Night drive"))
+        XCTAssertEqual(fake.calls.filter { $0 == "detail:playlist:5" }.count, 2)
+        XCTAssertEqual(fake.calls.last, "tree")
+        XCTAssertFalse(model.isMutating)
+    }
+
+    func testReplaceTracksPreservesRepeatedInstancesAndUsesReturnedDetail() async {
+        let repeated = trackFixture(id: "track:1", title: "Repeat")
+        let tail = trackFixture(id: "track:2", title: "Tail")
+        let original = PlaylistDetail(
+            playlist: playlistFixture(id: "playlist:5", name: "Mix", folderID: nil),
+            tracks: [repeated, tail, repeated]
+        )
+        let replacement = PlaylistDetail(
+            playlist: original.playlist,
+            tracks: [tail, repeated, repeated]
+        )
+        let fake = FakePlaylistClient(detail: original, replacementDetail: replacement)
+        let model = PlaylistViewModel(client: fake)
+        await model.openPlaylist(id: "playlist:5")
+
+        let replaced = await model.replaceTracks(
+            playlistID: "playlist:5",
+            tracks: replacement.tracks
+        )
+
+        XCTAssertTrue(replaced)
+        XCTAssertTrue(fake.calls.contains("replace:playlist:5:track:2,track:1,track:1"))
+        XCTAssertEqual(model.detail?.tracks.map(\.title), ["Tail", "Repeat", "Repeat"])
+        XCTAssertEqual(fake.calls.last, "tree")
+    }
+
+    func testFailedReplacementRollsBackOptimisticOrder() async {
+        let first = trackFixture(id: "track:1", title: "First")
+        let second = trackFixture(id: "track:2", title: "Second")
+        let original = PlaylistDetail(
+            playlist: playlistFixture(id: "playlist:5", name: "Mix", folderID: nil),
+            tracks: [first, second]
+        )
+        let fake = FakePlaylistClient(detail: original, replacementShouldFail: true)
+        let model = PlaylistViewModel(client: fake)
+        await model.openPlaylist(id: "playlist:5")
+
+        let replaced = await model.replaceTracks(
+            playlistID: "playlist:5",
+            tracks: [second, first]
+        )
+
+        XCTAssertFalse(replaced)
+        XCTAssertEqual(model.detail?.tracks.map(\.title), ["First", "Second"])
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isMutating)
+    }
+
+    func testReplacementIsSingleFlight() async {
+        let original = playlistDetailFixture(id: "playlist:5", name: "Mix")
+        let client = SuspendedPlaylistClient(immediateDetail: original)
+        let model = PlaylistViewModel(client: client)
+        await model.openPlaylist(id: "playlist:5")
+
+        let first = Task {
+            await model.replaceTracks(playlistID: "playlist:5", tracks: original.tracks)
+        }
+        await client.waitForReplacement()
+        let duplicate = await model.replaceTracks(playlistID: "playlist:5", tracks: original.tracks)
+
+        XCTAssertFalse(duplicate)
+        XCTAssertTrue(model.isMutating)
+        await client.resolveReplacement(with: original)
+        let firstSucceeded = await first.value
+        let replacementCount = await client.replacementCallCount()
+        XCTAssertTrue(firstSucceeded)
+        XCTAssertEqual(replacementCount, 1)
+        XCTAssertFalse(model.isMutating)
+    }
 }
 
 @MainActor
@@ -102,15 +222,29 @@ func trackFixture(id: String, title: String) -> Track {
           contentType: nil, suffix: nil, duration: 0, bitRate: 0, created: nil, path: nil)
 }
 
+@MainActor
+private func playlistDetailFixture(id: String, name: String) -> PlaylistDetail {
+    PlaylistDetail(playlist: playlistFixture(id: id, name: name, folderID: nil), tracks: [])
+}
+
 /// 记录调用并返回预设值的歌单假客户端。其余协议方法走默认 featureUnsupported 实现。
 final class FakePlaylistClient: MusicClientProviding, @unchecked Sendable {
     var tree: PlaylistTree
     var detail: PlaylistDetail?
     private(set) var calls: [String] = []
+    var replacementDetail: PlaylistDetail?
+    var replacementShouldFail: Bool
 
-    init(tree: PlaylistTree = PlaylistTree(folders: [], playlists: []), detail: PlaylistDetail? = nil) {
+    init(
+        tree: PlaylistTree = PlaylistTree(folders: [], playlists: []),
+        detail: PlaylistDetail? = nil,
+        replacementDetail: PlaylistDetail? = nil,
+        replacementShouldFail: Bool = false
+    ) {
         self.tree = tree
         self.detail = detail
+        self.replacementDetail = replacementDetail
+        self.replacementShouldFail = replacementShouldFail
     }
 
     func login(server: String, user: String, password: String) async throws -> SessionValue {
@@ -139,6 +273,19 @@ final class FakePlaylistClient: MusicClientProviding, @unchecked Sendable {
         return await playlistFixture(id: "playlist:new", name: name, folderID: folderID)
     }
     func renamePlaylist(id: String, name: String) async throws { calls.append("rename:\(id):\(name)") }
+    func updatePlaylistMetadata(id: String, name: String, comment: String) async throws {
+        calls.append("metadata:\(id):\(name):\(comment)")
+    }
+    func replacePlaylistTracks(id: String, songIDs: [String]) async throws -> PlaylistDetail {
+        calls.append("replace:\(id):\(songIDs.joined(separator: ","))")
+        if replacementShouldFail { throw CocoaError(.fileWriteUnknown) }
+        if let replacementDetail { return replacementDetail }
+        if let detail { return detail }
+        return PlaylistDetail(
+            playlist: await playlistFixture(id: id, name: "?", folderID: nil),
+            tracks: []
+        )
+    }
     func setPlaylistComment(id: String, comment: String) async throws { calls.append("comment:\(id)") }
     func addTracks(id: String, songIDs: [String]) async throws { calls.append("add:\(id):\(songIDs.joined(separator: ","))") }
     func removeTrackAt(id: String, index: Int64) async throws { calls.append("remove:\(id):\(index)") }
@@ -169,4 +316,77 @@ final class ThrowingPlaylistClient: MusicClientProviding, @unchecked Sendable {
     func playlistTree() async throws -> PlaylistTree { PlaylistTree(folders: [], playlists: []) }
     func deleteFolder(id: String) async throws { throw CocoaError(.featureUnsupported) }
     // 其余方法走协议默认 featureUnsupported 实现。
+}
+
+private actor SuspendedPlaylistClient: MusicClientProviding {
+    private let immediateDetail: PlaylistDetail?
+    private var continuations: [CheckedContinuation<PlaylistDetail, Error>] = []
+    private var callCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var replacementContinuation: CheckedContinuation<PlaylistDetail, Error>?
+    private var replacementWaiters: [CheckedContinuation<Void, Never>] = []
+    private var replacements = 0
+
+    init(immediateDetail: PlaylistDetail? = nil) {
+        self.immediateDetail = immediateDetail
+    }
+
+    func playlistDetail(id _: String) async throws -> PlaylistDetail {
+        if let immediateDetail { return immediateDetail }
+        let callCount = continuations.count + 1
+        resumeSatisfiedWaiters(for: callCount)
+        return try await withCheckedThrowingContinuation { continuations.append($0) }
+    }
+
+    func waitForCallCount(_ count: Int) async {
+        guard continuations.count < count else { return }
+        await withCheckedContinuation { callCountWaiters.append((count, $0)) }
+    }
+
+    func resolveCall(_ index: Int, with detail: PlaylistDetail) {
+        continuations[index].resume(returning: detail)
+    }
+
+    func replacePlaylistTracks(id _: String, songIDs _: [String]) async throws -> PlaylistDetail {
+        replacements += 1
+        replacementWaiters.forEach { $0.resume() }
+        replacementWaiters.removeAll()
+        return try await withCheckedThrowingContinuation { replacementContinuation = $0 }
+    }
+
+    func waitForReplacement() async {
+        guard replacements == 0 else { return }
+        await withCheckedContinuation { replacementWaiters.append($0) }
+    }
+
+    func resolveReplacement(with detail: PlaylistDetail) {
+        replacementContinuation?.resume(returning: detail)
+        replacementContinuation = nil
+    }
+
+    func replacementCallCount() -> Int { replacements }
+
+    func playlistTree() async throws -> PlaylistTree {
+        PlaylistTree(folders: [], playlists: [])
+    }
+
+    private func resumeSatisfiedWaiters(for count: Int) {
+        let satisfied = callCountWaiters.filter { count >= $0.0 }
+        callCountWaiters.removeAll { count >= $0.0 }
+        satisfied.forEach { $0.1.resume() }
+    }
+
+    func login(server _: String, user _: String, password _: String) async throws -> SessionValue {
+        throw CocoaError(.featureUnsupported)
+    }
+    func logout() async {}
+    func listAlbums(offset _: UInt32, size _: UInt32) async throws -> [Album] { [] }
+    func search(query _: String) async throws -> SearchResult { SearchResult(artists: [], albums: [], tracks: []) }
+    func upload(localPath _: String, libraryKey _: String, progress _: UploadProgress) async throws -> Track {
+        throw CocoaError(.featureUnsupported)
+    }
+    func updateTags(id _: String, update _: TagUpdate) async throws {}
+    func deleteTrack(id _: String) async throws {}
+    func moveTrack(id _: String, key _: String) async throws {}
+    func startScan() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }
+    func scanStatus() async throws -> ScanStatus { throw CocoaError(.featureUnsupported) }
 }

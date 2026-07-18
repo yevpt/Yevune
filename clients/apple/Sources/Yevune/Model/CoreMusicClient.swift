@@ -63,6 +63,12 @@ actor CoreMusicClient: MusicClientProviding {
         try await client.createPlaylist(name: name, folderId: folderID, songIds: songIDs)
     }
     func renamePlaylist(id: String, name: String) async throws { try await client.renamePlaylist(id: id, name: name) }
+    func updatePlaylistMetadata(id: String, name: String, comment: String) async throws {
+        try await client.updatePlaylistMetadata(id: id, name: name, comment: comment)
+    }
+    func replacePlaylistTracks(id: String, songIDs: [String]) async throws -> PlaylistDetail {
+        try await client.replacePlaylistTracks(id: id, songIds: songIDs)
+    }
     func setPlaylistComment(id: String, comment: String) async throws { try await client.setPlaylistComment(id: id, comment: comment) }
     func addTracks(id: String, songIDs: [String]) async throws { try await client.addTracks(id: id, songIds: songIDs) }
     func removeTrackAt(id: String, index: Int64) async throws { try await client.removeTrackAt(id: id, index: index) }

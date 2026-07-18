@@ -420,6 +420,31 @@ async fn playlist_crud_is_owner_scoped_and_uses_playlist_nesting() {
         .await
         .unwrap();
 
+    let blank_create = json_body(
+        fixture
+            .get(&fixture.uri("/rest/createPlaylist?name=%20%20&f=json"))
+            .await,
+    )
+    .await;
+    assert_eq!(blank_create["subsonic-response"]["status"], "failed");
+
+    let blank_update = json_body(
+        fixture
+            .get(&fixture.uri(&format!(
+                "/rest/updatePlaylist?playlistId={created_id}&name=%20%20&f=json"
+            )))
+            .await,
+    )
+    .await;
+    assert_eq!(blank_update["subsonic-response"]["status"], "failed");
+    let unchanged = json_body(
+        fixture
+            .get(&fixture.uri(&format!("/rest/getPlaylist?id={created_id}&f=json")))
+            .await,
+    )
+    .await;
+    assert_eq!(unchanged["subsonic-response"]["playlist"]["name"], "Road");
+
     let updated = fixture
         .get(&fixture.uri(&format!(
             "/rest/updatePlaylist?playlistId={created_id}&name=Renamed&f=json"

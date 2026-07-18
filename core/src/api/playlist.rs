@@ -103,6 +103,42 @@ pub(crate) async fn rename_playlist(
     .await
 }
 
+pub(crate) async fn update_playlist_metadata(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    name: String,
+    comment: String,
+) -> Result<()> {
+    http.get_empty_with_params(
+        auth,
+        "updatePlaylist",
+        &[
+            ("playlistId".to_owned(), id),
+            ("name".to_owned(), name),
+            ("comment".to_owned(), comment),
+        ],
+    )
+    .await
+}
+
+pub(crate) async fn replace_playlist_tracks(
+    http: &HttpClient,
+    auth: &AuthenticatedSession,
+    id: String,
+    song_ids: Vec<String>,
+) -> Result<PlaylistDetail> {
+    let mut params = vec![("playlistId".to_owned(), id)];
+    for song_id in song_ids {
+        params.push(("songId".to_owned(), song_id));
+    }
+    let payload: DetailPayload = http.get_json(auth, "createPlaylist", &params).await?;
+    Ok(PlaylistDetail {
+        playlist: payload.playlist.playlist,
+        tracks: payload.playlist.entry,
+    })
+}
+
 pub(crate) async fn set_playlist_comment(
     http: &HttpClient,
     auth: &AuthenticatedSession,

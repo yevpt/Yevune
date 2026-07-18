@@ -250,3 +250,47 @@ async fn create_folder_decodes_and_move_encodes() {
     assert!(!reqs[4].contains("parentId=")); // 移到根不带 parentId
     assert!(reqs[5].contains("/rest/ext/deletePlaylistFolder?"));
 }
+
+#[tokio::test]
+async fn metadata_and_full_track_replacement_use_atomic_standard_requests() {
+    let repeated =
+        "{\"id\":\"track:1\",\"title\":\"Repeat\",\"size\":10,\"duration\":60,\"bitRate\":320}";
+    let tail =
+        "{\"id\":\"track:2\",\"title\":\"Tail\",\"size\":10,\"duration\":90,\"bitRate\":320}";
+    let replaced = format!(
+        "\"playlist\":{{\"id\":\"playlist:5\",\"name\":\"Road Trip\",\"owner\":\"admin\",\"public\":false,\"comment\":\"night\",\"songCount\":3,\"duration\":210,\"entry\":[{repeated},{tail},{repeated}]}}"
+    );
+    let (address, requests, handle) =
+        mock_server(vec![ok(""), current_user(), ok(""), ok(&replaced)]).await;
+    let client = logged_in(address).await;
+
+    client
+        .update_playlist_metadata("playlist:5".into(), "Road Trip".into(), "night".into())
+        .await
+        .unwrap();
+    let detail = client
+        .replace_playlist_tracks(
+            "playlist:5".into(),
+            vec!["track:1".into(), "track:2".into(), "track:1".into()],
+        )
+        .await
+        .unwrap();
+    handle.await.unwrap();
+
+    assert_eq!(detail.tracks.len(), 3);
+    assert_eq!(detail.tracks[0].id, detail.tracks[2].id);
+    let reqs = requests.lock().await;
+    assert!(reqs[2].contains("/rest/updatePlaylist?"));
+    assert!(reqs[2].contains("playlistId=playlist%3A5"));
+    assert!(reqs[2].contains("name=Road+Trip"));
+    assert!(reqs[2].contains("comment=night"));
+    assert!(reqs[3].contains("/rest/createPlaylist?"));
+    assert!(reqs[3].contains("playlistId=playlist%3A5"));
+    let first = reqs[3].find("songId=track%3A1").unwrap();
+    let middle = reqs[3].find("songId=track%3A2").unwrap();
+    let last = reqs[3].rfind("songId=track%3A1").unwrap();
+    assert!(
+        first < middle && middle < last,
+        "必须保留重复曲目与完整顺序"
+    );
+}

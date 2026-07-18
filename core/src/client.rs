@@ -387,6 +387,38 @@ impl MusicClient {
         playlist::rename_playlist(&self.http, &self.authenticated_session().await?, id, name).await
     }
 
+    /// 一次更新歌单名称与备注；空备注表示清空。
+    pub async fn update_playlist_metadata(
+        &self,
+        id: String,
+        name: String,
+        comment: String,
+    ) -> Result<()> {
+        playlist::update_playlist_metadata(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            name,
+            comment,
+        )
+        .await
+    }
+
+    /// 使用标准 `createPlaylist` 替换歌单完整曲目顺序并返回最新详情。
+    pub async fn replace_playlist_tracks(
+        &self,
+        id: String,
+        song_ids: Vec<String>,
+    ) -> Result<PlaylistDetail> {
+        playlist::replace_playlist_tracks(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            song_ids,
+        )
+        .await
+    }
+
     /// 设置歌单备注。
     pub async fn set_playlist_comment(&self, id: String, comment: String) -> Result<()> {
         playlist::set_playlist_comment(

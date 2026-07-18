@@ -315,9 +315,22 @@ struct LibraryView: View {
                 PlaylistDetailView(
                     detail: detail,
                     playlists: playlists,
-                    media: media,
                     playback: playback
                 )
+            } else if playlists.isLoadingDetail {
+                ProgressView("正在加载歌单…")
+            } else if let message = playlists.errorMessage {
+                ContentUnavailableView {
+                    Label("无法打开歌单", systemImage: "wifi.exclamationmark")
+                } description: {
+                    Text(message)
+                } actions: {
+                    Button("重试") {
+                        Task { await playlists.openPlaylist(id: id) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(32)
             } else {
                 ProgressView().task(id: id) { await playlists.openPlaylist(id: id) }
             }
@@ -329,6 +342,7 @@ struct LibraryView: View {
                     artistDetail: artistDetail,
                     client: client,
                     playback: playback,
+                    playlists: playlists,
                     session: session,
                     onImportMusic: { importing = true },
                     onScanLibrary: { Task { await workflow.scanLibrary() } },
@@ -342,6 +356,7 @@ struct LibraryView: View {
                     artistDetail: artistDetail,
                     client: client,
                     playback: playback,
+                    playlists: playlists,
                     session: session
                 )
             }

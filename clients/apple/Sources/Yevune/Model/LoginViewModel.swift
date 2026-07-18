@@ -37,6 +37,8 @@ protocol MusicClientProviding: Sendable {
     func playlistDetail(id: String) async throws -> PlaylistDetail
     func createPlaylist(name: String, folderID: String?, songIDs: [String]) async throws -> Playlist
     func renamePlaylist(id: String, name: String) async throws
+    func updatePlaylistMetadata(id: String, name: String, comment: String) async throws
+    func replacePlaylistTracks(id: String, songIDs: [String]) async throws -> PlaylistDetail
     func setPlaylistComment(id: String, comment: String) async throws
     func addTracks(id: String, songIDs: [String]) async throws
     func removeTrackAt(id: String, index: Int64) async throws
@@ -78,6 +80,8 @@ extension MusicClientProviding {
     func playlistDetail(id: String) async throws -> PlaylistDetail { throw CocoaError(.featureUnsupported) }
     func createPlaylist(name: String, folderID: String?, songIDs: [String]) async throws -> Playlist { throw CocoaError(.featureUnsupported) }
     func renamePlaylist(id: String, name: String) async throws { throw CocoaError(.featureUnsupported) }
+    func updatePlaylistMetadata(id: String, name: String, comment: String) async throws { throw CocoaError(.featureUnsupported) }
+    func replacePlaylistTracks(id: String, songIDs: [String]) async throws -> PlaylistDetail { throw CocoaError(.featureUnsupported) }
     func setPlaylistComment(id: String, comment: String) async throws { throw CocoaError(.featureUnsupported) }
     func addTracks(id: String, songIDs: [String]) async throws { throw CocoaError(.featureUnsupported) }
     func removeTrackAt(id: String, index: Int64) async throws { throw CocoaError(.featureUnsupported) }
