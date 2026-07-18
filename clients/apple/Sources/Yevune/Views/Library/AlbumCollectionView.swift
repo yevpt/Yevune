@@ -64,6 +64,13 @@ struct AlbumCollectionView: View {
                     }
                     .accessibilityLabel("专辑 \(album.name)，艺人 \(album.artist ?? "未知")")
                     .accessibilityAction(named: "打开专辑") { onOpen(album) }
+                    .contextMenu {
+                        MediaAnnotationMenuActions(
+                            target: .album(album.id),
+                            starred: album.starred,
+                            rating: album.userRating
+                        )
+                    }
                     .onAppear { loadIfLast(album) }
                 }
                 .safeAreaInset(edge: .bottom) { paginationFooter }
@@ -111,10 +118,18 @@ private struct AlbumCollectionCell: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            Text(album.artist ?? "未知艺人")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(album.artist ?? "未知艺人")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                MediaAnnotationIndicator(
+                    target: .album(album.id),
+                    starred: album.starred,
+                    rating: album.userRating
+                )
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -132,6 +147,13 @@ private struct AlbumCollectionCell: View {
         }
         .accessibilityLabel("专辑 \(album.name)，艺人 \(album.artist ?? "未知")")
         .accessibilityAction(named: "打开专辑") { onOpen(album) }
+        .contextMenu {
+            MediaAnnotationMenuActions(
+                target: .album(album.id),
+                starred: album.starred,
+                rating: album.userRating
+            )
+        }
         .task(id: album.coverArt) {
             coverURL = await loadCoverURL(for: album, client: client)
         }

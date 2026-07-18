@@ -55,6 +55,12 @@ actor CoreMusicClient: MusicClientProviding {
     func getLyricsBySongID(_ id: String) async throws -> [StructuredLyrics] {
         try await client.getLyricsBySongId(id: id)
     }
+    func setStarred(id: String, itemType: AnnotationItemType, starred: Bool) async throws {
+        try await client.setStarred(id: id, itemType: itemType, starred: starred)
+    }
+    func setRating(id: String, rating: UInt8?) async throws {
+        try await client.setRating(id: id, rating: rating)
+    }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { try await client.scanPrefix(prefix: prefix) }
 
     func playlistTree() async throws -> PlaylistTree { try await client.playlistTree() }

@@ -80,6 +80,16 @@ async fn search3(
             results.artists = page(results.artists, artist_offset, artist_count);
             results.albums = page(results.albums, album_offset, album_count);
             results.tracks = page(results.tracks, song_offset, song_count);
+            let annotations = async {
+                super::annotation::annotate_artists(&state, user.id, &mut results.artists).await?;
+                super::annotation::annotate_albums(&state, user.id, &mut results.albums).await?;
+                super::annotation::annotate_tracks(&state, user.id, &mut results.tracks).await
+            }
+            .await;
+            if let Err(error) = annotations {
+                tracing::error!(%error, "search3 标注查询失败");
+                return response::internal(format);
+            }
             let artists: Vec<_> = results.artists.iter().map(response::artist_value).collect();
             let albums: Vec<_> = results.albums.iter().map(response::album_value).collect();
             let songs: Vec<_> = results.tracks.iter().map(response::track_value).collect();

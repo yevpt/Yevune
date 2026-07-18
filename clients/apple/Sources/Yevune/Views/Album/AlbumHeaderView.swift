@@ -85,6 +85,14 @@ struct AlbumHeaderView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
+                    MediaFavoriteButton(
+                        target: .album(detail?.album.id ?? album.id),
+                        starred: detail?.album.starred ?? album.starred,
+                        rating: detail?.album.userRating ?? album.userRating,
+                        labeled: true
+                    )
+                    .buttonStyle(.bordered)
+
                     if isAdmin {
                         if let onReplaceCover {
                             Button(action: onReplaceCover) {

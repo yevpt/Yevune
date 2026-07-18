@@ -199,6 +199,11 @@ struct LibrarySearchResultsView: View {
                 Text(track.artist ?? "未知艺人").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            MediaAnnotationIndicator(
+                target: .track(track.id),
+                starred: track.starred,
+                rating: track.userRating
+            )
             if let album = track.album, !album.isEmpty {
                 Text(album)
                     .font(.caption)
@@ -214,6 +219,12 @@ struct LibrarySearchResultsView: View {
             PlaybackTrackActions(track: track, playback: playback)
             Divider()
             Button("加入歌单…") { playlistTrackIDs = [track.id] }
+            Divider()
+            MediaAnnotationMenuActions(
+                target: .track(track.id),
+                starred: track.starred,
+                rating: track.userRating
+            )
         }
         .accessibilityLabel("曲目 \(track.title)，艺人 \(track.artist ?? "未知")")
         .accessibilityAction(named: "播放") { playTracks(startingAt: index) }

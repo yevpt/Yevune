@@ -334,6 +334,7 @@ struct LibraryCommandBar: View {
                 Text("艺人名称").tag(AlbumSort.alphabeticalByArtist)
                 Text("最常播放").tag(AlbumSort.frequent)
                 Text("最近播放").tag(AlbumSort.recent)
+                Text("我的收藏").tag(AlbumSort.starred)
             }
 
             Picker("流派", selection: genreBinding) {

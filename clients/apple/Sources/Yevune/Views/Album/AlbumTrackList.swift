@@ -154,6 +154,12 @@ struct AlbumTrackList: View {
                     )
                     Divider()
                     Button("加入歌单…") { onAddToPlaylist(track) }
+                    Divider()
+                    MediaAnnotationMenuActions(
+                        target: .track(track.id),
+                        starred: track.starred,
+                        rating: track.userRating
+                    )
 
                     if isAdmin {
                         Divider()
@@ -192,6 +198,13 @@ struct AlbumTrackList: View {
                 ForEach(columns, id: \.self) { column in
                     trackCell(column, track: track)
                 }
+
+                MediaAnnotationIndicator(
+                    target: .track(track.id),
+                    starred: track.starred,
+                    rating: track.userRating
+                )
+                .frame(width: 42, alignment: .trailing)
             }
         }
         .padding(.vertical, 3)

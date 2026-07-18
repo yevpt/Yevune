@@ -13,9 +13,19 @@ struct ArtistDetailView: View {
         Group {
             if let detail = model.detail, detail.artist.id == artistID {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(detail.artist.name)
-                        .font(.largeTitle.bold())
-                        .padding(.horizontal, 18)
+                    HStack(spacing: 12) {
+                        Text(detail.artist.name)
+                            .font(.largeTitle.bold())
+                        Spacer()
+                        MediaFavoriteButton(
+                            target: .artist(detail.artist.id),
+                            starred: detail.artist.starred,
+                            rating: detail.artist.userRating,
+                            labeled: true
+                        )
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal, 18)
                     AlbumCollectionView(
                         albums: detail.albums,
                         highlightedAlbumID: nil,

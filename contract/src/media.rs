@@ -30,6 +30,12 @@ pub struct Artist {
     pub music_brainz_id: Option<String>,
     /// 专辑数。
     pub album_count: u32,
+    /// 当前用户收藏时间；为空表示未收藏。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starred: Option<String>,
+    /// 当前用户评分（1–5）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_rating: Option<u8>,
 }
 
 /// 专辑，对齐 OpenSubsonic `AlbumID3` + 设计文档 §6 `albums` 列。
@@ -56,6 +62,12 @@ pub struct Album {
     pub genre: Option<String>,
     /// 入库时间（ISO8601），对应 `added_at`。
     pub created: Option<String>,
+    /// 当前用户收藏时间；为空表示未收藏。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starred: Option<String>,
+    /// 当前用户评分（1–5）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_rating: Option<u8>,
 }
 
 /// 可由管理员显式清空的音频标签字段。
@@ -112,6 +124,12 @@ pub struct Track {
     pub created: Option<String>,
     /// Garage 原始对象键（`library/...`），OpenSubsonic `path`；客户端整理/移动时的当前定位。
     pub path: Option<String>,
+    /// 当前用户收藏时间；为空表示未收藏。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starred: Option<String>,
+    /// 当前用户评分（1–5）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_rating: Option<u8>,
 }
 
 #[cfg(test)]

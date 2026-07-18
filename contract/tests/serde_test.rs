@@ -73,6 +73,8 @@ fn artist_往返且字段名对齐() {
         cover_art: Some("cover-ar-1".into()),
         music_brainz_id: Some("mbid-1".into()),
         album_count: 5,
+        starred: Some("2026-07-18T12:00:00Z".into()),
+        user_rating: Some(5),
     };
     assert_roundtrip(
         &a,
@@ -83,6 +85,8 @@ fn artist_往返且字段名对齐() {
             "coverArt",
             "musicBrainzId",
             "albumCount",
+            "starred",
+            "userRating",
         ],
     );
 }
@@ -100,6 +104,8 @@ fn album_往返且字段名对齐() {
         year: Some(2003),
         genre: Some("Mandopop".into()),
         created: Some("2026-07-10T00:00:00Z".into()),
+        starred: Some("2026-07-18T12:00:00Z".into()),
+        user_rating: Some(4),
     };
     assert_roundtrip(
         &a,
@@ -114,6 +120,8 @@ fn album_往返且字段名对齐() {
             "year",
             "genre",
             "created",
+            "starred",
+            "userRating",
         ],
     );
 }
@@ -139,6 +147,8 @@ fn track_往返且字段名对齐() {
         bit_rate: 1024,
         created: Some("2026-07-10T00:00:00Z".into()),
         path: Some("library/jay/qingtian.flac".into()),
+        starred: Some("2026-07-18T12:00:00Z".into()),
+        user_rating: Some(5),
     };
     assert_roundtrip(
         &t,
@@ -151,8 +161,25 @@ fn track_往返且字段名对齐() {
             "contentType",
             "bitRate",
             "coverArt",
+            "starred",
+            "userRating",
         ],
     );
+}
+
+#[test]
+fn media_annotation_fields_are_optional_for_older_servers() {
+    let track: Track = serde_json::from_value(serde_json::json!({
+        "id": "tr-1",
+        "title": "晴天",
+        "size": 42,
+        "duration": 269,
+        "bitRate": 1024
+    }))
+    .expect("缺失标注字段仍应可解码");
+
+    assert_eq!(track.starred, None);
+    assert_eq!(track.user_rating, None);
 }
 
 #[test]

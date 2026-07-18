@@ -8,6 +8,7 @@ mod error;
 mod ffi_types;
 mod http;
 
+pub use api::annotation::AnnotationItemType;
 pub use api::browse::{
     AlbumDetail, AlbumFilter, AlbumSort, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
 };

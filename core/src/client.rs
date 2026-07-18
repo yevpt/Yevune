@@ -7,6 +7,7 @@ use std::sync::{
 
 use tokio::sync::RwLock;
 
+use crate::api::annotation::{self, AnnotationItemType};
 use crate::api::browse::{
     self, AlbumDetail, AlbumFilter, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
 };
@@ -86,6 +87,28 @@ impl MusicClient {
     pub async fn ping(&self) -> Result<()> {
         let session = self.authenticated_session().await?;
         self.http.get_empty(&session, "ping").await
+    }
+
+    /// 收藏或取消收藏曲目、专辑或艺人。
+    pub async fn set_starred(
+        &self,
+        id: String,
+        item_type: AnnotationItemType,
+        starred: bool,
+    ) -> Result<()> {
+        annotation::set_starred(
+            &self.http,
+            &self.authenticated_session().await?,
+            id,
+            item_type,
+            starred,
+        )
+        .await
+    }
+
+    /// 设置 1–5 星评分；`None` 清除评分。
+    pub async fn set_rating(&self, id: String, rating: Option<u8>) -> Result<()> {
+        annotation::set_rating(&self.http, &self.authenticated_session().await?, id, rating).await
     }
 
     /// 读取管理员可管理的完整用户列表。

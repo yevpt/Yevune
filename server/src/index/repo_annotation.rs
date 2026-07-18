@@ -1,6 +1,8 @@
 //! 标注仓储：收藏/播放计数/评分，按用户隔离（设计文档 §6 `annotations`）。
 
-use sqlx::{FromRow, SqlitePool};
+use std::collections::HashMap;
+
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
 use super::Result;
 
@@ -15,6 +17,15 @@ pub struct Annotation {
     pub last_played: Option<String>,
     /// 评分 1–5。
     pub rating: Option<i64>,
+}
+
+#[derive(FromRow)]
+struct AnnotationRow {
+    item_id: i64,
+    starred_at: Option<String>,
+    play_count: i64,
+    last_played: Option<String>,
+    rating: Option<i64>,
 }
 
 /// 标注仓储。
@@ -123,5 +134,50 @@ impl<'a> AnnotationRepo<'a> {
         .bind(item_id)
         .fetch_optional(self.pool)
         .await
+    }
+
+    /// 批量读取某用户对同类条目的标注，结果只包含数据库中已有的条目。
+    pub async fn get_many(
+        &self,
+        user_id: i64,
+        item_type: &str,
+        item_ids: &[i64],
+    ) -> Result<HashMap<i64, Annotation>> {
+        if item_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT item_id, starred_at, play_count, last_played, rating FROM annotations \
+             WHERE user_id = ",
+        );
+        query
+            .push_bind(user_id)
+            .push(" AND item_type = ")
+            .push_bind(item_type)
+            .push(" AND item_id IN (");
+        let mut separated = query.separated(", ");
+        for id in item_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+
+        let rows = query
+            .build_query_as::<AnnotationRow>()
+            .fetch_all(self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.item_id,
+                    Annotation {
+                        starred_at: row.starred_at,
+                        play_count: row.play_count,
+                        last_played: row.last_played,
+                        rating: row.rating,
+                    },
+                )
+            })
+            .collect())
     }
 }

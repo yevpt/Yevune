@@ -4,10 +4,116 @@ use axum::extract::{OriginalUri, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
+use contract::{Album, Artist, Track};
 use serde::Deserialize;
 
 use super::response::{self, Format};
 use super::{ApiQuery, ApiUser, AppState};
+
+trait Annotatable {
+    fn annotation_id(&self) -> &str;
+    fn set_annotation(&mut self, starred: Option<String>, rating: Option<u8>);
+}
+
+impl Annotatable for Artist {
+    fn annotation_id(&self) -> &str {
+        &self.id
+    }
+
+    fn set_annotation(&mut self, starred: Option<String>, rating: Option<u8>) {
+        self.starred = starred;
+        self.user_rating = rating;
+    }
+}
+
+impl Annotatable for Album {
+    fn annotation_id(&self) -> &str {
+        &self.id
+    }
+
+    fn set_annotation(&mut self, starred: Option<String>, rating: Option<u8>) {
+        self.starred = starred;
+        self.user_rating = rating;
+    }
+}
+
+impl Annotatable for Track {
+    fn annotation_id(&self) -> &str {
+        &self.id
+    }
+
+    fn set_annotation(&mut self, starred: Option<String>, rating: Option<u8>) {
+        self.starred = starred;
+        self.user_rating = rating;
+    }
+}
+
+async fn annotate<T: Annotatable>(
+    state: &AppState,
+    user_id: i64,
+    item_type: &str,
+    items: &mut [T],
+) -> crate::index::Result<()> {
+    let ids = items
+        .iter()
+        .filter_map(|item| item.annotation_id().parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    let annotations = state
+        .index
+        .annotations()
+        .get_many(user_id, item_type, &ids)
+        .await?;
+    for item in items {
+        let Some(annotation) = item
+            .annotation_id()
+            .parse::<i64>()
+            .ok()
+            .and_then(|id| annotations.get(&id))
+        else {
+            continue;
+        };
+        let rating = annotation
+            .rating
+            .and_then(|value| u8::try_from(value).ok())
+            .filter(|value| (1..=5).contains(value));
+        item.set_annotation(
+            annotation.starred_at.as_deref().map(opensubsonic_time),
+            rating,
+        );
+    }
+    Ok(())
+}
+
+fn opensubsonic_time(value: &str) -> String {
+    if value.ends_with('Z') {
+        return value.to_owned();
+    }
+    format!("{}Z", value.replace(' ', "T"))
+}
+
+pub(crate) async fn annotate_artists(
+    state: &AppState,
+    user_id: i64,
+    items: &mut [Artist],
+) -> crate::index::Result<()> {
+    annotate(state, user_id, "artist", items).await
+}
+
+pub(crate) async fn annotate_albums(
+    state: &AppState,
+    user_id: i64,
+    items: &mut [Album],
+) -> crate::index::Result<()> {
+    annotate(state, user_id, "album", items).await
+}
+
+pub(crate) async fn annotate_tracks(
+    state: &AppState,
+    user_id: i64,
+    items: &mut [Track],
+) -> crate::index::Result<()> {
+    annotate(state, user_id, "track", items).await
+}
 
 #[derive(Deserialize)]
 struct RatingParams {

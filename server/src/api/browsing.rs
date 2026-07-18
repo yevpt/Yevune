@@ -68,10 +68,18 @@ async fn get_artists(
         }
     };
     match state.index.media().list_artists_visible(&viewer).await {
-        Ok(artists) => response::ok(
-            format,
-            serde_json::json!({"artists": artist_indexes(&artists)}),
-        ),
+        Ok(mut artists) => {
+            if let Err(error) =
+                super::annotation::annotate_artists(&state, user.id, &mut artists).await
+            {
+                tracing::error!(%error, "getArtists 标注查询失败");
+                return response::internal(format);
+            }
+            response::ok(
+                format,
+                serde_json::json!({"artists": artist_indexes(&artists)}),
+            )
+        }
         Err(error) => {
             tracing::error!(%error, "getArtists 查询失败");
             response::internal(format)
@@ -100,7 +108,7 @@ async fn get_artist(
             return response::internal(format);
         }
     };
-    let artist = match state.index.media().get_artist_visible(&viewer, id).await {
+    let mut artist = match state.index.media().get_artist_visible(&viewer, id).await {
         Ok(Some(artist)) => artist,
         Ok(None) => return response::not_found(format),
         Err(error) => {
@@ -108,13 +116,24 @@ async fn get_artist(
             return response::internal(format);
         }
     };
-    let albums = match state.index.media().artist_albums_visible(&viewer, id).await {
+    let mut albums = match state.index.media().artist_albums_visible(&viewer, id).await {
         Ok(albums) => albums,
         Err(error) => {
             tracing::error!(%error, "getArtist 专辑查询失败");
             return response::internal(format);
         }
     };
+    if let Err(error) =
+        super::annotation::annotate_artists(&state, user.id, std::slice::from_mut(&mut artist))
+            .await
+    {
+        tracing::error!(%error, "getArtist 艺人标注查询失败");
+        return response::internal(format);
+    }
+    if let Err(error) = super::annotation::annotate_albums(&state, user.id, &mut albums).await {
+        tracing::error!(%error, "getArtist 专辑标注查询失败");
+        return response::internal(format);
+    }
     let mut value = response::artist_value(&artist);
     value.as_object_mut().expect("artist 是对象").insert(
         "album".into(),
@@ -148,7 +167,7 @@ async fn get_album(
             return response::internal(format);
         }
     };
-    let album = match state.index.media().get_album_visible(&viewer, id).await {
+    let mut album = match state.index.media().get_album_visible(&viewer, id).await {
         Ok(Some(album)) => album,
         Ok(None) => return response::not_found(format),
         Err(error) => {
@@ -156,13 +175,23 @@ async fn get_album(
             return response::internal(format);
         }
     };
-    let tracks = match state.index.media().album_tracks_visible(&viewer, id).await {
+    let mut tracks = match state.index.media().album_tracks_visible(&viewer, id).await {
         Ok(tracks) => tracks,
         Err(error) => {
             tracing::error!(%error, "getAlbum 曲目查询失败");
             return response::internal(format);
         }
     };
+    if let Err(error) =
+        super::annotation::annotate_albums(&state, user.id, std::slice::from_mut(&mut album)).await
+    {
+        tracing::error!(%error, "getAlbum 专辑标注查询失败");
+        return response::internal(format);
+    }
+    if let Err(error) = super::annotation::annotate_tracks(&state, user.id, &mut tracks).await {
+        tracing::error!(%error, "getAlbum 曲目标注查询失败");
+        return response::internal(format);
+    }
     let mut value = response::album_value(&album);
     value.as_object_mut().expect("album 是对象").insert(
         "song".into(),
@@ -197,10 +226,22 @@ async fn get_song(
         }
     };
     match state.index.media().get_track_visible(&viewer, id).await {
-        Ok(Some(track)) => response::ok(
-            format,
-            serde_json::json!({"song": response::track_value(&track)}),
-        ),
+        Ok(Some(mut track)) => {
+            if let Err(error) = super::annotation::annotate_tracks(
+                &state,
+                user.id,
+                std::slice::from_mut(&mut track),
+            )
+            .await
+            {
+                tracing::error!(%error, "getSong 标注查询失败");
+                return response::internal(format);
+            }
+            response::ok(
+                format,
+                serde_json::json!({"song": response::track_value(&track)}),
+            )
+        }
         Ok(None) => response::not_found(format),
         Err(error) => {
             tracing::error!(%error, "getSong 查询失败");
@@ -269,10 +310,10 @@ async fn get_album_list2(
             return response::internal(format);
         }
     };
-    let mut values = Vec::with_capacity(ids.len());
+    let mut albums = Vec::with_capacity(ids.len());
     for id in ids {
         match state.index.media().get_album_visible(&viewer, id).await {
-            Ok(Some(album)) => values.push(response::album_value(&album)),
+            Ok(Some(album)) => albums.push(album),
             Ok(None) => {}
             Err(error) => {
                 tracing::error!(%error, "getAlbumList2 专辑读取失败");
@@ -280,6 +321,11 @@ async fn get_album_list2(
             }
         }
     }
+    if let Err(error) = super::annotation::annotate_albums(&state, user.id, &mut albums).await {
+        tracing::error!(%error, "getAlbumList2 标注查询失败");
+        return response::internal(format);
+    }
+    let values = albums.iter().map(response::album_value).collect::<Vec<_>>();
     response::ok(format, serde_json::json!({"albumList2": {"album": values}}))
 }
 
@@ -319,7 +365,13 @@ async fn get_indexes(
         }
     };
     match state.index.media().list_artists_visible(&viewer).await {
-        Ok(artists) => {
+        Ok(mut artists) => {
+            if let Err(error) =
+                super::annotation::annotate_artists(&state, user.id, &mut artists).await
+            {
+                tracing::error!(%error, "getIndexes 标注查询失败");
+                return response::internal(format);
+            }
             let mut indexes = artist_indexes(&artists);
             indexes
                 .as_object_mut()

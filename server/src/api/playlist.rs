@@ -270,7 +270,7 @@ async fn playlist_detail(
             return response::internal(format);
         }
     };
-    let mut entries = Vec::with_capacity(ids.len());
+    let mut tracks = Vec::with_capacity(ids.len());
     for track_id in ids {
         match state
             .index
@@ -278,7 +278,7 @@ async fn playlist_detail(
             .get_track_visible(&viewer, track_id)
             .await
         {
-            Ok(Some(track)) => entries.push(response::track_value(&track)),
+            Ok(Some(track)) => tracks.push(track),
             Ok(None) => {}
             Err(error) => {
                 tracing::error!(%error, "getPlaylist 曲目查询失败");
@@ -286,6 +286,11 @@ async fn playlist_detail(
             }
         }
     }
+    if let Err(error) = super::annotation::annotate_tracks(state, user.id, &mut tracks).await {
+        tracing::error!(%error, "getPlaylist 标注查询失败");
+        return response::internal(format);
+    }
+    let entries = tracks.iter().map(response::track_value).collect::<Vec<_>>();
     let mut value = response::playlist_value(&playlist, &user.name);
     value
         .as_object_mut()

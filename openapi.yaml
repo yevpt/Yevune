@@ -315,6 +315,18 @@ components:
           format: int32
           description: 曲目数。
           minimum: 0
+        starred:
+          type:
+          - string
+          - 'null'
+          description: 当前用户收藏时间；为空表示未收藏。
+        userRating:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 当前用户评分（1–5）。
+          minimum: 0
         year:
           type:
           - integer
@@ -356,6 +368,18 @@ components:
           - string
           - 'null'
           description: 排序名（可空）。
+        starred:
+          type:
+          - string
+          - 'null'
+          description: 当前用户收藏时间；为空表示未收藏。
+        userRating:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 当前用户评分（1–5）。
+          minimum: 0
     Genre:
       type: object
       description: 流派，对齐 OpenSubsonic `getGenres` 的 genre 元素。
@@ -629,6 +653,11 @@ components:
           format: int64
           description: 文件大小（字节）。
           minimum: 0
+        starred:
+          type:
+          - string
+          - 'null'
+          description: 当前用户收藏时间；为空表示未收藏。
         suffix:
           type:
           - string
@@ -643,6 +672,13 @@ components:
           - 'null'
           format: int32
           description: 曲目号，对应 `track_no`。
+          minimum: 0
+        userRating:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: 当前用户评分（1–5）。
           minimum: 0
         year:
           type:

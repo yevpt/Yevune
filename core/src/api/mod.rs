@@ -2,6 +2,7 @@
 
 pub(crate) mod access;
 pub(crate) mod admin;
+pub(crate) mod annotation;
 pub(crate) mod browse;
 pub(crate) mod lyrics;
 pub(crate) mod manage;

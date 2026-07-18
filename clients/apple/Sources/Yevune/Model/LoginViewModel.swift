@@ -13,7 +13,23 @@ struct SessionValue: Equatable {
     }
 }
 
-protocol MusicClientProviding: Sendable {
+protocol MediaAnnotationProviding: Sendable {
+    func setStarred(id: String, itemType: AnnotationItemType, starred: Bool) async throws
+    func setRating(id: String, rating: UInt8?) async throws
+    func getSong(id: String) async throws -> Track
+    func getAlbum(id: String) async throws -> AlbumDetail
+    func getArtist(id: String) async throws -> ArtistDetail
+}
+
+extension MediaAnnotationProviding {
+    func setStarred(id: String, itemType: AnnotationItemType, starred: Bool) async throws { throw CocoaError(.featureUnsupported) }
+    func setRating(id: String, rating: UInt8?) async throws { throw CocoaError(.featureUnsupported) }
+    func getSong(id: String) async throws -> Track { throw CocoaError(.featureUnsupported) }
+    func getAlbum(id: String) async throws -> AlbumDetail { throw CocoaError(.featureUnsupported) }
+    func getArtist(id: String) async throws -> ArtistDetail { throw CocoaError(.featureUnsupported) }
+}
+
+protocol MusicClientProviding: MediaAnnotationProviding {
     func login(server: String, user: String, password: String) async throws -> SessionValue
     func logout() async
     func listAlbums(offset: UInt32, size: UInt32) async throws -> [Album]
@@ -27,7 +43,6 @@ protocol MusicClientProviding: Sendable {
     func moveTrack(id: String, key: String) async throws
     func startScan() async throws -> ScanStatus
     func scanStatus() async throws -> ScanStatus
-    func getAlbum(id: String) async throws -> AlbumDetail
     func coverArtURL(id: String, size: UInt32?) async throws -> String
     func setCoverArt(albumID: String, localPath: String) async throws
     func streamURL(trackID: String) async throws -> String
@@ -61,8 +76,6 @@ protocol MusicClientProviding: Sendable {
     func listAccessRules() async throws -> [AccessRule]
     func setAccessRule(scopeType: ScopeType, scopeID: String, grants: [Principal]) async throws -> AccessRule
     func deleteAccessRule(id: String) async throws
-    func getSong(id: String) async throws -> Track
-    func getArtist(id: String) async throws -> ArtistDetail
     func listArtists() async throws -> [Artist]
 }
 
@@ -70,7 +83,6 @@ extension MusicClientProviding {
     func searchPage(request: SearchPageRequest) async throws -> SearchPage { throw CocoaError(.featureUnsupported) }
     func listAlbums(filter: AlbumFilter, offset: UInt32, size: UInt32) async throws -> [Album] { throw CocoaError(.featureUnsupported) }
     func listGenres() async throws -> [Genre] { throw CocoaError(.featureUnsupported) }
-    func getAlbum(id: String) async throws -> AlbumDetail { throw CocoaError(.featureUnsupported) }
     func coverArtURL(id: String, size: UInt32?) async throws -> String { throw CocoaError(.featureUnsupported) }
     func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
     func streamURL(trackID: String) async throws -> String { throw CocoaError(.featureUnsupported) }
@@ -104,8 +116,6 @@ extension MusicClientProviding {
     func listAccessRules() async throws -> [AccessRule] { throw CocoaError(.featureUnsupported) }
     func setAccessRule(scopeType: ScopeType, scopeID: String, grants: [Principal]) async throws -> AccessRule { throw CocoaError(.featureUnsupported) }
     func deleteAccessRule(id: String) async throws { throw CocoaError(.featureUnsupported) }
-    func getSong(id: String) async throws -> Track { throw CocoaError(.featureUnsupported) }
-    func getArtist(id: String) async throws -> ArtistDetail { throw CocoaError(.featureUnsupported) }
     func listArtists() async throws -> [Artist] { throw CocoaError(.featureUnsupported) }
 }
 

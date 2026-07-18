@@ -504,6 +504,84 @@ async fn annotation_endpoints_persist_per_user_state() {
 }
 
 #[tokio::test]
+async fn media_reads_include_only_the_authenticated_users_annotations() {
+    let fixture = Fixture::new().await;
+    for path in [
+        format!("/rest/star?id=tr-{}&f=json", fixture.track_id),
+        format!("/rest/star?albumId=al-{}&f=json", fixture.album_id),
+        format!("/rest/star?artistId=ar-{}&f=json", fixture.artist_id),
+        format!("/rest/setRating?id=tr-{}&rating=5&f=json", fixture.track_id),
+        format!("/rest/setRating?id=al-{}&rating=4&f=json", fixture.album_id),
+        format!(
+            "/rest/setRating?id=ar-{}&rating=3&f=json",
+            fixture.artist_id
+        ),
+    ] {
+        let body = json_body(fixture.get(&fixture.uri(&path)).await).await;
+        assert_eq!(body["subsonic-response"]["status"], "ok", "{path}: {body}");
+    }
+
+    let reads = [
+        (
+            format!("/rest/getSong?id=tr-{}&f=json", fixture.track_id),
+            vec!["song"],
+            5,
+        ),
+        (
+            format!("/rest/getAlbum?id=al-{}&f=json", fixture.album_id),
+            vec!["album"],
+            4,
+        ),
+        (
+            format!("/rest/getArtist?id=ar-{}&f=json", fixture.artist_id),
+            vec!["artist"],
+            3,
+        ),
+        (
+            "/rest/getAlbumList2?type=starred&size=10&f=json".to_string(),
+            vec!["albumList2", "album", "0"],
+            4,
+        ),
+        (
+            "/rest/search3?query=Test&artistCount=10&albumCount=10&songCount=10&f=json".to_string(),
+            vec!["searchResult3", "song", "0"],
+            5,
+        ),
+        (
+            format!("/rest/getPlaylist?id=pl-{}&f=json", fixture.playlist_id),
+            vec!["playlist", "entry", "0"],
+            5,
+        ),
+    ];
+    for (path, keys, rating) in reads {
+        let body = json_body(fixture.get(&fixture.uri(&path)).await).await;
+        let mut value = &body["subsonic-response"];
+        for key in keys {
+            value = if let Ok(index) = key.parse::<usize>() {
+                &value[index]
+            } else {
+                &value[key]
+            };
+        }
+        assert!(value["starred"].as_str().is_some(), "{path}: {body}");
+        assert_eq!(value["userRating"], rating, "{path}: {body}");
+    }
+
+    let member = json_body(
+        fixture
+            .get(&format!(
+                "/rest/getSong?id=tr-{}&u=member&p=secret&v=1.16.1&c=test&f=json",
+                fixture.track_id
+            ))
+            .await,
+    )
+    .await;
+    let member_song = &member["subsonic-response"]["song"];
+    assert!(member_song.get("starred").is_none(), "{member}");
+    assert!(member_song.get("userRating").is_none(), "{member}");
+}
+
+#[tokio::test]
 async fn media_endpoints_return_binary_without_protocol_envelope() {
     let fixture = Fixture::new().await;
     let cases = [

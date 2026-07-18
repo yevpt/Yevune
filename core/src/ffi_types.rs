@@ -56,6 +56,8 @@ pub struct Album {
     pub year: Option<u32>,
     pub genre: Option<String>,
     pub created: Option<String>,
+    pub starred: Option<String>,
+    pub user_rating: Option<u8>,
 }
 
 #[uniffi::remote(Record)]
@@ -66,6 +68,8 @@ pub struct Artist {
     pub cover_art: Option<String>,
     pub music_brainz_id: Option<String>,
     pub album_count: u32,
+    pub starred: Option<String>,
+    pub user_rating: Option<u8>,
 }
 
 #[uniffi::remote(Record)]
@@ -88,6 +92,8 @@ pub struct Track {
     pub bit_rate: u32,
     pub created: Option<String>,
     pub path: Option<String>,
+    pub starred: Option<String>,
+    pub user_rating: Option<u8>,
 }
 
 #[uniffi::remote(Record)]

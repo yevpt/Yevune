@@ -59,6 +59,7 @@ struct LibraryView: View {
     @StateObject private var admin: AdminViewModel
     @StateObject private var access: AccessControlViewModel
     @StateObject private var lyrics: LyricsViewModel
+    @StateObject private var annotations: MediaAnnotationViewModel
     @State private var accessTarget: AccessScopeTarget?
     @State private var importing = false
     @State private var isDropTargeted = false
@@ -95,6 +96,7 @@ struct LibraryView: View {
         _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: client))
         _access = StateObject(wrappedValue: AccessControlViewModel(client: client))
         _lyrics = StateObject(wrappedValue: LyricsViewModel(client: client))
+        _annotations = StateObject(wrappedValue: MediaAnnotationViewModel(client: client))
     }
 
     var body: some View {
@@ -122,6 +124,7 @@ struct LibraryView: View {
                 _ = await playlistLoad
             }
         }
+        .environmentObject(annotations)
     }
 
     private var adminLibraryWorkspace: some View {

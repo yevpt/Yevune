@@ -82,6 +82,11 @@ private struct ArtistCollectionRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            MediaAnnotationIndicator(
+                target: .artist(artist.id),
+                starred: artist.starred,
+                rating: artist.userRating
+            )
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
@@ -101,6 +106,13 @@ private struct ArtistCollectionRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("艺人 \(artist.name)，\(artist.albumCount) 张专辑")
         .accessibilityAction(named: "打开艺人") { onOpen(artist) }
+        .contextMenu {
+            MediaAnnotationMenuActions(
+                target: .artist(artist.id),
+                starred: artist.starred,
+                rating: artist.userRating
+            )
+        }
         .task(id: artist.coverArt) {
             guard let id = artist.coverArt,
                   let value = try? await client.coverArtURL(id: id, size: 160)

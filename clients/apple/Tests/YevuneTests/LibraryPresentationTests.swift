@@ -179,6 +179,38 @@ final class LibraryPresentationTests: XCTestCase {
         XCTAssertFalse(albumSource.contains("private struct PlaylistPickerSheet"))
     }
 
+    func testPersonalAnnotationsAreSessionScopedAndAvailableAcrossPlaybackAndLibrarySurfaces() throws {
+        let rootSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/LibraryView.swift"),
+            encoding: .utf8
+        )
+        let nowPlayingSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Playback/NowPlayingView.swift"),
+            encoding: .utf8
+        )
+        let albumSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Album/AlbumTrackList.swift"),
+            encoding: .utf8
+        )
+        let searchSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/LibrarySearchResultsView.swift"),
+            encoding: .utf8
+        )
+        let commandBarSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/LibraryCommandBar.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(rootSource.contains("StateObject private var annotations: MediaAnnotationViewModel"))
+        XCTAssertTrue(rootSource.contains(".environmentObject(annotations)"))
+        XCTAssertTrue(nowPlayingSource.contains("MediaFavoriteButton("))
+        XCTAssertTrue(albumSource.contains("MediaAnnotationMenuActions("))
+        XCTAssertTrue(searchSource.contains("MediaAnnotationMenuActions("))
+        XCTAssertTrue(commandBarSource.contains("Text(\"我的收藏\").tag(AlbumSort.starred)"))
+        XCTAssertFalse(nowPlayingSource.contains("/rest/star"))
+        XCTAssertFalse(searchSource.contains("/rest/setRating"))
+    }
+
     func testSearchOnlyAlbumSnapshotSurvivesNewQueryPending() {
         var navigation = LibraryNavigationState()
         navigation.openAlbum(presentationAlbum("search-only"))

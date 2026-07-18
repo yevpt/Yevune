@@ -51,7 +51,10 @@ async fn browse_and_search_decode_opensubsonic_json_payloads() {
     server.await.unwrap();
 
     assert_eq!(albums[0].name, "Blue");
+    assert!(albums[0].starred.is_some());
+    assert_eq!(albums[0].user_rating, Some(4));
     assert_eq!(album.tracks[0].title, "Blue Sky");
+    assert_eq!(album.tracks[0].user_rating, Some(5));
     assert_eq!(artists[0].name, "Band");
     assert_eq!(search.albums[0].id, "al-1");
     let requests = requests.lock().await;
@@ -68,9 +71,9 @@ fn response_for(request: &str) -> String {
     let data = if request.contains("/rest/getUser?") {
         "\"user\":{\"username\":\"admin\",\"adminRole\":true}"
     } else if request.contains("/rest/getAlbumList2") {
-        "\"albumList2\":{\"album\":[{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120}]}"
+        "\"albumList2\":{\"album\":[{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120,\"starred\":\"2026-07-18T12:00:00Z\",\"userRating\":4}]}"
     } else if request.contains("/rest/getAlbum?") {
-        "\"album\":{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120,\"song\":[{\"id\":\"tr-1\",\"title\":\"Blue Sky\",\"size\":42,\"duration\":120,\"bitRate\":320}]}"
+        "\"album\":{\"id\":\"al-1\",\"name\":\"Blue\",\"songCount\":1,\"duration\":120,\"song\":[{\"id\":\"tr-1\",\"title\":\"Blue Sky\",\"size\":42,\"duration\":120,\"bitRate\":320,\"starred\":\"2026-07-18T12:00:00Z\",\"userRating\":5}]}"
     } else if request.contains("/rest/getArtists") {
         "\"artists\":{\"index\":[{\"name\":\"B\",\"artist\":[{\"id\":\"ar-1\",\"name\":\"Band\",\"albumCount\":1}]}]}"
     } else if request.contains("/rest/search3") {
@@ -344,6 +347,29 @@ async fn list_albums_by_genre_sends_type_and_genre_query() {
     assert!(requests[2].contains("/rest/getAlbumList2?"));
     assert!(requests[2].contains("type=byGenre"));
     assert!(requests[2].contains("genre=Rock"));
+}
+
+#[tokio::test]
+async fn list_starred_albums_uses_standard_starred_filter() {
+    let (address, requests, server) = spin_server(3).await;
+    let client = MusicClient::new();
+    client
+        .login(
+            format!("http://{address}"),
+            "admin".to_owned(),
+            "secret".to_owned(),
+        )
+        .await
+        .unwrap();
+
+    client
+        .list_albums(AlbumFilter::Sort(AlbumSort::Starred), 0, 50)
+        .await
+        .unwrap();
+    server.await.unwrap();
+
+    let requests = requests.lock().await;
+    assert!(requests[2].contains("type=starred"));
 }
 
 #[tokio::test]

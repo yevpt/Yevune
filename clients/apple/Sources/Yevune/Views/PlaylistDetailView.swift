@@ -167,6 +167,12 @@ struct PlaylistDetailView: View {
                         .contextMenu {
                             PlaybackTrackActions(track: track, playback: playback)
                             Divider()
+                            MediaAnnotationMenuActions(
+                                target: .track(track.id),
+                                starred: track.starred,
+                                rating: track.userRating
+                            )
+                            Divider()
                             Button("移出歌单…", role: .destructive) {
                                 pendingRemoval = IndexSet(integer: index)
                             }
@@ -203,6 +209,12 @@ struct PlaylistDetailView: View {
                     .lineLimit(1)
                     .frame(maxWidth: 180, alignment: .leading)
             }
+
+            MediaAnnotationIndicator(
+                target: .track(track.id),
+                starred: track.starred,
+                rating: track.userRating
+            )
 
             if track.duration > 0 {
                 Text(playbackTime(track.duration))

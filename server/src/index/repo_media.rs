@@ -35,6 +35,8 @@ impl From<AlbumRow> for Album {
             year: r.year.map(|i| i as u32),
             genre: r.genre,
             created: Some(r.added_at),
+            starred: None,
+            user_rating: None,
         }
     }
 }
@@ -82,6 +84,8 @@ impl From<TrackRow> for Track {
             bit_rate: r.bitrate.unwrap_or(0) as u32,
             created: Some(r.added_at),
             path: Some(r.object_key),
+            starred: None,
+            user_rating: None,
         }
     }
 }
@@ -106,6 +110,8 @@ impl From<ArtistRow> for Artist {
             cover_art: r.cover_key,
             music_brainz_id: r.mbid,
             album_count: r.album_count as u32,
+            starred: None,
+            user_rating: None,
         }
     }
 }

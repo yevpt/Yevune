@@ -103,11 +103,22 @@ struct NowPlayingView: View {
             .accessibilityLabel("当前歌曲封面")
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(playback.currentTrack?.title ?? "未在播放")
-                    .font(.title.bold())
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(playback.currentTrack?.title ?? "未在播放")
+                        .font(.title.bold())
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if let track = playback.currentTrack {
+                        MediaFavoriteButton(
+                            target: .track(track.id),
+                            starred: track.starred,
+                            rating: track.userRating
+                        )
+                        .buttonStyle(.plain)
+                    }
+                }
                 Text(playback.currentTrack?.artist ?? "未知艺人")
                     .font(.title3)
                     .foregroundStyle(.secondary)
@@ -119,6 +130,13 @@ struct NowPlayingView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let track = playback.currentTrack {
+                    MediaAnnotationIndicator(
+                        target: .track(track.id),
+                        starred: track.starred,
+                        rating: track.userRating
+                    )
                 }
             }
             .accessibilityElement(children: .combine)

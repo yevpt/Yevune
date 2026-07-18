@@ -20,6 +20,8 @@ pub enum AlbumSort {
     Frequent,
     /// 最近播放。
     Recent,
+    /// 当前用户收藏的专辑。
+    Starred,
 }
 
 impl AlbumSort {
@@ -30,6 +32,7 @@ impl AlbumSort {
             Self::AlphabeticalByArtist => "alphabeticalByArtist",
             Self::Frequent => "frequent",
             Self::Recent => "recent",
+            Self::Starred => "starred",
         }
     }
 }
