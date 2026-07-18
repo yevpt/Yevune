@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yevune_server::api::AppState;
 use yevune_server::index::Index;
@@ -49,4 +50,12 @@ async fn extensions_supports_public_json_discovery() {
         .to_str()
         .unwrap()
         .contains("json"));
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json["subsonic-response"]["openSubsonicExtensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|extension| extension["name"] == "songLyrics"
+            && extension["versions"] == serde_json::json!([1])));
 }

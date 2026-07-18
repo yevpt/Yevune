@@ -19,7 +19,8 @@ use crate::storage::{ListEntry, ObjectStore, StorageError};
 
 mod cover;
 mod incremental;
-mod tags;
+pub(crate) mod lyrics;
+pub(crate) mod tags;
 
 /// 可入库的音频扩展名（小写，不含点）。非此列表的对象（如封面）扫描时跳过。
 const AUDIO_EXTS: &[&str] = &[

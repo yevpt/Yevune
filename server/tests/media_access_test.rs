@@ -141,6 +141,28 @@ async fn stream_受限曲目对无授权者遮蔽() {
 }
 
 #[tokio::test]
+async fn lyrics_受限曲目对无授权者遮蔽() {
+    let ctx = common::ctx().await;
+    let m = seed(&ctx).await;
+    let uri = format!("/rest/getLyricsBySongId?id={}&f=json", m.secret_track);
+
+    let (_, body) = ctx.get(&uri, Some(&ctx.bearer(m.bob))).await;
+
+    assert!(
+        body.contains("\"status\":\"failed\""),
+        "应为失败信封: {body}"
+    );
+    assert!(
+        body.contains("\"code\":70"),
+        "受限歌词应按未找到遮蔽: {body}"
+    );
+    assert!(
+        !body.contains("structuredLyrics"),
+        "不得泄漏歌词结构: {body}"
+    );
+}
+
+#[tokio::test]
 async fn stream_授权者取到原始音频字节() {
     let ctx = common::ctx().await;
     let m = seed(&ctx).await;

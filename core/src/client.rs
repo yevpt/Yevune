@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use crate::api::browse::{
     self, AlbumDetail, AlbumFilter, ArtistDetail, SearchPage, SearchPageRequest, SearchResult,
 };
+use crate::api::lyrics;
 use crate::api::manage::{self, TagUpdate, UploadMetadata, UploadProgress};
 use crate::api::media;
 use crate::api::playlist::{self, PlaylistDetail, PlaylistTree};
@@ -244,6 +245,14 @@ impl MusicClient {
     /// 读取单曲。
     pub async fn get_song(&self, id: String) -> Result<contract::Track> {
         browse::get_song(&self.http, &self.authenticated_session().await?, id).await
+    }
+
+    /// 读取 OpenSubsonic 结构化歌词；无歌词时返回空列表。
+    pub async fn get_lyrics_by_song_id(
+        &self,
+        id: String,
+    ) -> Result<Vec<contract::StructuredLyrics>> {
+        lyrics::get_lyrics_by_song_id(&self.http, &self.authenticated_session().await?, id).await
     }
 
     /// 读取所有可见艺人。

@@ -1,8 +1,8 @@
 //! 为 `contract` 中既有 DTO 声明 UniFFI 外部记录，避免复制跨端数据模型。
 
 use contract::{
-    AccessRule, Album, Artist, Genre, Playlist, PlaylistFolder, Principal, PrincipalType, Role,
-    ScopeType, TagField, Track, User,
+    AccessRule, Album, Artist, Genre, LyricLine, Playlist, PlaylistFolder, Principal,
+    PrincipalType, Role, ScopeType, StructuredLyrics, TagField, Track, User,
 };
 
 #[uniffi::remote(Enum)]
@@ -88,6 +88,22 @@ pub struct Track {
     pub bit_rate: u32,
     pub created: Option<String>,
     pub path: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct LyricLine {
+    pub start: Option<u64>,
+    pub value: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct StructuredLyrics {
+    pub display_artist: Option<String>,
+    pub display_title: Option<String>,
+    pub lang: Option<String>,
+    pub offset: i64,
+    pub synced: bool,
+    pub lines: Vec<LyricLine>,
 }
 
 #[uniffi::remote(Record)]

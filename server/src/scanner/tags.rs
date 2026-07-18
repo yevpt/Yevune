@@ -47,6 +47,8 @@ pub struct ParsedTrack {
     pub codec: Option<String>,
     /// 内嵌封面（若有）。
     pub cover: Option<ParsedCover>,
+    /// 内嵌结构化歌词（若有）。
+    pub lyrics: Option<contract::StructuredLyrics>,
 }
 
 /// 解析文件头字节为 [`ParsedTrack`]。`bytes` 应为对象前若干字节（含全部元数据块）。
@@ -81,6 +83,7 @@ pub fn parse_header(bytes: Bytes) -> Result<ParsedTrack, String> {
         parsed.disc_no = tag.disk();
         parsed.year = parse_year(tag);
         parsed.genre = tag.genre().map(|s| s.to_string());
+        parsed.lyrics = super::lyrics::from_tag(tag);
         if let Some(pic) = tag.pictures().first() {
             parsed.cover = Some(ParsedCover {
                 data: Bytes::copy_from_slice(pic.data()),

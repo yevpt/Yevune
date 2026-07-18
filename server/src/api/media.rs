@@ -12,6 +12,7 @@ use futures::TryStreamExt;
 use image::{ImageFormat, ImageReader, Limits};
 use serde::Deserialize;
 
+use crate::scanner::HEADER_READ_CAP;
 use crate::storage::STREAM_CHUNK_SIZE;
 use crate::transcode::{should_transcode, TranscodeTarget, TranscodeTrack};
 
@@ -57,6 +58,9 @@ pub fn router() -> Router<AppState> {
     }
     for path in ["/rest/getCoverArt", "/rest/getCoverArt.view"] {
         router = router.route(path, get(get_cover_art));
+    }
+    for path in ["/rest/getLyricsBySongId", "/rest/getLyricsBySongId.view"] {
+        router = router.route(path, get(get_lyrics_by_song_id));
     }
     router
 }
@@ -226,6 +230,70 @@ async fn download(
         format,
     )
     .await
+}
+
+async fn get_lyrics_by_song_id(
+    State(state): State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    ApiQuery(params): ApiQuery<IdParams>,
+    ApiUser(user): ApiUser,
+) -> Response {
+    let format = Format::from_uri(&uri);
+    let Some(id) = params
+        .id
+        .as_deref()
+        .and_then(|id| response::parse_entity_id(id, "track"))
+    else {
+        return response::parameter_error(format, "Required parameter 'id' is missing");
+    };
+    match gate_track(&state, user.id, id, format).await {
+        Gate::Allow => {}
+        Gate::Deny(response) => return response,
+    }
+    let source = match state.index.media().media_source(id).await {
+        Ok(Some(source)) => source,
+        Ok(None) => return response::not_found(format),
+        Err(error) => {
+            tracing::error!(%error, "getLyricsBySongId 曲目定位失败");
+            return response::internal(format);
+        }
+    };
+    let size = source.size.unwrap_or(0).max(0) as u64;
+    let header = match state
+        .store
+        .get_range(&source.object_key, 0..size.min(HEADER_READ_CAP))
+        .await
+    {
+        Ok(header) => header,
+        Err(error) => {
+            tracing::error!(%error, track_id = id, "getLyricsBySongId 读取标签失败");
+            return response::internal(format);
+        }
+    };
+    let mut lyrics = match crate::scanner::tags::parse_header(header) {
+        Ok(parsed) => parsed.lyrics.into_iter().collect::<Vec<_>>(),
+        Err(error) => {
+            tracing::warn!(%error, track_id = id, "getLyricsBySongId 无法解析标签");
+            Vec::new()
+        }
+    };
+    if let Some(lyrics) = lyrics.first_mut() {
+        match state.index.media().get_track(id).await {
+            Ok(Some(track)) => {
+                lyrics.display_artist = track.artist;
+                lyrics.display_title = Some(track.title);
+            }
+            Ok(None) => return response::not_found(format),
+            Err(error) => {
+                tracing::error!(%error, track_id = id, "getLyricsBySongId 读取曲目信息失败");
+                return response::internal(format);
+            }
+        }
+    }
+    response::ok(
+        format,
+        serde_json::json!({"lyricsList": {"structuredLyrics": lyrics}}),
+    )
 }
 
 async fn get_cover_art(

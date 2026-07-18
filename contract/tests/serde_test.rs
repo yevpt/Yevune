@@ -1,8 +1,8 @@
 //! serde round-trip 测试：验证类型可无损往返，且序列化字段名对齐 OpenSubsonic（camelCase）。
 
 use contract::{
-    AccessRule, Album, Artist, Genre, Playlist, PlaylistFolder, Principal, PrincipalType, Role,
-    ScopeType, StreamRequest, Track, User,
+    AccessRule, Album, Artist, Genre, LyricLine, Playlist, PlaylistFolder, Principal,
+    PrincipalType, Role, ScopeType, StreamRequest, StructuredLyrics, Track, User,
 };
 use serde_json::Value;
 
@@ -23,6 +23,35 @@ where
     let back: T = serde_json::from_value(json.clone()).expect("反序列化失败");
     assert_eq!(&back, value, "round-trip 后不相等");
     json
+}
+
+#[test]
+fn structured_lyrics_往返且行字段名对齐() {
+    let lyrics = StructuredLyrics {
+        display_artist: Some("周杰伦".into()),
+        display_title: Some("晴天".into()),
+        lang: Some("zho".into()),
+        offset: -120,
+        synced: true,
+        lines: vec![LyricLine {
+            start: Some(1_250),
+            value: "故事的小黄花".into(),
+        }],
+    };
+
+    let json = assert_roundtrip(
+        &lyrics,
+        &[
+            "displayArtist",
+            "displayTitle",
+            "lang",
+            "offset",
+            "synced",
+            "line",
+        ],
+    );
+    assert_eq!(json["line"][0]["start"], 1_250);
+    assert!(json.get("lines").is_none());
 }
 
 #[test]

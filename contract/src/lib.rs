@@ -10,6 +10,7 @@
 //! 安全：**绝不**在任何 DTO 暴露密码或对象存储内部键（`object_key`/`etag` 等）。
 
 pub mod access;
+pub mod lyrics;
 pub mod media;
 pub mod playlist;
 pub mod response;
@@ -17,6 +18,7 @@ pub mod stream;
 pub mod user;
 
 pub use access::{AccessRule, Principal, PrincipalType, ScopeType};
+pub use lyrics::{LyricLine, StructuredLyrics};
 pub use media::{Album, Artist, Genre, TagField, Track};
 pub use playlist::{Playlist, PlaylistFolder};
 pub use response::{ResponseStatus, SubsonicBody, SubsonicError, SubsonicResponse};

@@ -10,6 +10,10 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use lofty::config::WriteOptions;
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::prelude::ItemKey;
+use lofty::probe::Probe;
 use tower::ServiceExt;
 use yevune_server::api::AppState;
 use yevune_server::auth::{Encryptor, UserAdmin};
@@ -28,6 +32,25 @@ struct Fixture {
     track_id: i64,
     playlist_id: i64,
     _dir: tempfile::TempDir,
+}
+
+fn lyric_flac() -> Bytes {
+    let temp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(temp.path(), include_bytes!("fixtures/scanner/a.flac")).unwrap();
+    let mut tagged = Probe::open(temp.path())
+        .unwrap()
+        .guess_file_type()
+        .unwrap()
+        .read()
+        .unwrap();
+    tagged.primary_tag_mut().unwrap().insert_text(
+        ItemKey::Lyrics,
+        "[offset:-100]\n[00:00.50]First line\n[00:02.00]Second line".into(),
+    );
+    tagged
+        .save_to_path(temp.path(), WriteOptions::default())
+        .unwrap();
+    Bytes::from(std::fs::read(temp.path()).unwrap())
 }
 
 impl Fixture {
@@ -125,6 +148,39 @@ impl Fixture {
             .await
             .unwrap()
     }
+}
+
+#[tokio::test]
+async fn get_lyrics_by_song_id_returns_standard_synced_lyrics() {
+    let fixture = Fixture::new().await;
+    let audio = lyric_flac();
+    fixture
+        .store
+        .put("library/test.flac", audio.clone())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE tracks SET size = ? WHERE id = ?")
+        .bind(audio.len() as i64)
+        .bind(fixture.track_id)
+        .execute(fixture.index.pool())
+        .await
+        .unwrap();
+    let response = fixture
+        .get(&fixture.uri(&format!(
+            "/rest/getLyricsBySongId.view?id=tr-{}&f=json",
+            fixture.track_id
+        )))
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = json_body(response).await;
+    let lyrics = &json["subsonic-response"]["lyricsList"]["structuredLyrics"][0];
+    assert_eq!(lyrics["displayArtist"], "Test Artist");
+    assert_eq!(lyrics["displayTitle"], "Test Song");
+    assert_eq!(lyrics["offset"], -100);
+    assert_eq!(lyrics["synced"], true);
+    assert_eq!(lyrics["line"][0]["start"], 500);
+    assert_eq!(lyrics["line"][0]["value"], "First line");
+    assert_eq!(lyrics["line"][1]["start"], 2_000);
 }
 
 async fn json_body(response: axum::response::Response) -> serde_json::Value {
