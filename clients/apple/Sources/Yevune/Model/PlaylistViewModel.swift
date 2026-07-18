@@ -65,8 +65,38 @@ final class PlaylistViewModel: ObservableObject {
     func moveFolder(id: String, parentID: String?) async {
         await mutateTree { try await self.client.moveFolder(id: id, parentID: parentID) }
     }
-    func addTracks(playlistID: String, songIDs: [String]) async {
-        await mutateDetail(playlistID: playlistID) { try await self.client.addTracks(id: playlistID, songIDs: songIDs) }
+    @discardableResult
+    func addTracks(playlistID: String, songIDs: [String]) async -> Bool {
+        guard !isMutating, !songIDs.isEmpty else { return false }
+        isMutating = true
+        errorMessage = nil
+        let generation = detailGeneration
+        defer { isMutating = false }
+        do {
+            try await client.addTracks(id: playlistID, songIDs: songIDs)
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        var refreshError: String?
+        if detail?.playlist.id == playlistID {
+            do {
+                let refreshed = try await client.playlistDetail(id: playlistID)
+                if generation == detailGeneration, detail?.playlist.id == playlistID {
+                    detail = refreshed
+                }
+            } catch {
+                refreshError = error.localizedDescription
+            }
+        }
+        do {
+            tree = try await client.playlistTree()
+        } catch {
+            refreshError = refreshError ?? error.localizedDescription
+        }
+        errorMessage = refreshError
+        return true
     }
     func removeTrack(playlistID: String, index: Int64) async {
         await mutateDetail(playlistID: playlistID) { try await self.client.removeTrackAt(id: playlistID, index: index) }

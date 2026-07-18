@@ -159,6 +159,26 @@ final class LibraryPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.isArtistHighlighted("artist-2"))
     }
 
+    func testSearchTracksUseNativeSelectionAndSharedPlaylistPicker() throws {
+        let searchSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/LibrarySearchResultsView.swift"),
+            encoding: .utf8
+        )
+        let browserSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/LibraryBrowserView.swift"),
+            encoding: .utf8
+        )
+        let albumSource = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/MediaDetailView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(searchSource.contains("List(selection: $selectedTrackIDs)"))
+        XCTAssertTrue(searchSource.contains("PlaylistPickerSheet("))
+        XCTAssertTrue(browserSource.contains("playlists: playlists"))
+        XCTAssertFalse(albumSource.contains("private struct PlaylistPickerSheet"))
+    }
+
     func testSearchOnlyAlbumSnapshotSurvivesNewQueryPending() {
         var navigation = LibraryNavigationState()
         navigation.openAlbum(presentationAlbum("search-only"))

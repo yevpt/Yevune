@@ -114,6 +114,7 @@ struct LibraryBrowserView: View {
                 LibrarySearchResultsView(
                     model: search,
                     playback: playback,
+                    playlists: playlists,
                     client: client,
                     highlightedAlbumID: navigation.highlightedAlbumID,
                     highlightedArtistID: navigation.highlightedArtistID,

@@ -103,9 +103,44 @@ final class PlaylistViewModelTests: XCTestCase {
         let fake = FakePlaylistClient()
         let model = PlaylistViewModel(client: fake)
 
-        await model.addTracks(playlistID: "playlist:5", songIDs: ["track:1", "track:2"])
+        let added = await model.addTracks(
+            playlistID: "playlist:5",
+            songIDs: ["track:1", "track:2"]
+        )
 
+        XCTAssertTrue(added)
         XCTAssertTrue(fake.calls.contains("add:playlist:5:track:1,track:2"))
+        XCTAssertEqual(fake.calls.last, "tree")
+    }
+
+    func testAddTracksFailureReturnsFalseAndPublishesError() async {
+        let model = PlaylistViewModel(client: ThrowingPlaylistClient())
+
+        let added = await model.addTracks(playlistID: "playlist:5", songIDs: ["track:1"])
+
+        XCTAssertFalse(added)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isMutating)
+    }
+
+    func testAddTracksIsSingleFlight() async {
+        let client = SuspendedPlaylistClient()
+        let model = PlaylistViewModel(client: client)
+
+        let first = Task {
+            await model.addTracks(playlistID: "playlist:5", songIDs: ["track:1", "track:2"])
+        }
+        await client.waitForAddTracks()
+        let duplicate = await model.addTracks(playlistID: "playlist:5", songIDs: ["track:3"])
+
+        XCTAssertFalse(duplicate)
+        XCTAssertTrue(model.isMutating)
+        await client.resolveAddTracks()
+        let firstSucceeded = await first.value
+        let addCount = await client.addTracksCallCount()
+        XCTAssertTrue(firstSucceeded)
+        XCTAssertEqual(addCount, 1)
+        XCTAssertFalse(model.isMutating)
     }
 
     func testDeleteFolderPropagatesError() async {
@@ -325,6 +360,9 @@ private actor SuspendedPlaylistClient: MusicClientProviding {
     private var replacementContinuation: CheckedContinuation<PlaylistDetail, Error>?
     private var replacementWaiters: [CheckedContinuation<Void, Never>] = []
     private var replacements = 0
+    private var addTracksContinuation: CheckedContinuation<Void, Error>?
+    private var addTracksWaiters: [CheckedContinuation<Void, Never>] = []
+    private var addCalls = 0
 
     init(immediateDetail: PlaylistDetail? = nil) {
         self.immediateDetail = immediateDetail
@@ -364,6 +402,25 @@ private actor SuspendedPlaylistClient: MusicClientProviding {
     }
 
     func replacementCallCount() -> Int { replacements }
+
+    func addTracks(id _: String, songIDs _: [String]) async throws {
+        addCalls += 1
+        addTracksWaiters.forEach { $0.resume() }
+        addTracksWaiters.removeAll()
+        try await withCheckedThrowingContinuation { addTracksContinuation = $0 }
+    }
+
+    func waitForAddTracks() async {
+        guard addCalls == 0 else { return }
+        await withCheckedContinuation { addTracksWaiters.append($0) }
+    }
+
+    func resolveAddTracks() {
+        addTracksContinuation?.resume()
+        addTracksContinuation = nil
+    }
+
+    func addTracksCallCount() -> Int { addCalls }
 
     func playlistTree() async throws -> PlaylistTree {
         PlaylistTree(folders: [], playlists: [])

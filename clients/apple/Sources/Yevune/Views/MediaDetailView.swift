@@ -49,9 +49,12 @@ struct MediaDetailView: View {
             }
         }
         .sheet(isPresented: playlistSheetIsPresented) {
-            PlaylistPickerSheet(playlists: playlists, trackIDs: playlistTrackIDs ?? []) {
-                playlistTrackIDs = nil
-            }
+            PlaylistPickerSheet(
+                playlists: playlists,
+                trackIDs: playlistTrackIDs ?? [],
+                onCancel: { playlistTrackIDs = nil },
+                onAdded: { playlistTrackIDs = nil }
+            )
         }
         .task(id: album.id) { await model.load(album: album) }
     }
@@ -540,31 +543,5 @@ private struct AlbumDetailSkeleton: View {
             Spacer()
         }
         .accessibilityLabel("正在加载专辑 \(album.name)")
-    }
-}
-
-private struct PlaylistPickerSheet: View {
-    @ObservedObject var playlists: PlaylistViewModel
-    let trackIDs: [String]
-    let onDismiss: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            List(playlists.tree?.playlists ?? [], id: \.id) { playlist in
-                Button(playlist.name) {
-                    Task {
-                        await playlists.addTracks(playlistID: playlist.id, songIDs: trackIDs)
-                        onDismiss()
-                    }
-                }
-            }
-            .navigationTitle("加入歌单")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消", action: onDismiss)
-                }
-            }
-        }
-        .frame(minWidth: 360, minHeight: 320)
     }
 }
