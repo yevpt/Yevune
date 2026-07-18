@@ -154,14 +154,8 @@ struct MediaDetailView: View {
                 case let (_, detail?):
                     if isAdmin {
                         adminContent(detail: detail, availableWidth: geometry.size.width)
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                adminBottomAccessory(detail: detail)
-                            }
                     } else {
                         memberContent(detail: detail, availableWidth: geometry.size.width)
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                memberBottomAccessory(detail: detail)
-                            }
                     }
                 }
             }
@@ -174,6 +168,7 @@ struct MediaDetailView: View {
             sharedHeader(detail: detail, availableWidth: availableWidth)
             statusBanners
             memberTrackList(detail: detail, availableWidth: availableWidth)
+            memberBottomAccessory(detail: detail)
         }
     }
 
@@ -235,6 +230,7 @@ struct MediaDetailView: View {
                 onImportMusic: onImportMusic
             )
 
+            adminBottomAccessory(detail: detail)
         }
     }
 

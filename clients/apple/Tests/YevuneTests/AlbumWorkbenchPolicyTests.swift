@@ -28,7 +28,8 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
         XCTAssertFalse(mediaDetailSource.contains(".sheet(isPresented: batchResultsIsPresented)"))
         XCTAssertFalse(mediaDetailSource.contains("batchResultsIsPresented"))
         XCTAssertTrue(mediaDetailSource.contains("BatchOperationResultView("))
-        XCTAssertTrue(mediaDetailSource.contains(".safeAreaInset(edge: .bottom"))
+        XCTAssertFalse(mediaDetailSource.contains(".safeAreaInset(edge: .bottom"))
+        XCTAssertFalse(libraryViewSource.contains(".safeAreaInset(edge: .bottom"))
         XCTAssertTrue(mediaDetailSource.contains("@ObservedObject private var batch"))
         XCTAssertFalse(mediaDetailSource.contains("@StateObject private var batch"))
         XCTAssertTrue(mediaDetailSource.contains("isRunning: batch.isRunning"))
@@ -49,9 +50,19 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
     func testDetailOwnerBoundsGeometryAndChildBarHasNoCompressionWorkarounds() throws {
         let detailSource = try source("Sources/Yevune/Views/MediaDetailView.swift")
         let actionBarSource = try source("Sources/Yevune/Views/Album/BatchActionBar.swift")
+        let memberContent = try functionBody(named: "memberContent", in: detailSource)
+        let adminContent = try functionBody(named: "adminContent", in: detailSource)
 
         XCTAssertTrue(
             detailSource.contains(".frame(width: geometry.size.width, height: geometry.size.height)")
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(memberContent.range(of: "memberTrackList")?.lowerBound),
+            try XCTUnwrap(memberContent.range(of: "memberBottomAccessory")?.lowerBound)
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(adminContent.range(of: "AlbumTrackList")?.lowerBound),
+            try XCTUnwrap(adminContent.range(of: "adminBottomAccessory")?.lowerBound)
         )
         XCTAssertFalse(actionBarSource.contains(".fixedSize(horizontal: false, vertical: true)"))
         XCTAssertFalse(actionBarSource.contains(".layoutPriority(1)"))
@@ -432,6 +443,29 @@ final class AlbumWorkbenchPolicyTests: XCTestCase {
 
     private func source(_ relativePath: String) throws -> String {
         try String(contentsOf: packageRoot.appending(path: relativePath), encoding: .utf8)
+    }
+
+    private func functionBody(named name: String, in source: String) throws -> Substring {
+        let declaration = try XCTUnwrap(source.range(of: "func \(name)("))
+        let openingBrace = try XCTUnwrap(source[declaration.lowerBound...].firstIndex(of: "{"))
+        var depth = 0
+
+        for index in source.indices[openingBrace...] {
+            switch source[index] {
+            case "{":
+                depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 {
+                    return source[source.index(after: openingBrace)..<index]
+                }
+            default:
+                break
+            }
+        }
+
+        XCTFail("Missing closing brace for \(name)")
+        return ""
     }
 
     private var packageRoot: URL {

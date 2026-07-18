@@ -144,44 +144,48 @@ struct LibraryView: View {
     }
 
     private var libraryWorkspace: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("资料库") {
-                    Label("曲库", systemImage: "square.stack").tag(SidebarSelection.library)
-                }
-                Section("歌单") {
-                    PlaylistTreeOutline(
-                        playlists: playlists,
-                        onRename: { target, currentName in
-                            renameTarget = target
-                            renameText = currentName
-                        },
-                        onDelete: { target in deleteTarget = target }
-                    )
-                }
-                if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
-                    Section("管理") {
-                        Label("用户", systemImage: "person.2")
-                            .tag(SidebarSelection.adminUsers)
-                        Label("角色", systemImage: "person.badge.key")
-                            .tag(SidebarSelection.adminRoles)
-                        Label("访问控制", systemImage: "eye.badge")
-                            .tag(SidebarSelection.adminAccess)
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                List(selection: $selection) {
+                    Section("资料库") {
+                        Label("曲库", systemImage: "square.stack").tag(SidebarSelection.library)
+                    }
+                    Section("歌单") {
+                        PlaylistTreeOutline(
+                            playlists: playlists,
+                            onRename: { target, currentName in
+                                renameTarget = target
+                                renameText = currentName
+                            },
+                            onDelete: { target in deleteTarget = target }
+                        )
+                    }
+                    if AccessManagementPolicy.allowsEntry(isAdmin: session.admin) {
+                        Section("管理") {
+                            Label("用户", systemImage: "person.2")
+                                .tag(SidebarSelection.adminUsers)
+                            Label("角色", systemImage: "person.badge.key")
+                                .tag(SidebarSelection.adminRoles)
+                            Label("访问控制", systemImage: "eye.badge")
+                                .tag(SidebarSelection.adminAccess)
+                        }
+                    }
+                    if let playlistError = playlists.errorMessage {
+                        Text(playlistError).foregroundStyle(.red).font(.caption)
                     }
                 }
-                if let playlistError = playlists.errorMessage {
-                    Text(playlistError).foregroundStyle(.red).font(.caption)
+                .navigationTitle("音乐")
+                .toolbar {
+                    Menu {
+                        Button("新建歌单") { createText = ""; newPlaylistPrompt = true }
+                        Button("新建文件夹") { createText = ""; newFolderPrompt = true }
+                    } label: { Label("新建", systemImage: "plus") }
                 }
+            } detail: {
+                detailContent
             }
-            .navigationTitle("音乐")
-            .toolbar {
-                Menu {
-                    Button("新建歌单") { createText = ""; newPlaylistPrompt = true }
-                    Button("新建文件夹") { createText = ""; newFolderPrompt = true }
-                } label: { Label("新建", systemImage: "plus") }
-            }
-        } detail: {
-            detailContent
+
+            libraryBottomAccessory
         }
         .toolbar {
             if session.admin {
@@ -196,19 +200,6 @@ struct LibraryView: View {
                 Button("退出登录", role: .destructive, action: onLogout)
             } label: {
                 Label(session.user, systemImage: "person.crop.circle")
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                if session.admin, workflow.isDrawerPresented {
-                    TaskDrawerView(model: workflow)
-                        .frame(maxHeight: 300)
-                }
-                if PlaybackViewPolicy.showsPlayerBar(queueCount: playback.queueEntries.count) {
-                    PlayerBar(playback: playback) {
-                        isNowPlayingPresented = true
-                    }
-                }
             }
         }
         .alert("新建歌单", isPresented: $newPlaylistPrompt) {
@@ -256,6 +247,18 @@ struct LibraryView: View {
                 deleteTarget = nil
             }
             Button("取消", role: .cancel) { deleteTarget = nil }
+        }
+    }
+
+    @ViewBuilder private var libraryBottomAccessory: some View {
+        if session.admin, workflow.isDrawerPresented {
+            TaskDrawerView(model: workflow)
+                .frame(maxHeight: 300)
+        }
+        if PlaybackViewPolicy.showsPlayerBar(queueCount: playback.queueEntries.count) {
+            PlayerBar(playback: playback) {
+                isNowPlayingPresented = true
+            }
         }
     }
 
