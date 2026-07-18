@@ -228,6 +228,11 @@ struct LibrarySearchResultsView: View {
         }
         .accessibilityLabel("曲目 \(track.title)，艺人 \(track.artist ?? "未知")")
         .accessibilityAction(named: "播放") { playTracks(startingAt: index) }
+        .draggable(TrackDragPolicy.payload(
+            rowTrackID: track.id,
+            selectedTrackIDs: selectedTrackIDs,
+            orderedTrackIDs: model.tracks.map(\.id)
+        ))
     }
 
     private var batchAccessory: some View {

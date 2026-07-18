@@ -233,6 +233,31 @@ final class LibraryPresentationTests: XCTestCase {
         XCTAssertFalse(favoriteSource.contains("/rest/getStarred2"))
     }
 
+    func testTrackListsDragToPlaylistLeavesWithoutMakingFoldersDropTargets() throws {
+        let dragSources = [
+            "Sources/Yevune/Views/Album/AlbumTrackList.swift",
+            "Sources/Yevune/Views/Library/LibrarySearchResultsView.swift",
+            "Sources/Yevune/Views/Library/FavoriteLibraryView.swift",
+            "Sources/Yevune/Views/PlaylistDetailView.swift",
+        ]
+        for path in dragSources {
+            let source = try String(
+                contentsOf: packageRoot.appending(path: path),
+                encoding: .utf8
+            )
+            XCTAssertTrue(source.contains(".draggable(TrackDragPolicy.payload("), path)
+        }
+
+        let outline = try String(
+            contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Playlist/PlaylistTreeOutline.swift"),
+            encoding: .utf8
+        )
+        let playlistLeaf = try XCTUnwrap(outline.range(of: "private struct PlaylistLeaf"))
+        XCTAssertFalse(outline[..<playlistLeaf.lowerBound].contains(".dropDestination"))
+        XCTAssertEqual(outline.components(separatedBy: ".dropDestination(for: TrackDragPayload.self)").count - 1, 1)
+        XCTAssertTrue(outline.contains("playlist.songCount"))
+    }
+
     func testArtistDetailKeepsAFirstFrameMountedSoItsLoadTaskCanStart() throws {
         let source = try String(
             contentsOf: packageRoot.appending(path: "Sources/Yevune/Views/Library/ArtistDetailView.swift"),

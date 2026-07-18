@@ -223,6 +223,16 @@ struct PlaylistDetailView: View {
                     .frame(width: 44, alignment: .trailing)
             }
 
+            Image(systemName: "arrow.up.right.square")
+                .foregroundStyle(.secondary)
+                .draggable(TrackDragPolicy.payload(
+                    rowPosition: index,
+                    selectedPositions: selectedPositions,
+                    orderedTrackIDs: detail.tracks.map(\.id)
+                ))
+                .help("拖到侧栏中的其他歌单")
+                .accessibilityLabel("拖到其他歌单")
+
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.quaternary)
                 .help("拖动调整顺序")

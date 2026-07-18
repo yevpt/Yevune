@@ -83,10 +83,28 @@ private struct PlaylistLeaf: View {
     @ObservedObject var playlists: PlaylistViewModel
     let onRename: (RenameTarget, String) -> Void
     let onDelete: (DeleteTarget) -> Void
+    @State private var isDropTargeted = false
 
     var body: some View {
-        Label(playlist.name, systemImage: "music.note.list")
+        HStack(spacing: 8) {
+            Label(playlist.name, systemImage: isDropTargeted ? "plus.circle.fill" : "music.note.list")
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text("\(playlist.songCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .background(
+                isDropTargeted ? Color.accentColor.opacity(0.18) : .clear,
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("歌单 \(playlist.name)，\(playlist.songCount) 首歌曲")
             .tag(SidebarSelection.playlist(playlist.id))
+            .help("拖入歌曲以加入“\(playlist.name)”")
             .contextMenu {
                 Button("重命名") { onRename(.playlist(playlist.id), playlist.name) }
                 Menu("移动到…") {
@@ -101,5 +119,18 @@ private struct PlaylistLeaf: View {
                 }
                 Button("删除", role: .destructive) { onDelete(.playlist(playlist.id)) }
             }
+            .dropDestination(for: TrackDragPayload.self) { payloads, _ in
+                guard let trackIDs = TrackDragPolicy.acceptedTrackIDs(
+                    from: payloads,
+                    isMutating: playlists.isMutating
+                ) else { return false }
+                Task {
+                    _ = await playlists.addTracks(
+                        playlistID: playlist.id,
+                        songIDs: trackIDs
+                    )
+                }
+                return true
+            } isTargeted: { isDropTargeted = $0 && !playlists.isMutating }
     }
 }

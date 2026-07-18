@@ -217,6 +217,11 @@ struct FavoriteLibraryView: View {
         }
         .accessibilityLabel("收藏歌曲 \(track.title)，艺人 \(track.artist ?? "未知")")
         .accessibilityAction(named: "播放") { play(startingAt: index) }
+        .draggable(TrackDragPolicy.payload(
+            rowTrackID: track.id,
+            selectedTrackIDs: selectedTrackID.map { Set([$0]) } ?? [],
+            orderedTrackIDs: model.tracks.map(\.id)
+        ))
     }
 
     @ViewBuilder private func destinationView(_ destination: LibraryNavigationSelection) -> some View {

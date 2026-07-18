@@ -182,6 +182,11 @@ struct AlbumTrackList: View {
                         }
                     }
                 }
+                .draggable(TrackDragPolicy.payload(
+                    rowTrackID: track.id,
+                    selectedTrackIDs: selection,
+                    orderedTrackIDs: orderedTracks.map(\.id)
+                ))
         }
     }
 
