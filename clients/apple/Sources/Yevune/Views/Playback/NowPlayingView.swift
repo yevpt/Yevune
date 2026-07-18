@@ -2,18 +2,19 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var playback: PlaybackController
-    let lyricsState: LyricsState
+    @ObservedObject var lyrics: LyricsViewModel
     let close: () -> Void
     @State private var draggedTime: Double?
     @FocusState private var backButtonFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         playback: PlaybackController,
-        lyricsState: LyricsState = .unavailable,
+        lyrics: LyricsViewModel,
         close: @escaping () -> Void
     ) {
         self.playback = playback
-        self.lyricsState = lyricsState
+        self.lyrics = lyrics
         self.close = close
     }
 
@@ -29,7 +30,7 @@ struct NowPlayingView: View {
                             identity
                                 .frame(width: coverColumnWidth(for: geometry.size))
 
-                            lyrics
+                            lyricsPanel
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     case .stacked:
@@ -37,7 +38,7 @@ struct NowPlayingView: View {
                             VStack(spacing: 28) {
                                 identity
                                     .frame(maxWidth: min(360, geometry.size.width - 48))
-                                lyrics
+                                lyricsPanel
                                     .frame(maxWidth: .infinity, minHeight: 220)
                             }
                             .frame(maxWidth: .infinity)
@@ -61,6 +62,13 @@ struct NowPlayingView: View {
             )
         }
         .onAppear { backButtonFocused = true }
+        .task(id: playback.currentTrack?.id) {
+            await lyrics.load(trackID: playback.currentTrack?.id)
+            lyrics.update(elapsed: playback.elapsed)
+        }
+        .onChange(of: playback.elapsed) { _, elapsed in
+            lyrics.update(elapsed: elapsed)
+        }
     }
 
     private var header: some View {
@@ -117,17 +125,73 @@ struct NowPlayingView: View {
         }
     }
 
-    private var lyrics: some View {
-        ScrollView {
-            Text(lyricsState.displayText)
-                .font(.system(size: 30, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 280, alignment: .center)
-                .padding(40)
+    private var lyricsPanel: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                lyricsContent
+                    .frame(maxWidth: .infinity, minHeight: 280)
+                    .padding(.horizontal, 40)
+                    .padding(.vertical, 120)
+            }
+            .onChange(of: currentLyricLine) { _, line in
+                guard let line, line >= 0 else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.35)) {
+                    proxy.scrollTo(line, anchor: .center)
+                }
+            }
         }
         .scrollIndicators(.never)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .accessibilityLabel(lyricsState.displayText)
+        .accessibilityLabel(lyrics.state.displayText)
+    }
+
+    @ViewBuilder
+    private var lyricsContent: some View {
+        switch lyrics.state {
+        case .loading:
+            ProgressView("正在加载歌词…")
+                .foregroundStyle(.secondary)
+        case .unavailable:
+            ContentUnavailableView("暂无歌词", systemImage: "quote.bubble")
+        case .failed(let message):
+            VStack(spacing: 14) {
+                Label(message, systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.secondary)
+                Button("重新加载") {
+                    Task { await lyrics.load(trackID: playback.currentTrack?.id) }
+                }
+            }
+        case .unsynced(let text):
+            LazyVStack(spacing: 18) {
+                ForEach(Array(text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, line in
+                    Text(String(line))
+                        .font(.system(size: 24, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        case .synced(let lines, let currentLine):
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    Text(line.isEmpty ? " " : line)
+                        .font(.system(
+                            size: index == currentLine ? 30 : 23,
+                            weight: index == currentLine ? .semibold : .medium,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(index == currentLine ? .primary : .secondary)
+                        .opacity(index == currentLine ? 1 : 0.62)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .id(index)
+                }
+            }
+        }
+    }
+
+    private var currentLyricLine: Int? {
+        guard case .synced(_, let currentLine) = lyrics.state else { return nil }
+        return currentLine
     }
 
     private var transport: some View {

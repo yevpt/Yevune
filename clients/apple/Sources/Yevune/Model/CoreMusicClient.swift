@@ -52,6 +52,9 @@ actor CoreMusicClient: MusicClientProviding {
     func coverArtURL(id: String, size: UInt32?) async throws -> String { try await client.coverArtUrl(id: id, size: size) }
     func setCoverArt(albumID: String, localPath: String) async throws { try await client.setCoverArt(albumId: albumID, localPath: localPath) }
     func streamURL(trackID: String) async throws -> String { try await client.streamUrl(trackId: trackID) }
+    func getLyricsBySongID(_ id: String) async throws -> [StructuredLyrics] {
+        try await client.getLyricsBySongId(id: id)
+    }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { try await client.scanPrefix(prefix: prefix) }
 
     func playlistTree() async throws -> PlaylistTree { try await client.playlistTree() }

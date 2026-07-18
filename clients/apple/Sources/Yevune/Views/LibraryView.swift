@@ -58,6 +58,7 @@ struct LibraryView: View {
     @StateObject private var playlists: PlaylistViewModel
     @StateObject private var admin: AdminViewModel
     @StateObject private var access: AccessControlViewModel
+    @StateObject private var lyrics: LyricsViewModel
     @State private var accessTarget: AccessScopeTarget?
     @State private var importing = false
     @State private var isDropTargeted = false
@@ -93,12 +94,13 @@ struct LibraryView: View {
         _playlists = StateObject(wrappedValue: PlaylistViewModel(client: client))
         _admin = StateObject(wrappedValue: AdminViewModel(currentUsername: session.user, client: client))
         _access = StateObject(wrappedValue: AccessControlViewModel(client: client))
+        _lyrics = StateObject(wrappedValue: LyricsViewModel(client: client))
     }
 
     var body: some View {
         Group {
             if isNowPlayingPresented {
-                NowPlayingView(playback: playback) {
+                NowPlayingView(playback: playback, lyrics: lyrics) {
                     isNowPlayingPresented = false
                 }
                 .onAppear { dismissFocusForEmptyQueue(playback.queueEntries.count) }

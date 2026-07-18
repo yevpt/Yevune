@@ -31,6 +31,7 @@ protocol MusicClientProviding: Sendable {
     func coverArtURL(id: String, size: UInt32?) async throws -> String
     func setCoverArt(albumID: String, localPath: String) async throws
     func streamURL(trackID: String) async throws -> String
+    func getLyricsBySongID(_ id: String) async throws -> [StructuredLyrics]
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult
     func playlistTree() async throws -> PlaylistTree
     func playlistDetail(id: String) async throws -> PlaylistDetail
@@ -71,6 +72,7 @@ extension MusicClientProviding {
     func coverArtURL(id: String, size: UInt32?) async throws -> String { throw CocoaError(.featureUnsupported) }
     func setCoverArt(albumID: String, localPath: String) async throws { throw CocoaError(.featureUnsupported) }
     func streamURL(trackID: String) async throws -> String { throw CocoaError(.featureUnsupported) }
+    func getLyricsBySongID(_ id: String) async throws -> [StructuredLyrics] { throw CocoaError(.featureUnsupported) }
     func scanPrefix(_ prefix: String) async throws -> DetailedScanResult { throw CocoaError(.featureUnsupported) }
     func playlistTree() async throws -> PlaylistTree { throw CocoaError(.featureUnsupported) }
     func playlistDetail(id: String) async throws -> PlaylistDetail { throw CocoaError(.featureUnsupported) }
