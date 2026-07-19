@@ -167,4 +167,47 @@ final class PlaybackViewPolicyTests: XCTestCase {
             "1:05 / 3:00"
         )
     }
+
+    func testPlaybackMenuKeepsWindowCommandsAvailableWithoutAQueue() {
+        XCTAssertTrue(PlaybackCommandPolicy.isEnabled(.showQueue, queueCount: 0))
+        XCTAssertTrue(PlaybackCommandPolicy.isEnabled(.showMiniPlayer, queueCount: 0))
+    }
+
+    func testPlaybackMenuDisablesTransportAndQueueMutationsWithoutAQueue() {
+        let queueDependentActions: [PlaybackCommandAction] = [
+            .togglePlayPause,
+            .previous,
+            .next,
+            .toggleShuffle,
+            .cycleRepeat,
+        ]
+
+        for action in queueDependentActions {
+            XCTAssertFalse(PlaybackCommandPolicy.isEnabled(action, queueCount: 0))
+            XCTAssertTrue(PlaybackCommandPolicy.isEnabled(action, queueCount: 1))
+        }
+    }
+
+    func testPlaybackMenuUsesStatefulTitles() {
+        XCTAssertEqual(
+            PlaybackCommandPolicy.playPauseTitle(engineState: .playing),
+            "暂停"
+        )
+        XCTAssertEqual(
+            PlaybackCommandPolicy.playPauseTitle(engineState: .buffering),
+            "暂停"
+        )
+        XCTAssertEqual(
+            PlaybackCommandPolicy.playPauseTitle(engineState: .paused),
+            "播放"
+        )
+        XCTAssertEqual(
+            PlaybackCommandPolicy.shuffleTitle(isShuffled: true),
+            "关闭随机播放"
+        )
+        XCTAssertEqual(
+            PlaybackCommandPolicy.repeatTitle(mode: .one),
+            "循环模式：单曲"
+        )
+    }
 }

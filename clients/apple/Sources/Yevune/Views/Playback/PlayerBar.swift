@@ -133,7 +133,7 @@ struct PlayerBar: View {
                 }
                 Divider()
             }
-            Button { openWindow(id: "mini-player") } label: {
+            Button { openWindow(id: PlaybackWindowID.miniPlayer) } label: {
                 Label("打开迷你播放器", systemImage: "pip")
             }
         } label: {

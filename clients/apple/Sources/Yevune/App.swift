@@ -100,7 +100,16 @@ struct YevuneApp: App {
             }
         }
 
-        Window("迷你播放器", id: "mini-player") {
+        .commands {
+            PlaybackCommands(playback: playback)
+        }
+
+        Window("播放队列", id: PlaybackWindowID.queue) {
+            QueuePanel(playback: playback)
+        }
+        .defaultSize(width: 420, height: 460)
+
+        Window("迷你播放器", id: PlaybackWindowID.miniPlayer) {
             MiniPlayerView(playback: playback)
                 .frame(width: 360, height: 132)
         }
